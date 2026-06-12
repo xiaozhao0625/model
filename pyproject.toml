@@ -1,0 +1,9 @@
+[project]
+name = "ai-screenshot-platform"
+version = "0.1.0"
+description = "Core domain model for the multi-type app/game screenshot collection platform."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
