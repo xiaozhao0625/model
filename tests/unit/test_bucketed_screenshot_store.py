@@ -71,10 +71,10 @@ def test_save_rejected_increments_rejected_count_without_valid_total(tmp_path):
 def test_generate_summary_writes_expected_counts(tmp_path):
     store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
 
-    store.save_image(Bucket.FIXED, IMAGE_BYTES)
-    store.save_image(Bucket.LOW, IMAGE_BYTES)
-    store.save_image(Bucket.HIGH, IMAGE_BYTES)
-    store.save_image(Bucket.REJECTED, IMAGE_BYTES, reject_reason="blurred")
+    store.save_image(Bucket.FIXED, b"fixed")
+    store.save_image(Bucket.LOW, b"low")
+    store.save_image(Bucket.HIGH, b"high")
+    store.save_image(Bucket.REJECTED, b"rejected", reject_reason="blurred")
 
     summary = store.generate_summary()
     summary_file = json.loads(store.summary_path.read_text(encoding="utf-8"))
@@ -94,8 +94,8 @@ def test_generate_summary_writes_expected_counts(tmp_path):
 def test_fixed_over_10_is_rejected_without_writing_extra_file(tmp_path):
     store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
 
-    for _ in range(10):
-        assert store.save_image(Bucket.FIXED, IMAGE_BYTES).saved is True
+    for index in range(10):
+        assert store.save_image(Bucket.FIXED, f"fixed-{index}".encode()).saved is True
     result = store.save_image(Bucket.FIXED, IMAGE_BYTES)
 
     assert result.saved is False
@@ -123,11 +123,122 @@ def test_path_escape_in_run_identity_is_rejected(tmp_path):
 def test_completion_gate_accepts_1000_low_images_from_store_summary(tmp_path):
     store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
 
-    for _ in range(1000):
-        store.save_image(Bucket.LOW, IMAGE_BYTES)
+    for index in range(1000):
+        store.save_image(Bucket.LOW, f"low-{index}".encode())
     summary = store.generate_summary()
     decision = CompletionGate().evaluate(store.capture_counts())
 
     assert summary["low_count"] == 1000
     assert summary["valid_total"] == 1000
+    assert decision.next_status == RunStatus.CAPTURE_COMPLETED
+
+
+def test_same_bytes_second_save_is_rejected_as_duplicate(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    first = store.save_image(Bucket.LOW, IMAGE_BYTES)
+    duplicate = store.save_image(Bucket.LOW, IMAGE_BYTES)
+
+    assert first.saved is True
+    assert duplicate.saved is False
+    assert duplicate.valid is False
+    assert duplicate.reason == "duplicate_content_hash"
+    assert duplicate.duplicate_of == first.meta["image_id"]
+    assert len(list((store.run_dir / "low").glob("*.webp"))) == 1
+
+
+def test_duplicate_does_not_increase_valid_total_or_low_count(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    store.save_image(Bucket.LOW, IMAGE_BYTES)
+    store.save_image(Bucket.LOW, IMAGE_BYTES)
+    summary = store.generate_summary()
+
+    assert summary["valid_total"] == 1
+    assert summary["low_count"] == 1
+
+
+def test_different_bytes_can_be_saved(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    first = store.save_image(Bucket.LOW, b"first")
+    second = store.save_image(Bucket.LOW, b"second")
+
+    assert first.saved is True
+    assert second.saved is True
+    assert store.generate_summary()["valid_total"] == 2
+
+
+def test_same_bytes_across_buckets_are_duplicate(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    first = store.save_image(Bucket.LOW, IMAGE_BYTES)
+    duplicate = store.save_image(Bucket.HIGH, IMAGE_BYTES)
+
+    assert duplicate.saved is False
+    assert duplicate.reason == "duplicate_content_hash"
+    assert duplicate.duplicate_of == first.meta["image_id"]
+    assert len(list((store.run_dir / "high").glob("*.webp"))) == 0
+
+
+def test_meta_jsonl_effective_records_include_content_hash(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    result = store.save_image(Bucket.LOW, IMAGE_BYTES)
+    records = read_jsonl(store.meta_path)
+
+    assert records[0]["content_hash"] == result.meta["content_hash"]
+    assert len(records[0]["content_hash"]) == 64
+    assert records[0]["duplicate_of"] is None
+
+
+def test_summary_is_not_polluted_by_duplicate_images(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    store.save_image(Bucket.LOW, IMAGE_BYTES)
+    store.save_image(Bucket.LOW, IMAGE_BYTES)
+    store.save_image(Bucket.HIGH, IMAGE_BYTES)
+
+    assert store.generate_summary() == {
+        "app_id": "demo_app",
+        "run_id": "run_001",
+        "fixed_count": 0,
+        "low_count": 1,
+        "high_count": 0,
+        "rejected_count": 0,
+        "valid_total": 1,
+    }
+
+
+def test_fixed_cap_takes_precedence_over_duplicate_check(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    for index in range(10):
+        store.save_image(Bucket.FIXED, f"fixed-{index}".encode())
+    result = store.save_image(Bucket.FIXED, b"fixed-0")
+
+    assert result.saved is False
+    assert result.reason == "fixed_cap_exceeded"
+    assert result.duplicate_of is None
+
+
+def test_1000_same_low_images_do_not_complete_with_completion_gate(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    for _ in range(1000):
+        store.save_image(Bucket.LOW, IMAGE_BYTES)
+    decision = CompletionGate().evaluate(store.capture_counts())
+
+    assert store.generate_summary()["valid_total"] == 1
+    assert decision.next_status == RunStatus.CAPTURE_RUNNING
+
+
+def test_1000_different_low_images_complete_with_completion_gate(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+
+    for index in range(1000):
+        store.save_image(Bucket.LOW, f"low-{index}".encode())
+    decision = CompletionGate().evaluate(store.capture_counts())
+
+    assert store.generate_summary()["valid_total"] == 1000
     assert decision.next_status == RunStatus.CAPTURE_COMPLETED

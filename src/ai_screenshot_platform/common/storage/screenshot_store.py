@@ -8,6 +8,7 @@ from typing import Any
 
 from ai_screenshot_platform.common.domain.buckets import Bucket
 from ai_screenshot_platform.common.domain.completion_gate import CaptureCounts
+from ai_screenshot_platform.common.quality.dedup import ContentHashDedupIndex
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,8 @@ class SaveImageResult:
     saved: bool
     reason: str
     meta: dict[str, Any] | None = None
+    valid: bool = False
+    duplicate_of: str | None = None
 
 
 class BucketedScreenshotStore:
@@ -46,6 +49,7 @@ class BucketedScreenshotStore:
             Bucket.HIGH: 0,
             Bucket.REJECTED: 0,
         }
+        self._dedup_index = ContentHashDedupIndex()
 
         self._create_directories()
 
@@ -63,6 +67,19 @@ class BucketedScreenshotStore:
                 saved=False,
                 reason="fixed_cap_exceeded",
                 meta=None,
+                valid=False,
+                duplicate_of=None,
+            )
+
+        content_hash = ContentHashDedupIndex.calculate_hash(image_bytes)
+        dedup_result = self._dedup_index.check(content_hash)
+        if dedup_result.is_duplicate:
+            return SaveImageResult(
+                saved=False,
+                reason="duplicate_content_hash",
+                meta=None,
+                valid=False,
+                duplicate_of=dedup_result.duplicate_of,
             )
 
         image_id = f"{self._next_image_number:08d}"
@@ -73,6 +90,7 @@ class BucketedScreenshotStore:
         absolute_path.write_bytes(image_bytes)
         self._next_image_number += 1
         self._counts[parsed_bucket] += 1
+        self._dedup_index.register(content_hash, image_id)
 
         meta = {
             "image_id": image_id,
@@ -83,9 +101,17 @@ class BucketedScreenshotStore:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "valid": parsed_bucket != Bucket.REJECTED,
             "reject_reason": reject_reason if parsed_bucket == Bucket.REJECTED else None,
+            "content_hash": content_hash,
+            "duplicate_of": None,
         }
         self._append_meta(meta)
-        return SaveImageResult(saved=True, reason="saved", meta=meta)
+        return SaveImageResult(
+            saved=True,
+            reason="saved",
+            meta=meta,
+            valid=parsed_bucket != Bucket.REJECTED,
+            duplicate_of=None,
+        )
 
     def generate_summary(self) -> dict[str, int | str]:
         summary: dict[str, int | str] = {
