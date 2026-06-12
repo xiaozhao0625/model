@@ -18,6 +18,9 @@
 ## 核心规则
 
 - capture_completed 后进入 upload_pending。
+- 只有 capture_completed 后才能生成 upload_manifest.json；生成后进入 upload_pending。
+- upload_manifest.json 记录 expected_upload_folder，不接真实百度网盘 API。
+- P2.1 不删除 fixed、low、high、rejected、temp_video。
 - 用户确认已上传百度网盘后，才能进入 uploaded_confirmed。
 - 正式上传清理状态流固定为 uploaded_confirmed -> local_deleted -> completed。
 - 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频，并记录 local_deleted。

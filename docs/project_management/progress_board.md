@@ -16,7 +16,8 @@
 | P1.5.1 RunStatus 命名统一 | done | 已移除 CREATED 和 CAPTURE_RUNNING 历史状态 |
 | P1.6 LocalRunSession + run.log 集成层 | done | 已串联生命周期、存储、完成判定和 JSONL run.log |
 | P1.7 本地 dry-run 验收脚本 + P1 收口 | done | 已新增 mock dry-run 脚本并完成 P1 验收收口 |
-| P2 本地暂存、上传确认、清理流 | next | 下一阶段处理 upload_pending、上传确认和本地清理 |
+| P2 本地暂存、上传确认、清理流 | in_progress | 正在实现 upload_manifest、人工上传确认和本地清理 |
+| P2.1 upload_manifest.json 生成 | done | 已支持 capture_completed 后生成 upload_manifest.json 并进入 upload_pending |
 | P3 模型网关 | pending | 等 P1 基础框架完成后开始 |
 | P4 多类型 Worker 与行为包 | pending | 等 P1/P3 基础能力明确后开始 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 完成后开始 |

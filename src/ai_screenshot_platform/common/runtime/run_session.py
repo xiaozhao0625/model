@@ -15,6 +15,7 @@ from ai_screenshot_platform.common.storage.screenshot_store import (
     BucketedScreenshotStore,
     SaveImageResult,
 )
+from ai_screenshot_platform.common.upload.upload_manifest import UploadManifestGenerator
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class LocalRunSession:
             app_id=config.app_id,
             run_id=config.run_id,
         )
+        self.upload_manifest_generator = UploadManifestGenerator()
 
     @property
     def run_dir(self) -> Path:
@@ -56,6 +58,10 @@ class LocalRunSession:
     @property
     def run_log_path(self) -> Path:
         return self.logger.log_path
+
+    @property
+    def upload_manifest_path(self) -> Path:
+        return self.run_dir / "upload_manifest.json"
 
     def start(self) -> RunStatus:
         self._transition_to(RunStatus.LAUNCHING)
@@ -130,6 +136,18 @@ class LocalRunSession:
 
     def generate_summary(self) -> dict[str, int | str]:
         return self.store.generate_summary()
+
+    def generate_upload_manifest(
+        self,
+        expected_upload_folder: str,
+    ) -> dict[str, int | str | bool]:
+        manifest = self.upload_manifest_generator.generate(
+            run_dir=self.run_dir,
+            expected_upload_folder=expected_upload_folder,
+            current_status=self.status,
+        )
+        self._transition_to(RunStatus.UPLOAD_PENDING)
+        return manifest
 
     def _transition_to(self, next_status: RunStatus) -> None:
         self.status = self.lifecycle.transition(self.status, next_status)
