@@ -7,7 +7,7 @@
 | P0 项目基线与开发治理 | done | 已建立文档、阶段计划、Codex 工作协议和架构基线 |
 | P0.1 Git 基线与 P0 文档入库 | done | 已初始化独立仓库并提交 P0 文档 |
 | P0.2 状态流规范化 + 换行规则固化 | done | 已固化正式状态流和 Git 换行规则 |
-| P1 MVP 基础框架 | in_progress | 正在实现核心领域模型、完成判定 Gate、本地分桶存储、基础去重、恢复能力、生命周期状态机和本地会话层 |
+| P1 MVP 基础框架 | done | 已完成核心领域模型、完成判定 Gate、本地分桶存储、基础去重、恢复能力、生命周期状态机、本地会话层和 dry-run 验收 |
 | P1.1 核心领域模型 + 完成判定 Gate | done | 已代码化截图分桶、有效总数和完成判定规则 |
 | P1.2 BucketedScreenshotStore + meta.jsonl + summary.json | done | 已实现本地分桶目录、图片落盘、meta.jsonl 和 summary.json |
 | P1.3 基础去重索引 + content_hash 去重 | done | 已实现 run 内 sha256 content_hash 精确去重 |
@@ -15,7 +15,8 @@
 | P1.5 Run 生命周期状态机 | done | 已实现 run 状态流转约束和终止态保护 |
 | P1.5.1 RunStatus 命名统一 | done | 已移除 CREATED 和 CAPTURE_RUNNING 历史状态 |
 | P1.6 LocalRunSession + run.log 集成层 | done | 已串联生命周期、存储、完成判定和 JSONL run.log |
-| P2 本地暂存、上传确认、清理流 | pending | 等 P1 基础框架完成后开始 |
+| P1.7 本地 dry-run 验收脚本 + P1 收口 | done | 已新增 mock dry-run 脚本并完成 P1 验收收口 |
+| P2 本地暂存、上传确认、清理流 | next | 下一阶段处理 upload_pending、上传确认和本地清理 |
 | P3 模型网关 | pending | 等 P1 基础框架完成后开始 |
 | P4 多类型 Worker 与行为包 | pending | 等 P1/P3 基础能力明确后开始 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 完成后开始 |

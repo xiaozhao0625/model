@@ -61,7 +61,7 @@ class LocalRunSession:
         self._transition_to(RunStatus.LAUNCHING)
         self._transition_to(RunStatus.PROFILING)
         self._transition_to(RunStatus.RUNNING)
-        self.logger.log("run_started", self.status)
+        self.logger.log("session_started", self.status)
         return self.status
 
     def save_image(
