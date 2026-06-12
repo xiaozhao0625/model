@@ -1,1 +1,1 @@
-"""Model Gateway contracts and local mock provider."""
+"""Model Gateway contracts, mock provider, service, and safety helpers."""

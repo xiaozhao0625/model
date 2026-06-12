@@ -22,8 +22,9 @@
 | P2.3 本地安全清理 local_deleted | done | 已支持 uploaded_confirmed 后仅清理本地大文件目录并进入 local_deleted。 |
 | P2.4 completed 收口 + P2 dry-run 总验收 | done | 已支持 local_deleted -> completed，并新增 P2 全流程 dry-run 脚本。 |
 | P2.5 本地状态恢复与 P2 收口 | done | 已支持根据本地轻量记录文件恢复 run 当前状态。 |
-| P3 模型网关 | in_progress | 已进入合同层阶段；当前只支持 mock provider，不接真实模型。 |
+| P3 模型网关 | in_progress | 已进入 mock-only 网关阶段；当前不接真实模型。 |
 | P3.1 Model Gateway 合同层 + Mock Provider + 安全动作校验 | done | 已建立 scene_classify、ground、act 合同，ActionProposal 和风险动作 safety gate。 |
+| P3.2 Gateway Service + 规则风险识别 + 审计日志 | done | 已建立 ModelGatewayService、输入风险规则识别、act 安全封装和 JSONL 审计日志。 |
 | P4 多类型 Worker 与行为包 | pending | 等 P3/P4 阶段指令后开始。 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 能力稳定后开始。 |
 | P6 行为包自我深化 | pending | 等行为包运行数据稳定后开始。 |
@@ -56,14 +57,15 @@
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、cleanup_record.json、run.log。
 - 本地状态恢复只读取已有轻量记录文件，不生成上传或清理记录，不删除任何文件。
 - AI 只做低频决策，只能返回 ActionProposal，不直接执行动作。
-- P3.1 只支持 mock provider，不接真实模型。
+- 后续业务层不得直接调用 provider，应通过 ModelGatewayService。
+- P3 当前只支持 mock provider，不接真实模型。
 - 禁止验证码、支付、充值、购买、聊天发送、账号安全验证、反作弊绕过。
 
 ## 风险与阻塞
 
 | 风险 | 当前处理 |
 | --- | --- |
-| P3 后续真实 provider 接入边界不清 | P3.1 只建立合同层和 mock provider，真实模型接入等待架构师指令。 |
+| P3 后续真实 provider 接入边界不清 | P3.1/P3.2 只建立合同层、service、mock provider 和审计，真实模型接入等待架构师指令。 |
 | 后续真实上传可能被误解为自动百度网盘 API | P2 只记录 manifest 和用户确认，不接真实百度网盘 API。 |
 | 清理流误删本地数据 | 当前只允许删除 fixed、low、high、rejected、temp_video，保留审计文件。 |
 | 状态恢复与真实任务调度边界尚未接入 | P2.5 只提供本地 resolver 和会话恢复入口，不实现 Worker 或数据库。 |
