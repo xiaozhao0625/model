@@ -89,6 +89,35 @@ def test_run_status_does_not_contain_cleanup_completed():
     assert not hasattr(RunStatus, "CLEANUP_COMPLETED")
 
 
+def test_run_status_does_not_contain_legacy_or_completed_max_states():
+    status_values = {status.value for status in RunStatus}
+
+    assert "created" not in status_values
+    assert not hasattr(RunStatus, "CREATED")
+    assert "capture_running" not in status_values
+    assert not hasattr(RunStatus, "CAPTURE_RUNNING")
+    assert "completed_max" not in status_values
+    assert not hasattr(RunStatus, "COMPLETED_MAX")
+
+
+def test_run_status_only_contains_formal_statuses():
+    assert {status.value for status in RunStatus} == {
+        "pending",
+        "launching",
+        "waiting_manual",
+        "profiling",
+        "running",
+        "capture_completed",
+        "upload_pending",
+        "uploaded_confirmed",
+        "local_deleted",
+        "completed",
+        "needs_manual_seed",
+        "failed_low_yield",
+        "skipped_risk",
+    }
+
+
 def test_transition_error_message_contains_from_and_to_status():
     lifecycle = RunLifecycle()
 

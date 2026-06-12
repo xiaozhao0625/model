@@ -233,7 +233,7 @@ def test_1000_same_low_images_do_not_complete_with_completion_gate(tmp_path):
     decision = CompletionGate().evaluate(store.capture_counts())
 
     assert store.generate_summary()["valid_total"] == 1
-    assert decision.next_status == RunStatus.CAPTURE_RUNNING
+    assert decision.next_status == RunStatus.RUNNING
 
 
 def test_1000_different_low_images_complete_with_completion_gate(tmp_path):

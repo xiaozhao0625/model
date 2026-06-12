@@ -57,7 +57,7 @@ class CompletionGate:
 
         if counts.fixed > self.fixed_cap:
             return CompletionDecision(
-                next_status=RunStatus.CAPTURE_RUNNING,
+                next_status=RunStatus.RUNNING,
                 valid_total=valid_total,
                 has_main_bucket=has_main_bucket,
                 should_stop_capture=True,
@@ -66,7 +66,7 @@ class CompletionGate:
 
         if valid_total > self.target_max:
             return CompletionDecision(
-                next_status=RunStatus.CAPTURE_RUNNING,
+                next_status=RunStatus.RUNNING,
                 valid_total=valid_total,
                 has_main_bucket=has_main_bucket,
                 should_stop_capture=True,
@@ -75,7 +75,7 @@ class CompletionGate:
 
         if not has_main_bucket:
             return CompletionDecision(
-                next_status=RunStatus.CAPTURE_RUNNING,
+                next_status=RunStatus.RUNNING,
                 valid_total=valid_total,
                 has_main_bucket=False,
                 should_stop_capture=False,
@@ -101,7 +101,7 @@ class CompletionGate:
             )
 
         return CompletionDecision(
-            next_status=RunStatus.CAPTURE_RUNNING,
+            next_status=RunStatus.RUNNING,
             valid_total=valid_total,
             has_main_bucket=True,
             should_stop_capture=False,

@@ -13,6 +13,7 @@
 | P1.3 基础去重索引 + content_hash 去重 | done | 已实现 run 内 sha256 content_hash 精确去重 |
 | P1.4 Store 恢复能力 + dedup 从 meta.jsonl 重建 | done | 已支持从 meta.jsonl 恢复计数、编号和 content_hash 去重索引 |
 | P1.5 Run 生命周期状态机 | done | 已实现 run 状态流转约束和终止态保护 |
+| P1.5.1 RunStatus 命名统一 | done | 已移除 CREATED 和 CAPTURE_RUNNING 历史状态 |
 | P2 本地暂存、上传确认、清理流 | pending | 等 P1 基础框架完成后开始 |
 | P3 模型网关 | pending | 等 P1 基础框架完成后开始 |
 | P4 多类型 Worker 与行为包 | pending | 等 P1/P3 基础能力明确后开始 |

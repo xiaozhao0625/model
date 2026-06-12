@@ -2,13 +2,11 @@ from enum import StrEnum
 
 
 class RunStatus(StrEnum):
-    CREATED = "created"
     PENDING = "pending"
     LAUNCHING = "launching"
     WAITING_MANUAL = "waiting_manual"
     PROFILING = "profiling"
     RUNNING = "running"
-    CAPTURE_RUNNING = "capture_running"
     CAPTURE_COMPLETED = "capture_completed"
     UPLOAD_PENDING = "upload_pending"
     UPLOADED_CONFIRMED = "uploaded_confirmed"
