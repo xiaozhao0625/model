@@ -30,3 +30,17 @@ def test_register_keeps_first_image_id_for_hash():
     index.register(content_hash, image_id="00000002")
 
     assert index.check(content_hash).duplicate_of == "00000001"
+
+
+def test_register_many_restores_index_entries():
+    index = ContentHashDedupIndex()
+
+    index.register_many(
+        {
+            "hash-a": "00000001",
+            "hash-b": "00000002",
+        }
+    )
+
+    assert index.check("hash-a").duplicate_of == "00000001"
+    assert index.check("hash-b").duplicate_of == "00000002"

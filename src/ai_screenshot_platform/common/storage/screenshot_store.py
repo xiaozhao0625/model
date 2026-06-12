@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
 from ai_screenshot_platform.common.domain.buckets import Bucket
 from ai_screenshot_platform.common.domain.completion_gate import CaptureCounts
 from ai_screenshot_platform.common.quality.dedup import ContentHashDedupIndex
+
+
+class MetadataRebuildError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class BucketedScreenshotStore:
         app_id: str,
         run_id: str,
         fixed_cap: int = 10,
+        rebuild_from_meta: bool = False,
     ) -> None:
         if fixed_cap < 0:
             raise ValueError("fixed_cap must be non-negative")
@@ -52,6 +58,24 @@ class BucketedScreenshotStore:
         self._dedup_index = ContentHashDedupIndex()
 
         self._create_directories()
+        if rebuild_from_meta:
+            self._rebuild_from_meta()
+
+    @classmethod
+    def open_existing(
+        cls,
+        root_dir: str | Path,
+        app_id: str,
+        run_id: str,
+        fixed_cap: int = 10,
+    ) -> "BucketedScreenshotStore":
+        return cls(
+            root_dir=root_dir,
+            app_id=app_id,
+            run_id=run_id,
+            fixed_cap=fixed_cap,
+            rebuild_from_meta=True,
+        )
 
     def save_image(
         self,
@@ -147,6 +171,37 @@ class BucketedScreenshotStore:
         with self.meta_path.open("a", encoding="utf-8", newline="\n") as meta_file:
             meta_file.write(json.dumps(meta, ensure_ascii=False, sort_keys=True))
             meta_file.write("\n")
+
+    def _rebuild_from_meta(self) -> None:
+        if not self.meta_path.exists():
+            return
+
+        max_image_number = 0
+        for line_number, line in enumerate(
+            self.meta_path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if not line.strip():
+                continue
+            try:
+                meta = json.loads(line)
+            except JSONDecodeError as exc:
+                raise MetadataRebuildError(
+                    f"invalid JSON in meta.jsonl at line {line_number}"
+                ) from exc
+
+            bucket = self._parse_bucket(meta["bucket"])
+            self._counts[bucket] += 1
+
+            image_id = str(meta["image_id"])
+            if image_id.isdigit():
+                max_image_number = max(max_image_number, int(image_id))
+
+            content_hash = meta.get("content_hash")
+            if content_hash is not None:
+                self._dedup_index.register(str(content_hash), image_id)
+
+        self._next_image_number = max_image_number + 1
 
     def _valid_total(self) -> int:
         return (

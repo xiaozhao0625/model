@@ -19,6 +19,10 @@ class ContentHashDedupIndex:
     def register(self, content_hash: str, image_id: str) -> None:
         self._hash_to_image_id.setdefault(content_hash, image_id)
 
+    def register_many(self, entries: dict[str, str]) -> None:
+        for content_hash, image_id in entries.items():
+            self.register(content_hash, image_id)
+
     def check(self, content_hash: str) -> DedupCheckResult:
         duplicate_of = self._hash_to_image_id.get(content_hash)
         if duplicate_of is None:

@@ -6,7 +6,10 @@ import pytest
 from ai_screenshot_platform.common.domain.buckets import Bucket
 from ai_screenshot_platform.common.domain.completion_gate import CompletionGate
 from ai_screenshot_platform.common.domain.run_status import RunStatus
-from ai_screenshot_platform.common.storage.screenshot_store import BucketedScreenshotStore
+from ai_screenshot_platform.common.storage.screenshot_store import (
+    BucketedScreenshotStore,
+    MetadataRebuildError,
+)
 
 
 IMAGE_BYTES = b"fake-webp-bytes"
@@ -242,3 +245,124 @@ def test_1000_different_low_images_complete_with_completion_gate(tmp_path):
 
     assert store.generate_summary()["valid_total"] == 1000
     assert decision.next_status == RunStatus.CAPTURE_COMPLETED
+
+
+def test_open_existing_restores_low_count_and_valid_total(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    store.save_image(Bucket.LOW, b"low")
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+
+    summary = restored.generate_summary()
+    assert summary["low_count"] == 1
+    assert summary["valid_total"] == 1
+
+
+def test_open_existing_restores_high_count(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    store.save_image(Bucket.HIGH, b"high")
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+
+    assert restored.generate_summary()["high_count"] == 1
+
+
+def test_open_existing_restores_rejected_without_valid_total(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    store.save_image(Bucket.REJECTED, b"rejected", reject_reason="blurred")
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+
+    summary = restored.generate_summary()
+    assert summary["rejected_count"] == 1
+    assert summary["valid_total"] == 0
+
+
+def test_open_existing_restores_dedup_index(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    first = store.save_image(Bucket.LOW, IMAGE_BYTES)
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+    duplicate = restored.save_image(Bucket.LOW, IMAGE_BYTES)
+
+    assert duplicate.saved is False
+    assert duplicate.reason == "duplicate_content_hash"
+    assert duplicate.duplicate_of == first.meta["image_id"]
+
+
+def test_open_existing_allows_different_bytes(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    store.save_image(Bucket.LOW, b"first")
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+    result = restored.save_image(Bucket.LOW, b"second")
+
+    assert result.saved is True
+    assert restored.generate_summary()["valid_total"] == 2
+
+
+def test_open_existing_restores_fixed_cap(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    for index in range(10):
+        store.save_image(Bucket.FIXED, f"fixed-{index}".encode())
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+    result = restored.save_image(Bucket.FIXED, b"new-fixed")
+
+    assert result.saved is False
+    assert result.reason == "fixed_cap_exceeded"
+
+
+def test_open_existing_uses_next_image_id_without_overwriting_old_file(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    first = store.save_image(Bucket.LOW, b"first")
+    first_path = store.run_dir / first.meta["path"]
+    original_bytes = first_path.read_bytes()
+
+    restored = BucketedScreenshotStore.open_existing(
+        tmp_path,
+        app_id="demo_app",
+        run_id="run_001",
+    )
+    second = restored.save_image(Bucket.LOW, b"second")
+
+    assert first_path.read_bytes() == original_bytes
+    assert second.meta["image_id"] == "00000002"
+    assert second.meta["path"] == "low/00000002.webp"
+    assert (restored.run_dir / second.meta["path"]).read_bytes() == b"second"
+
+
+def test_open_existing_raises_for_invalid_meta_jsonl(tmp_path):
+    store = BucketedScreenshotStore(tmp_path, app_id="demo_app", run_id="run_001")
+    store.meta_path.write_text("{not-json}\n", encoding="utf-8")
+
+    with pytest.raises(MetadataRebuildError, match="invalid JSON"):
+        BucketedScreenshotStore.open_existing(
+            tmp_path,
+            app_id="demo_app",
+            run_id="run_001",
+        )
