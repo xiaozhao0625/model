@@ -2,7 +2,7 @@
 
 ## 目标
 
-建立本地暂存、人工确认百度网盘上传、删除保护、清理审计和最终 completed 收口能力。
+建立本地暂存、人工确认百度网盘上传、删除保护、清理审计、最终 completed 收口和本地状态恢复能力。
 
 ## 范围
 
@@ -14,12 +14,15 @@
 - cleanup_record.json 生成。
 - completed 最终收口。
 - P2 全流程 dry-run 验收脚本。
+- 基于本地轻量记录文件的 run 状态恢复。
 
 ## 核心规则
 
+- 不新增正式状态。
 - capture_completed 不等于 completed。
 - upload_pending 不等于 completed。
 - uploaded_confirmed 不等于 completed。
+- completed 只能表示完整上传清理流程已结束。
 - 只有 capture_completed 后才能生成 upload_manifest.json。
 - 生成 upload_manifest.json 后，状态进入 upload_pending。
 - upload_pending 表示等待用户手动上传百度网盘。
@@ -36,6 +39,9 @@
 - completed 只能在 local_deleted 后进入。
 - 正式 P2 状态流固定为：running -> capture_completed -> upload_pending -> uploaded_confirmed -> local_deleted -> completed。
 - 删除动作可以作为事件记录，但不能新增正式状态。
+- 本地状态恢复必须依赖已有轻量记录文件。
+- 本地状态恢复不删除任何文件。
+- 本地状态恢复不生成新的上传或清理记录。
 
 ## P2.1 upload_manifest.json
 
@@ -78,6 +84,18 @@
 - dry-run 不生成真实上传行为。
 - dry-run 不删除保留文件。
 
+## P2.5 本地状态恢复
+
+- RunStatusResolver.resolve(run_dir) 只读取本地 run 目录已有轻量记录文件。
+- 恢复优先级固定为：run.log completed 事件 -> cleanup_record.json -> upload_record.json -> upload_manifest.json -> summary.json 达标 -> running。
+- run.log 解析失败时必须抛出明确异常。
+- summary.json 缺失时不报错，恢复为 running。
+- LocalRunSession.restore_status() 使用 RunStatusResolver 恢复当前状态。
+- 不新增 cleanup_completed。
+- 不新增 completed_max。
+- 不生成新的 upload_manifest.json、upload_record.json 或 cleanup_record.json。
+- 不删除任何文件。
+
 ## 不做
 
 - 不自动上传百度网盘。
@@ -100,3 +118,5 @@
 - 保留文件完整存在。
 - run.log 包含 session_started、image_saved、duplicate_rejected、capture_completed、upload_confirmed、local_deleted、completed。
 - P2 dry-run 最终状态为 completed。
+- 本地状态恢复按固定优先级返回最高状态。
+- 非法 run.log JSON 行会抛出明确异常。

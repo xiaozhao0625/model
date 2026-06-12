@@ -11,6 +11,7 @@ from ai_screenshot_platform.common.domain.completion_gate import (
 from ai_screenshot_platform.common.domain.run_lifecycle import RunLifecycle
 from ai_screenshot_platform.common.domain.run_status import RunStatus
 from ai_screenshot_platform.common.logging.run_logger import RunEventLogger
+from ai_screenshot_platform.common.runtime.run_status_resolver import RunStatusResolver
 from ai_screenshot_platform.common.storage.screenshot_store import (
     BucketedScreenshotStore,
     SaveImageResult,
@@ -56,6 +57,7 @@ class LocalRunSession:
         self.upload_manifest_generator = UploadManifestGenerator()
         self.upload_confirmation_manager = UploadConfirmationManager()
         self.local_cleanup_manager = LocalCleanupManager()
+        self.status_resolver = RunStatusResolver(self.completion_gate)
 
     @property
     def run_dir(self) -> Path:
@@ -209,6 +211,10 @@ class LocalRunSession:
     def finalize_completed(self) -> RunStatus:
         self._transition_to(RunStatus.COMPLETED)
         self.logger.log("completed", self.status)
+        return self.status
+
+    def restore_status(self) -> RunStatus:
+        self.status = self.status_resolver.resolve(self.run_dir)
         return self.status
 
     def _transition_to(self, next_status: RunStatus) -> None:

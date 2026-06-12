@@ -16,11 +16,12 @@
 | P1.5.1 RunStatus 命名统一 | done | 已移除 CREATED 和 CAPTURE_RUNNING 历史状态。 |
 | P1.6 LocalRunSession + run.log 集成层 | done | 已串联生命周期、存储、完成判定和 JSONL run.log。 |
 | P1.7 本地 dry-run 验收脚本 + P1 收口 | done | 已新增 mock dry-run 脚本并完成 P1 验收收口。 |
-| P2 本地暂存、上传确认、清理流 | done | 已完成 upload_manifest、人工上传确认、local_deleted 安全清理、completed 收口和 P2 dry-run 总验收。 |
+| P2 本地暂存、上传确认、清理流 | done | 已完成 upload_manifest、人工上传确认、local_deleted 安全清理、completed 收口、状态恢复和 P2 dry-run 总验收。 |
 | P2.1 upload_manifest.json 生成 | done | 已支持 capture_completed 后生成 upload_manifest.json 并进入 upload_pending。 |
 | P2.2 上传确认记录 + uploaded_confirmed 状态推进 | done | 已支持用户确认后生成 upload_record.json 并进入 uploaded_confirmed。 |
 | P2.3 本地安全清理 local_deleted | done | 已支持 uploaded_confirmed 后仅清理本地大文件目录并进入 local_deleted。 |
 | P2.4 completed 收口 + P2 dry-run 总验收 | done | 已支持 local_deleted -> completed，并新增 P2 全流程 dry-run 脚本。 |
+| P2.5 本地状态恢复与 P2 收口 | done | 已支持根据本地轻量记录文件恢复 run 当前状态。 |
 | P3 模型网关 | next | 下一阶段，需在架构师确认后进入。 |
 | P4 多类型 Worker 与行为包 | pending | 等 P3/P4 阶段指令后开始。 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 能力稳定后开始。 |
@@ -52,6 +53,7 @@
 - uploaded_confirmed 后才允许删除本地图片和临时视频，并进入 local_deleted。
 - completed 只能从 local_deleted 进入。
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、cleanup_record.json、run.log。
+- 本地状态恢复只读取已有轻量记录文件，不生成上传或清理记录，不删除任何文件。
 
 ## 风险与阻塞
 
@@ -60,3 +62,4 @@
 | P3 可能引入模型网关边界不清 | 暂不进入 P3，等待架构师明确指令。 |
 | 后续真实上传可能被误解为自动百度网盘 API | P2 只记录 manifest 和用户确认，不接真实百度网盘 API。 |
 | 清理流误删本地数据 | 当前只允许删除 fixed、low、high、rejected、temp_video，保留审计文件。 |
+| 状态恢复与真实任务调度边界尚未接入 | P2.5 只提供本地 resolver 和会话恢复入口，不实现 Worker 或数据库。 |
