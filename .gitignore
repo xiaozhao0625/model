@@ -1,9 +1,9 @@
-dataset/
-storage/
-temp_video/
-captures/
-runs/
-models/
+/dataset/
+/storage/
+/temp_video/
+/captures/
+/runs/
+/models/
 *.mp4
 *.avi
 *.mkv
