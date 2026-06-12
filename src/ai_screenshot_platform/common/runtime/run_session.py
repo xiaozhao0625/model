@@ -206,5 +206,10 @@ class LocalRunSession:
         )
         return record
 
+    def finalize_completed(self) -> RunStatus:
+        self._transition_to(RunStatus.COMPLETED)
+        self.logger.log("completed", self.status)
+        return self.status
+
     def _transition_to(self, next_status: RunStatus) -> None:
         self.status = self.lifecycle.transition(self.status, next_status)

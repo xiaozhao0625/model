@@ -40,6 +40,7 @@ class LocalCleanupManager:
         "meta.jsonl",
         "upload_manifest.json",
         "upload_record.json",
+        "cleanup_record.json",
         "run.log",
     )
 
