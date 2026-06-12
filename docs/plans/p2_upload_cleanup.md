@@ -1,0 +1,35 @@
+# P2：本地暂存、上传确认、清理流
+
+## 目标
+
+建立本地暂存、人工确认百度网盘上传、删除保护和清理后保留文件机制。
+
+## 范围
+
+- 本地暂存目录结构。
+- upload_manifest.json 生成。
+- upload_pending 状态。
+- uploaded_confirmed 状态。
+- cleanup_completed 状态。
+- 删除本地图片和临时视频的保护条件。
+- 清理审计日志。
+
+## 核心规则
+
+- capture_completed 后进入 upload_pending。
+- 用户确认已上传百度网盘后，才能进入 uploaded_confirmed。
+- 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频。
+- 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、run.log。
+
+## 不做
+
+- 不自动上传百度网盘。
+- 不在用户确认前删除任何采集图片或临时视频。
+- 不实现业务 Worker。
+
+## 验收标准
+
+- 未确认上传时删除动作被拒绝。
+- 确认上传后仅删除允许删除的本地图片和临时视频。
+- 保留文件完整存在。
+
