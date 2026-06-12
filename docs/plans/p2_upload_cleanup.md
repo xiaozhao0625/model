@@ -22,6 +22,10 @@
 - upload_manifest.json 记录 expected_upload_folder，不接真实百度网盘 API。
 - P2.1 不删除 fixed、low、high、rejected、temp_video。
 - 用户确认已上传百度网盘后，才能进入 uploaded_confirmed。
+- P2.2 确认上传是用户声明，不接真实百度网盘 API。
+- P2.2 确认上传后生成 upload_record.json，状态进入 uploaded_confirmed。
+- uploaded_confirmed 只是允许后续删除，不代表已经删除。
+- P2.2 不删除 fixed、low、high、rejected、temp_video。
 - 正式上传清理状态流固定为 uploaded_confirmed -> local_deleted -> completed。
 - 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频，并记录 local_deleted。
 - 删除动作可以作为事件记录，但不能新增正式状态。

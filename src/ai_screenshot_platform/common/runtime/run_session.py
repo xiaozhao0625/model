@@ -15,6 +15,9 @@ from ai_screenshot_platform.common.storage.screenshot_store import (
     BucketedScreenshotStore,
     SaveImageResult,
 )
+from ai_screenshot_platform.common.upload.upload_confirmation import (
+    UploadConfirmationManager,
+)
 from ai_screenshot_platform.common.upload.upload_manifest import UploadManifestGenerator
 
 
@@ -50,6 +53,7 @@ class LocalRunSession:
             run_id=config.run_id,
         )
         self.upload_manifest_generator = UploadManifestGenerator()
+        self.upload_confirmation_manager = UploadConfirmationManager()
 
     @property
     def run_dir(self) -> Path:
@@ -62,6 +66,10 @@ class LocalRunSession:
     @property
     def upload_manifest_path(self) -> Path:
         return self.run_dir / "upload_manifest.json"
+
+    @property
+    def upload_record_path(self) -> Path:
+        return self.run_dir / "upload_record.json"
 
     def start(self) -> RunStatus:
         self._transition_to(RunStatus.LAUNCHING)
@@ -148,6 +156,30 @@ class LocalRunSession:
         )
         self._transition_to(RunStatus.UPLOAD_PENDING)
         return manifest
+
+    def confirm_uploaded(
+        self,
+        confirmed_by: str,
+        actual_upload_folder: str | None = None,
+    ) -> dict[str, int | str | bool]:
+        record = self.upload_confirmation_manager.confirm(
+            run_dir=self.run_dir,
+            current_status=self.status,
+            confirmed_by=confirmed_by,
+            actual_upload_folder=actual_upload_folder,
+        )
+        self._transition_to(RunStatus.UPLOADED_CONFIRMED)
+        self.logger.log(
+            "upload_confirmed",
+            self.status,
+            {
+                "confirmed_by": confirmed_by,
+                "actual_upload_folder": record["actual_upload_folder"],
+                "expected_upload_folder": record["expected_upload_folder"],
+                "delete_allowed": record["delete_allowed"],
+            },
+        )
+        return record
 
     def _transition_to(self, next_status: RunStatus) -> None:
         self.status = self.lifecycle.transition(self.status, next_status)
