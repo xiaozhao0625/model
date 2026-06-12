@@ -18,6 +18,7 @@ from ai_screenshot_platform.common.storage.screenshot_store import (
 from ai_screenshot_platform.common.upload.upload_confirmation import (
     UploadConfirmationManager,
 )
+from ai_screenshot_platform.common.upload.local_cleanup import LocalCleanupManager
 from ai_screenshot_platform.common.upload.upload_manifest import UploadManifestGenerator
 
 
@@ -54,6 +55,7 @@ class LocalRunSession:
         )
         self.upload_manifest_generator = UploadManifestGenerator()
         self.upload_confirmation_manager = UploadConfirmationManager()
+        self.local_cleanup_manager = LocalCleanupManager()
 
     @property
     def run_dir(self) -> Path:
@@ -70,6 +72,10 @@ class LocalRunSession:
     @property
     def upload_record_path(self) -> Path:
         return self.run_dir / "upload_record.json"
+
+    @property
+    def cleanup_record_path(self) -> Path:
+        return self.run_dir / "cleanup_record.json"
 
     def start(self) -> RunStatus:
         self._transition_to(RunStatus.LAUNCHING)
@@ -177,6 +183,25 @@ class LocalRunSession:
                 "actual_upload_folder": record["actual_upload_folder"],
                 "expected_upload_folder": record["expected_upload_folder"],
                 "delete_allowed": record["delete_allowed"],
+            },
+        )
+        return record
+
+    def cleanup_local_files(self) -> dict[str, int | str | list[str]]:
+        previous_status = self.status
+        record = self.local_cleanup_manager.cleanup(
+            run_dir=self.run_dir,
+            current_status=self.status,
+        )
+        if previous_status == RunStatus.UPLOADED_CONFIRMED:
+            self._transition_to(RunStatus.LOCAL_DELETED)
+        self.logger.log(
+            "local_deleted",
+            self.status,
+            {
+                "deleted_dirs": record["deleted_dirs"],
+                "deleted_file_count": record["deleted_file_count"],
+                "deleted_total_bytes": record["deleted_total_bytes"],
             },
         )
         return record

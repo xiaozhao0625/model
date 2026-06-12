@@ -28,8 +28,11 @@
 - P2.2 不删除 fixed、low、high、rejected、temp_video。
 - 正式上传清理状态流固定为 uploaded_confirmed -> local_deleted -> completed。
 - 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频，并记录 local_deleted。
+- P2.3 只允许删除 fixed、low、high、rejected、temp_video。
+- P2.3 清理后生成 cleanup_record.json，状态进入 local_deleted。
+- P2.3 不进入 completed。
 - 删除动作可以作为事件记录，但不能新增正式状态。
-- 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、run.log。
+- 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、run.log。
 
 ## 不做
 

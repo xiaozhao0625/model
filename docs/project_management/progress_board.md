@@ -19,6 +19,7 @@
 | P2 本地暂存、上传确认、清理流 | in_progress | 正在实现 upload_manifest、人工上传确认和本地清理 |
 | P2.1 upload_manifest.json 生成 | done | 已支持 capture_completed 后生成 upload_manifest.json 并进入 upload_pending |
 | P2.2 上传确认记录 + uploaded_confirmed 状态推进 | done | 已支持用户确认后生成 upload_record.json 并进入 uploaded_confirmed |
+| P2.3 本地安全清理 local_deleted | done | 已支持 uploaded_confirmed 后清理本地大文件并进入 local_deleted |
 | P3 模型网关 | pending | 等 P1 基础框架完成后开始 |
 | P4 多类型 Worker 与行为包 | pending | 等 P1/P3 基础能力明确后开始 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 完成后开始 |
