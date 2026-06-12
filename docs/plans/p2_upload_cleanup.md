@@ -10,7 +10,8 @@
 - upload_manifest.json 生成。
 - upload_pending 状态。
 - uploaded_confirmed 状态。
-- cleanup_completed 状态。
+- local_deleted 状态。
+- completed 状态。
 - 删除本地图片和临时视频的保护条件。
 - 清理审计日志。
 
@@ -18,7 +19,9 @@
 
 - capture_completed 后进入 upload_pending。
 - 用户确认已上传百度网盘后，才能进入 uploaded_confirmed。
-- 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频。
+- 正式上传清理状态流固定为 uploaded_confirmed -> local_deleted -> completed。
+- 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频，并记录 local_deleted。
+- 删除动作可以作为事件记录，但不能新增正式状态。
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、run.log。
 
 ## 不做
@@ -32,4 +35,3 @@
 - 未确认上传时删除动作被拒绝。
 - 确认上传后仅删除允许删除的本地图片和临时视频。
 - 保留文件完整存在。
-

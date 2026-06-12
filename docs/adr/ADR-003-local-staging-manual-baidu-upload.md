@@ -14,6 +14,8 @@ Accepted
 - capture_completed 后进入 upload_pending。
 - 用户确认已上传百度网盘后，才能进入 uploaded_confirmed。
 - 只有 uploaded_confirmed 后，才允许删除本地图片和临时视频，并记录 local_deleted。
+- 正式上传清理状态流固定为 uploaded_confirmed -> local_deleted -> completed。
+- 删除动作可以作为事件记录，但不能新增正式状态。
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、run.log。
 
 ## 影响
