@@ -36,7 +36,8 @@
 | P4.5 PC App + Web Worker 适配器骨架 | done | 已建立 PC App pywinauto 前置合同、Web Playwright 前置合同、stub adapter 和复用 LocalRunSession 的 low 桶 pipeline。 |
 | P4.6 Android Worker 复用入口 | done | 已建立 Android Worker 合同、app-screenshot-agent 复用映射、stub adapter 和复用 LocalRunSession 的 low 桶 pipeline。 |
 | P4.7 多类型 Worker 总 dry-run 验收 | done | 已新增 P4 总 dry-run 脚本，验证多类型 Worker 均复用 LocalRunSession 跑通到 capture_completed。 |
-| P5 补采机制与人工补种子 | next | 下一阶段，等待架构师下达具体任务。 |
+| P5 补采机制与人工补种子 | in_progress | 已进入 P5，当前只完成覆盖判断，不做补采动作、人工补种子或 Worker 调度。 |
+| P5.1 Coverage Manager | done | 已建立 CoverageManager，复用 CompletionGate 判断覆盖是否达标、是否缺少主桶、是否需要继续采集、是否应该停止采集。 |
 | P6 行为包自我深化 | pending | 等行为包运行数据稳定后开始。 |
 | P7 四机并发与生产化压测 | pending | 等前序能力具备后开始。 |
 
