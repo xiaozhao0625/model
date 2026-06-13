@@ -11,6 +11,7 @@ warnings.filterwarnings(
 
 from fastapi.testclient import TestClient
 
+from apps.master_api.main import app as importable_app
 from ai_screenshot_platform.common.domain.run_status import RunStatus
 from ai_screenshot_platform.master.api.app import create_app
 from ai_screenshot_platform.master.core.config import MasterSettings
@@ -33,6 +34,34 @@ def data(response):
     payload = response.json()
     assert payload["code"] == 0
     return payload["data"]
+
+
+def test_fastapi_app_importable_from_apps_master_api_main():
+    assert importable_app.title == "AI Screenshot Platform Master API"
+
+
+def test_health_and_openapi_are_available(tmp_path):
+    client = make_client(tmp_path)
+
+    health = client.get("/health")
+    openapi = client.get("/openapi.json")
+
+    assert health.status_code == 200
+    assert health.json()["data"]["status"] == "ok"
+    assert openapi.status_code == 200
+
+
+def test_openapi_contains_stable_master_routes(tmp_path):
+    client = make_client(tmp_path)
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/api/apps" in paths
+    assert "/api/runs" in paths
+    assert "/api/workers/register" in paths
+    assert "/api/runs/{run_id}/upload-manifest" in paths
+    assert "/api/runs/{run_id}/confirm-upload" in paths
+    assert "/api/runs/{run_id}/cleanup" in paths
+    assert "/api/runs/{run_id}/finalize" in paths
 
 
 def test_app_can_be_created_listed_and_fetched(tmp_path):
@@ -138,6 +167,31 @@ def test_mock_upload_flow_reaches_completed_without_local_file_cleanup(tmp_path)
     confirmed = data(client.post("/api/confirm-upload", json={"run_id": "run_001"}))
     cleaned = data(client.post("/api/cleanup", json={"run_id": "run_001"}))
     finalized = data(client.post("/api/finalize", json={"run_id": "run_001"}))
+
+    assert manifest["status"] == RunStatus.UPLOAD_PENDING.value
+    assert confirmed["status"] == RunStatus.UPLOADED_CONFIRMED.value
+    assert cleaned["status"] == RunStatus.LOCAL_DELETED.value
+    assert finalized["status"] == RunStatus.COMPLETED.value
+
+
+def test_run_scoped_upload_routes_reuse_upload_flow(tmp_path):
+    client = make_client(tmp_path)
+    client.post(
+        "/api/apps",
+        json={
+            "app_id": "demo_app",
+            "name": "Demo App",
+            "type": "pc_app",
+            "platform": "windows",
+        },
+    )
+    client.post("/api/runs", json={"run_id": "run_001", "app_id": "demo_app"})
+    client.post("/api/runs/run_001/start")
+
+    manifest = data(client.post("/api/runs/run_001/upload-manifest"))
+    confirmed = data(client.post("/api/runs/run_001/confirm-upload"))
+    cleaned = data(client.post("/api/runs/run_001/cleanup"))
+    finalized = data(client.post("/api/runs/run_001/finalize"))
 
     assert manifest["status"] == RunStatus.UPLOAD_PENDING.value
     assert confirmed["status"] == RunStatus.UPLOADED_CONFIRMED.value

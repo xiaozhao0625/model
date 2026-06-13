@@ -49,10 +49,21 @@ Worker:
 
 Upload mock orchestration:
 
-- `POST /api/upload-manifest`
-- `POST /api/confirm-upload`
-- `POST /api/cleanup`
-- `POST /api/finalize`
+- Canonical run-scoped routes:
+  - `POST /api/runs/{run_id}/upload-manifest`
+  - `POST /api/runs/{run_id}/confirm-upload`
+  - `POST /api/runs/{run_id}/cleanup`
+  - `POST /api/runs/{run_id}/finalize`
+- Compatibility routes retained for earlier P7 clients:
+  - `POST /api/upload-manifest`
+  - `POST /api/confirm-upload`
+  - `POST /api/cleanup`
+  - `POST /api/finalize`
+
+Health and schema:
+
+- `GET /health`
+- `GET /openapi.json`
 
 Model Gateway proxy:
 

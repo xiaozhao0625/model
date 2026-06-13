@@ -1,0 +1,1 @@
+"""Importable Master API entrypoint."""

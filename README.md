@@ -28,7 +28,7 @@
 | P7 | Master Backend + PostgreSQL/SQLite + API | done |
 | P8 | Web Dashboard UI 控制台 | next |
 | P12 | 行为包自我深化引擎 | pending |
-| P13 | 四机实机部署与生产化压测 | pending |
+| P13 | 四机部署、分布式调度、并发压测 | pending |
 
 ## 当前状态
 

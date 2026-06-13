@@ -81,6 +81,16 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     async def value_error_handler(_, exc: ValueError):
         return JSONResponse(status_code=400, content=error(str(exc)))
 
+    @app.get("/health")
+    def health():
+        return ok(
+            {
+                "status": "ok",
+                "env": settings.env,
+                "database_backend": settings.database_backend,
+            }
+        )
+
     @app.post("/api/apps")
     def create_app_record(payload: AppCreateRequest):
         return ok(
@@ -166,6 +176,22 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     @app.post("/api/finalize")
     def finalize(payload: UploadRunRequest):
         return ok(to_api_data(services.upload_service.finalize(payload.run_id)))
+
+    @app.post("/api/runs/{run_id}/upload-manifest")
+    def run_upload_manifest(run_id: str):
+        return ok(to_api_data(services.upload_service.manifest(run_id)))
+
+    @app.post("/api/runs/{run_id}/confirm-upload")
+    def run_confirm_upload(run_id: str):
+        return ok(to_api_data(services.upload_service.confirm(run_id)))
+
+    @app.post("/api/runs/{run_id}/cleanup")
+    def run_cleanup(run_id: str):
+        return ok(to_api_data(services.upload_service.cleanup(run_id)))
+
+    @app.post("/api/runs/{run_id}/finalize")
+    def run_finalize(run_id: str):
+        return ok(to_api_data(services.upload_service.finalize(run_id)))
 
     @app.post("/api/model/scene_classify")
     def scene_classify(payload: SceneClassifyApiRequest):
