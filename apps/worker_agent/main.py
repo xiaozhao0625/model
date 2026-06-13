@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import argparse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -15,8 +16,25 @@ from ai_screenshot_platform.worker_agent.master_client import MasterApiClient
 from ai_screenshot_platform.worker_agent.runtime import WorkerRuntime
 
 
-def main(config_path: str) -> None:
-    config = WorkerAgentConfigLoader.load_many(config_path)[0]
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Worker Agent once over HTTP.")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--worker-id")
+    return parser.parse_args()
+
+
+def main(config_path: str, worker_id: str | None = None) -> None:
+    configs = WorkerAgentConfigLoader.load_many(config_path)
+    config = next(
+        (
+            item
+            for item in configs
+            if worker_id is None or item.worker_id == worker_id
+        ),
+        None,
+    )
+    if config is None:
+        raise SystemExit(f"worker_id not found in config: {worker_id}")
     runtime = WorkerRuntime(
         config=config,
         client=MasterApiClient(config.master_url),
@@ -25,6 +43,5 @@ def main(config_path: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python -m apps.worker_agent.main <config.json>")
-    main(sys.argv[1])
+    args = parse_args()
+    main(args.config, args.worker_id)

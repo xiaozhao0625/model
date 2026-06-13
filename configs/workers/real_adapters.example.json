@@ -1,0 +1,25 @@
+{
+  "web": {
+    "mode": "stub",
+    "content_area_only": true
+  },
+  "pc_app": {
+    "mode": "stub",
+    "capture_backend": "stub"
+  },
+  "pc_game": {
+    "mode": "stub",
+    "obs": {
+      "enabled": false
+    },
+    "ffmpeg": {
+      "enabled": false
+    }
+  },
+  "android": {
+    "mode": "stub",
+    "adb": {
+      "enabled": false
+    }
+  }
+}
