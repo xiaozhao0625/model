@@ -1,0 +1,35 @@
+role: W1
+name: PC Game Worker
+host: W1
+ip: 192.168.1.19
+gpu_expectation: RTX 3060 12GB
+required_tools:
+  - python
+  - git
+  - openssh_client
+  - openssh_server
+  - nvidia_driver
+  - obs
+  - ffmpeg
+optional_tools:
+  - autohotkey
+required_services:
+  - worker_runtime
+preferred_services:
+  - obs
+ports:
+  - name: worker_health
+    port: 8101
+  - name: ssh
+    port: 22
+project_modules:
+  - apps/worker_agent
+  - src/ai_screenshot_platform/workers/pc_game
+env_template_keys:
+  - MASTER_API_URL
+  - WORKER_ID
+  - WORKER_ROLE
+master_api_url: http://192.168.1.18:8000
+notes:
+  - Do not connect to PostgreSQL directly.
+  - Use Master API for registration and job polling.

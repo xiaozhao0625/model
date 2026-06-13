@@ -1,0 +1,37 @@
+role: W2
+name: PC App / Web Worker
+host: W2
+ip: 192.168.1.20
+gpu_expectation: RTX 3060 12GB
+required_tools:
+  - python
+  - git
+  - openssh_client
+  - openssh_server
+  - nvidia_driver
+  - playwright
+  - browser_chromium_or_edge
+  - pywinauto
+  - mss
+  - dxcam
+optional_tools: []
+required_services:
+  - worker_runtime
+preferred_services: []
+ports:
+  - name: worker_health
+    port: 8102
+  - name: ssh
+    port: 22
+project_modules:
+  - apps/worker_agent
+  - src/ai_screenshot_platform/workers/web
+  - src/ai_screenshot_platform/workers/pc_app
+env_template_keys:
+  - MASTER_API_URL
+  - WORKER_ID
+  - WORKER_ROLE
+master_api_url: http://192.168.1.18:8000
+notes:
+  - Do not connect to PostgreSQL directly.
+  - Use Master API for all coordination.

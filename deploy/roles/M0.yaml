@@ -1,0 +1,46 @@
+role: M0
+name: Master + data + console
+host: M0
+ip: 192.168.1.18
+gpu_expectation: RTX 5060Ti 16GB
+required_tools:
+  - python
+  - git
+  - nodejs
+  - npm
+  - postgresql
+  - openssh_client
+  - nvidia_driver
+optional_tools:
+  - redis
+required_services:
+  - postgresql
+  - master_api
+  - web_console
+preferred_services:
+  - redis
+  - model_gateway
+ports:
+  - name: master_api
+    port: 8000
+  - name: web_console
+    port: 5173
+  - name: postgresql
+    port: 5432
+  - name: redis
+    port: 6379
+project_modules:
+  - apps/master_api
+  - apps/web-console
+  - src/ai_screenshot_platform/master
+  - src/ai_screenshot_platform/model_gateway
+env_template_keys:
+  - DATABASE_URL
+  - MASTER_API_HOST
+  - MASTER_API_PORT
+  - WEB_CONSOLE_PORT
+  - MODEL_GATEWAY_MODE
+master_api_url: http://192.168.1.18:8000
+notes:
+  - M0 owns PostgreSQL access.
+  - Workers must communicate through Master API only.

@@ -1,0 +1,35 @@
+role: W3
+name: Android Worker
+host: W3
+ip: 192.168.1.21
+gpu_expectation: RTX 3060 12GB
+required_tools:
+  - python
+  - git
+  - openssh_client
+  - openssh_server
+  - nvidia_driver
+  - adb
+  - android_emulator
+optional_tools: []
+required_services:
+  - worker_runtime
+preferred_services:
+  - android_emulator
+ports:
+  - name: worker_health
+    port: 8103
+  - name: ssh
+    port: 22
+project_modules:
+  - apps/worker_agent
+  - src/ai_screenshot_platform/workers/android
+env_template_keys:
+  - MASTER_API_URL
+  - WORKER_ID
+  - WORKER_ROLE
+  - ANDROID_SERIAL
+master_api_url: http://192.168.1.18:8000
+notes:
+  - Do not connect to PostgreSQL directly.
+  - Emulator images and login flows are outside P13.3.
