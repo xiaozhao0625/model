@@ -1,0 +1,40 @@
+{
+  "environment": "production-smoke",
+  "master": {
+    "machine_name": "M0",
+    "role": "master",
+    "lan_ip": "<M0_LAN_IP>",
+    "master_url": "http://<M0_LAN_IP>:8000",
+    "web_console_url": "http://<M0_LAN_IP>:5173",
+    "database": "postgresql",
+    "redis": "redis"
+  },
+  "workers": [
+    {
+      "machine_name": "W1",
+      "worker_id": "W1-PC-GAME",
+      "worker_type": "pc_game",
+      "master_url": "http://<M0_LAN_IP>:8000",
+      "capabilities": ["capture_high", "behavior_pack", "obs_capture", "ffmpeg_extract"]
+    },
+    {
+      "machine_name": "W2",
+      "worker_id": "W2-PC-APP-WEB",
+      "worker_type": "pc_app_web",
+      "master_url": "http://<M0_LAN_IP>:8000",
+      "capabilities": ["capture_low", "playwright", "pywinauto", "mss", "dxcam"]
+    },
+    {
+      "machine_name": "W3",
+      "worker_id": "W3-ANDROID",
+      "worker_type": "android",
+      "master_url": "http://<M0_LAN_IP>:8000",
+      "capabilities": ["capture_low", "adb"]
+    }
+  ],
+  "security": {
+    "workers_connect_database_directly": false,
+    "commit_env_files": false,
+    "real_passwords_in_repo": false
+  }
+}

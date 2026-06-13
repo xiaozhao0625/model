@@ -45,3 +45,7 @@ P12.5.1 不新增依赖，不改核心状态流，不要求真实 OCR/ADB/OBS/FF
 # P12.5.2 当前状态
 
 P12.5.2 已补齐 PostgreSQL-backed Production Readiness Console API。Master API 现在可以持久化质量报告、OCR 报告、工具健康、Android runtime、行为包候选审核和部署诊断；默认开发/测试仍使用 SQLite fallback，生产环境可通过 `DATABASE_URL` 切换 PostgreSQL。Worker 仍不直连数据库，P13 四机部署尚未开始。
+
+# P13 当前状态
+
+P13 已补齐四机真实部署与验收手册材料，包括 Markdown 源文档、生产 env 示例、启动脚本、健康检查脚本、diagnostics 收集脚本和 DOCX 合并手册。本阶段未下载或安装软件，未操作向日葵，未进入真实四机部署。
