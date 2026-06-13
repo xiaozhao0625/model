@@ -169,6 +169,31 @@ P4.6 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.7 多类型 Worker 总 dry-run 验收
+
+状态：done。
+
+已完成内容：
+
+- 新增 `scripts/dev/mock_p4_workers_run.py`。
+- dry-run 覆盖 `pc_game_behavior`、`pc_game_stub`、`pc_app_stub`、`web_stub`、`android_stub`。
+- `pc_game_behavior` 使用 `BehaviorWorkerAgent` 和 `fps_mock_v1.example.json`，生成 high 桶 mock 图和 `behavior_actions.jsonl`。
+- `pc_game_stub` 使用 `PcGameStubPipeline`，生成 high 桶 mock 图。
+- `pc_app_stub` 使用 `PcAppStubPipeline`，默认生成 low 桶 mock 图。
+- `web_stub` 使用 `WebStubPipeline`，默认生成 low 桶 mock 图，并确认 `content_area_only=true`。
+- `android_stub` 使用 `AndroidStubPipeline`，默认生成 low 桶 mock 图。
+- 每条 run 均生成 `summary.json`、`meta.jsonl`、`run.log`。
+- 每条 run 均最多推进到 `capture_completed`，不生成 `upload_manifest.json`，不进入 `completed`。
+
+P4.7 明确未实现：
+
+- 不接真实 OBS/FFmpeg。
+- 不接真实 ADB、Airtest、Appium、OCR。
+- 不接真实 Playwright、pywinauto、mss、dxcam。
+- 不接真实 AHK、pydirectinput。
+- 不执行真实鼠标或键盘动作。
+- 不做真实模型调用。
+
 ## Worker 策略
 
 - Web Worker 后续优先使用 Playwright，但 P4.5 只声明合同和 stub，不接真实 Playwright；后续真实实现必须只采集网页有效内容区，不采集浏览器地址栏、标签栏、Windows 任务栏。
