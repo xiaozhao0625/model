@@ -1,0 +1,49 @@
+{
+  "policy_id": "behavior_learning_policy_example_v1",
+  "status": "example",
+  "mode": "offline_analysis_only",
+  "input_artifacts": [
+    "summary.json",
+    "meta.jsonl",
+    "run.log",
+    "behavior_actions.jsonl",
+    "manual_seed_record.jsonl",
+    "upload_manifest.json",
+    "upload_record.json",
+    "cleanup_record.json",
+    "model_gateway.log",
+    "worker_report.json"
+  ],
+  "output_root": "behavior_learning/{app_id}/{run_id}",
+  "candidate_status_default": "pending_review",
+  "auto_enable_candidate": false,
+  "training_enabled": false,
+  "thresholds": {
+    "duplicate_ratio_high": 0.3,
+    "valid_yield_low": 0.5,
+    "stuck_ratio_high": 0.3,
+    "death_loop_high": 0.2,
+    "shop_stuck_high": 0.2,
+    "lane_coverage_low": 0.1,
+    "teamfight_scene_low": 0.05
+  },
+  "review": {
+    "approved_status": "approved",
+    "rejected_status": "rejected",
+    "enabled_status": "enabled",
+    "rollback_supported": true,
+    "require_human_review": true
+  },
+  "safety": {
+    "read_only_source_run_artifacts": true,
+    "forbidden_auto_actions": [
+      "captcha",
+      "payment",
+      "recharge",
+      "purchase",
+      "send_chat",
+      "account_security",
+      "anti_cheat_bypass"
+    ]
+  }
+}
