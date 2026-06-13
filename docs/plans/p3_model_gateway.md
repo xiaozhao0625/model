@@ -17,19 +17,20 @@
 - 真实模型适配器 stub provider。
 - 高风险动作 safety gate。
 - act 调用 JSONL 审计日志。
+- P3 本地 dry-run 总验收脚本。
 
 ## 核心规则
 
 - AI 只做低频决策。
 - AI 不参与每帧截图。
 - AI 不直接执行动作，只能返回 ActionProposal。
+- 业务层必须通过 ModelGatewayService 调用 provider。
+- Provider 必须通过 ProviderRegistry 选择。
+- provider 必须声明能力，不能让不支持 act 的 provider 处理 act。
+- 安全风险必须经过 RiskRuleDetector + ModelActionSafetyGate。
 - 高频截图和游戏连续动作不走模型。
 - 高频游戏采集仍由行为包 + OBS/FFmpeg 负责。
-- P3 当前不实现高频游戏采集。
 - P3 当前只支持 mock provider 和真实模型 stub provider。
-- 后续业务层不得直接调用 provider，应通过 ModelGatewayService。
-- provider 必须声明能力，不能让不支持 act 的 provider 处理 act。
-- 安全校验仍由 ModelGatewayService + SafetyGate 负责。
 - 不新增正式 run 状态。
 - 禁止验证码、支付、充值、购买、聊天发送、账号安全验证、反作弊绕过。
 - 遇到高风险动作必须 request_manual 或 abort。
@@ -37,7 +38,6 @@
 - 风险词表必须可配置，并覆盖中文和英文。
 - model_gateway.log 不能默认写到当前工作目录。
 - model_gateway.log 必须写到显式 audit_log_path 或 run_dir/model_gateway.log。
-- 如果提供 run_dir，最终 audit log 路径必须限制在 run_dir 内。
 - 不依赖闭源 Computer Use API 作为核心能力。
 
 ## P3.1 合同层
@@ -89,6 +89,18 @@
 - 不支持 act 的 provider 不能被 select_for_task(act) 选中。
 - stub provider 不调用真实模型，不导入 torch/transformers。
 
+## P3.4 Dry-Run 总验收
+
+- scripts/dev/mock_model_gateway_run.py 串联 ProviderConfigLoader、ProviderRegistry、ModelGatewayService、RiskRuleDetector、ModelActionSafetyGate。
+- dry-run 加载 configs/model_gateway/providers.example.json。
+- dry-run 通过 registry 选择 scene_classify、ground、act provider。
+- dry-run 使用 ModelGatewayService 调用 provider。
+- dry-run 执行 scene_classify、ground、安全 act、高风险 act。
+- 高风险 act 使用包含“验证码”的 instruction，并必须返回 request_manual 或 abort。
+- dry-run 审计日志必须写入 run_dir/model_gateway.log。
+- dry-run 输出 JSON 验收摘要。
+- dry-run 不生成真实模型文件。
+
 ## Stub Provider 行为
 
 - Mock 复用 MockModelGatewayProvider。
@@ -97,20 +109,6 @@
 - Qwen-VL stub 不调用真实模型，scene_classify 返回 unknown。
 - OmniParser stub 不调用真实模型，ground 返回 found=false；act 不支持。
 - 所有 stub provider 必须明确 provider_name。
-
-## 风险词表结构
-
-默认风险类型：
-
-- captcha
-- payment
-- recharge
-- purchase
-- send_chat
-- account_security
-- anti_cheat_bypass
-
-每个风险类型映射到一个非空关键词列表，关键词必须包含中文和英文表达。
 
 ## 审计日志字段
 
@@ -145,14 +143,14 @@ model_gateway.log 每行至少包含：
 
 ## 验收标准
 
-- providers.example.json 可以加载。
-- ProviderConfig 字段解析正确。
-- ProviderRegistry 可以注册 mock 和真实模型 stub provider。
-- disabled provider 不出现在 list_enabled。
-- select_for_task 按 scene_classify、ground、act capability 过滤。
-- 不支持 act 的 provider 处理 act 时失败或不可被选中。
-- 未知 provider type 报错。
-- stub provider 不执行真实动作。
-- stub provider 不导入 torch/transformers。
-- GatewayService 可以使用 registry 返回的 mock provider 完成安全 act。
+- dry-run 脚本最终输出合法 JSON。
+- dry-run 能加载 providers.example.json。
+- registry 能选择可用 provider。
+- scene_classify 有结果。
+- ground 有结果。
+- 安全 act 不被误拦截。
+- 高风险 act 被拦截，并返回 request_manual 或 abort。
+- model_gateway.log 存在于 run_dir 下且是合法 JSONL。
+- audit_event_count 大于 0。
+- 不生成真实模型文件。
 - 完整单元测试通过。

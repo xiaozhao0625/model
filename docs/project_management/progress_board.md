@@ -22,12 +22,13 @@
 | P2.3 本地安全清理 local_deleted | done | 已支持 uploaded_confirmed 后仅清理本地大文件目录并进入 local_deleted。 |
 | P2.4 completed 收口 + P2 dry-run 总验收 | done | 已支持 local_deleted -> completed，并新增 P2 全流程 dry-run 脚本。 |
 | P2.5 本地状态恢复与 P2 收口 | done | 已支持根据本地轻量记录文件恢复 run 当前状态。 |
-| P3 模型网关 | in_progress | 已进入 mock-only 网关阶段；当前不接真实模型。 |
+| P3 模型网关 | done | 已完成合同层、service、安全识别、审计、provider 注册中心和 P3 dry-run 总验收；当前不接真实模型。 |
 | P3.1 Model Gateway 合同层 + Mock Provider + 安全动作校验 | done | 已建立 scene_classify、ground、act 合同，ActionProposal 和风险动作 safety gate。 |
 | P3.2 Gateway Service + 规则风险识别 + 审计日志 | done | 已建立 ModelGatewayService、输入风险规则识别、act 安全封装和 JSONL 审计日志。 |
 | P3.2.1 多语言风险词表 + 审计落盘策略 | done | 已抽出可配置中英文风险词表，并固化 audit_log_path/run_dir 审计落盘策略。 |
 | P3.3 Provider 适配器骨架 + 注册中心 | done | 已建立 provider 配置、能力声明、注册中心和真实模型 stub provider。 |
-| P4 多类型 Worker 与行为包 | pending | 等 P3/P4 阶段指令后开始。 |
+| P3.4 Model Gateway dry-run 总验收 | done | 已新增本地 dry-run 脚本，验证 registry、service、风险识别、安全拦截和审计日志串联。 |
+| P4 多类型 Worker 与行为包 | next | 下一阶段，需架构师确认后进入。 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 能力稳定后开始。 |
 | P6 行为包自我深化 | pending | 等行为包运行数据稳定后开始。 |
 | P7 四机并发与生产化压测 | pending | 等前序能力具备后开始。 |
@@ -70,7 +71,7 @@
 
 | 风险 | 当前处理 |
 | --- | --- |
-| P3 后续真实 provider 接入边界不清 | P3 当前只建立合同层、service、mock/stub provider、风险词表和审计，真实模型接入等待架构师指令。 |
+| P4 Worker 与行为包边界尚未展开 | P3 已收口，等待架构师下达 P4 具体任务。 |
+| 后续真实 provider 接入边界不清 | P3 当前只建立合同层、service、mock/stub provider、风险词表和审计，真实模型接入等待架构师指令。 |
 | 后续真实上传可能被误解为自动百度网盘 API | P2 只记录 manifest 和用户确认，不接真实百度网盘 API。 |
 | 清理流误删本地数据 | 当前只允许删除 fixed、low、high、rejected、temp_video，保留审计文件。 |
-| 状态恢复与真实任务调度边界尚未接入 | P2.5 只提供本地 resolver 和会话恢复入口，不实现 Worker 或数据库。 |
