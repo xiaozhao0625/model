@@ -16,15 +16,24 @@ from ai_screenshot_platform.master.core.response import error, ok
 from ai_screenshot_platform.master.repositories.app_repo import AppRepo
 from ai_screenshot_platform.master.repositories.database import MasterDatabase
 from ai_screenshot_platform.master.repositories.image_repo import ImageRepo
+from ai_screenshot_platform.master.repositories.production_readiness_repo import (
+    ProductionReadinessRepo,
+)
 from ai_screenshot_platform.master.repositories.run_repo import RunRepo
 from ai_screenshot_platform.master.repositories.upload_repo import UploadRepo
 from ai_screenshot_platform.master.repositories.worker_repo import WorkerRepo
 from ai_screenshot_platform.master.schemas.api import (
     ActApiRequest,
     AppCreateRequest,
+    BehaviorCandidateIngestRequest,
+    BehaviorCandidateReviewRequest,
+    DiagnosticIngestRequest,
     GroundApiRequest,
+    OcrReportIngestRequest,
+    QualityReportIngestRequest,
     RunCreateRequest,
     SceneClassifyApiRequest,
+    ToolHealthIngestRequest,
     UploadRunRequest,
     WorkerRegisterRequest,
     WorkerResultReportRequest,
@@ -32,6 +41,9 @@ from ai_screenshot_platform.master.schemas.api import (
 from ai_screenshot_platform.master.services.app_service import AppService
 from ai_screenshot_platform.master.services.model_gateway_service import (
     ModelGatewayProxyService,
+)
+from ai_screenshot_platform.master.services.production_readiness_service import (
+    ProductionReadinessService,
 )
 from ai_screenshot_platform.master.services.run_service import RunService
 from ai_screenshot_platform.master.services.serialization import to_api_data
@@ -46,6 +58,7 @@ class MasterServices:
     worker_service: WorkerService
     upload_service: UploadService
     model_gateway_service: ModelGatewayProxyService
+    production_readiness_service: ProductionReadinessService
     image_repo: ImageRepo
     redis_client: MemoryRedisClient
 
@@ -252,6 +265,151 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         )
         return ok(to_api_data(result))
 
+    @app.get("/api/quality-reports")
+    def list_quality_reports():
+        return ok(to_api_data(get_services().production_readiness_service.list_quality_reports()))
+
+    @app.get("/api/quality-reports/{run_id}")
+    def get_quality_report(run_id: str):
+        return ok(to_api_data(get_services().production_readiness_service.get_quality_report(run_id)))
+
+    @app.post("/api/quality-reports/ingest")
+    def ingest_quality_report(payload: QualityReportIngestRequest):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.ingest_quality_report(
+                    payload.model_dump()
+                )
+            )
+        )
+
+    @app.get("/api/ocr/status")
+    def get_ocr_status():
+        return ok(to_api_data(get_services().production_readiness_service.latest_ocr_status()))
+
+    @app.get("/api/ocr/reports")
+    def list_ocr_reports():
+        return ok(to_api_data(get_services().production_readiness_service.list_ocr_reports()))
+
+    @app.get("/api/ocr/reports/{run_id}")
+    def get_ocr_report(run_id: str):
+        return ok(to_api_data(get_services().production_readiness_service.get_ocr_report(run_id)))
+
+    @app.post("/api/ocr/reports/ingest")
+    def ingest_ocr_report(payload: OcrReportIngestRequest):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.ingest_ocr_report(
+                    payload.model_dump()
+                )
+            )
+        )
+
+    @app.get("/api/tool-health")
+    def get_tool_health():
+        return ok(to_api_data(get_services().production_readiness_service.tool_health()))
+
+    @app.get("/api/tool-health/workers")
+    def get_worker_tool_health():
+        return ok(to_api_data(get_services().production_readiness_service.worker_tool_health()))
+
+    @app.get("/api/tool-health/android")
+    def get_android_tool_health():
+        return ok(to_api_data(get_services().production_readiness_service.android_tool_health()))
+
+    @app.post("/api/tool-health/ingest")
+    def ingest_tool_health(payload: ToolHealthIngestRequest):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.ingest_tool_health(
+                    payload.model_dump()
+                )
+            )
+        )
+
+    @app.get("/api/behavior-candidates")
+    def list_behavior_candidates():
+        return ok(to_api_data(get_services().production_readiness_service.list_behavior_candidates()))
+
+    @app.get("/api/behavior-candidates/{candidate_pack_id}")
+    def get_behavior_candidate(candidate_pack_id: str):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.get_behavior_candidate(
+                    candidate_pack_id
+                )
+            )
+        )
+
+    @app.post("/api/behavior-candidates/ingest")
+    def ingest_behavior_candidate(payload: BehaviorCandidateIngestRequest):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.ingest_behavior_candidate(
+                    payload.model_dump()
+                )
+            )
+        )
+
+    @app.post("/api/behavior-candidates/{candidate_pack_id}/approve")
+    def approve_behavior_candidate(
+        candidate_pack_id: str, payload: BehaviorCandidateReviewRequest | None = None
+    ):
+        payload = payload or BehaviorCandidateReviewRequest()
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.approve_behavior_candidate(
+                    candidate_pack_id,
+                    reviewer=payload.reviewer,
+                    reason=payload.reason,
+                )
+            )
+        )
+
+    @app.post("/api/behavior-candidates/{candidate_pack_id}/reject")
+    def reject_behavior_candidate(
+        candidate_pack_id: str, payload: BehaviorCandidateReviewRequest | None = None
+    ):
+        payload = payload or BehaviorCandidateReviewRequest()
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.reject_behavior_candidate(
+                    candidate_pack_id,
+                    reviewer=payload.reviewer,
+                    reason=payload.reason,
+                )
+            )
+        )
+
+    @app.post("/api/behavior-candidates/{candidate_pack_id}/rollback")
+    def rollback_behavior_candidate(
+        candidate_pack_id: str, payload: BehaviorCandidateReviewRequest | None = None
+    ):
+        payload = payload or BehaviorCandidateReviewRequest()
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.rollback_behavior_candidate(
+                    candidate_pack_id,
+                    reviewer=payload.reviewer,
+                    reason=payload.reason,
+                )
+            )
+        )
+
+    @app.get("/api/diagnostics")
+    def list_diagnostics():
+        return ok(to_api_data(get_services().production_readiness_service.list_diagnostics()))
+
+    @app.post("/api/diagnostics/ingest")
+    def ingest_diagnostic(payload: DiagnosticIngestRequest):
+        return ok(
+            to_api_data(
+                get_services().production_readiness_service.ingest_diagnostic(
+                    payload.model_dump()
+                )
+            )
+        )
+
     return app
 
 
@@ -261,6 +419,7 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
     worker_repo = WorkerRepo(database.connection)
     image_repo = ImageRepo(database.connection)
     upload_repo = UploadRepo(database.connection)
+    production_readiness_repo = ProductionReadinessRepo(database.connection)
     return MasterServices(
         app_service=AppService(app_repo),
         run_service=RunService(run_repo),
@@ -273,6 +432,9 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
         upload_service=UploadService(run_repo, upload_repo),
         model_gateway_service=ModelGatewayProxyService(
             audit_root=settings.data_root
+        ),
+        production_readiness_service=ProductionReadinessService(
+            production_readiness_repo
         ),
         image_repo=image_repo,
         redis_client=MemoryRedisClient(),

@@ -162,6 +162,7 @@ export interface BehaviorCandidateRecord {
   game_type: string;
   version: string;
   status: "pending_review" | "approved" | "rejected" | "enabled" | string;
+  enabled?: boolean;
   issues: string[];
   recommendations: string[];
   rollback_target: string;

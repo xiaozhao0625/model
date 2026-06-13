@@ -25,7 +25,7 @@ class MasterSettings:
     def database_backend(self) -> str:
         if self.database_url.startswith("sqlite:///"):
             return "sqlite"
-        if self.database_url.startswith(("postgresql://", "postgres://")):
+        if self.database_url.startswith(("postgresql://", "postgres://", "postgresql+psycopg://")):
             return "postgresql"
         return "unknown"
 

@@ -184,7 +184,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
           status: "approved"
         },
-        { method: "POST" }
+        { method: "POST", body: JSON.stringify({}) }
       ),
     rejectBehaviorCandidate: (candidatePackId) =>
       request(
@@ -193,7 +193,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
           status: "rejected"
         },
-        { method: "POST" }
+        { method: "POST", body: JSON.stringify({}) }
       ),
     rollbackBehaviorCandidate: (candidatePackId) =>
       request(
@@ -202,9 +202,9 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
           status: "pending_review"
         },
-        { method: "POST" }
+        { method: "POST", body: JSON.stringify({}) }
       ),
-    getToolHealth: () => request("/api/tools/health", mockToolHealth),
+    getToolHealth: () => request("/api/tool-health", mockToolHealth),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }

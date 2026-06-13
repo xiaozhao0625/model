@@ -38,3 +38,10 @@
 - P12 行为包学习输出候选包默认 `pending_review`，不自动启用、不训练模型、不修改原始 run 产物。
 - P12.5-P13Prep 默认 OCR 为 disabled/mock，真实 OCR、ADB、OBS、FFmpeg、Playwright、pywinauto 均 optional/skipped。
 - P12.5.1 只补 Web Console 验收入口，不改核心状态流、不进入 P13。
+# P12.5.2 更新：PostgreSQL-backed Production Readiness Console API
+
+- P12.5.2 已补齐 Master API 生产验收数据接口，覆盖质量报告、OCR 报告、工具健康、Android runtime、行为包候选审核和部署诊断。
+- 默认开发/测试仍使用 SQLite；生产可通过 `DATABASE_URL` 切换 PostgreSQL。
+- Worker 不直接连接数据库，只通过 Master HTTP API 上报。
+- Web Console 继续优先真实 API，失败时使用 mock fallback。
+- P13 仍为下一阶段；本阶段不进入四机部署。
