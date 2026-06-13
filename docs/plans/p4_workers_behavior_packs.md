@@ -31,12 +31,41 @@ P4.1 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.2 Behavior Pack 合同层 + FPS/MOBA 示例包 + Mock Runner
+
+状态：done。
+
+已完成内容：
+
+- 定义 `GameType`：`fps`、`moba`、`open_world`、`2d_game`、`mobile_game`。
+- 定义 `BehaviorActionType`：`move`、`camera`、`combat`、`ui`、`recovery`、`wait`、`capture_hint`、`request_manual`、`abort`。
+- 定义 `BehaviorAction`、`BehaviorPack`、`BehaviorSafetyDecision`、`BehaviorRunResult`。
+- 实现 `BehaviorPackLoader`，从 JSON 示例包加载并校验必填字段。
+- 实现 `BehaviorSafetyGate`，检查 `forbidden_context` 和动作 `risk_flags`。
+- 新增 `fps_mock_v1.example.json`，声明 FPS high 桶、`record_then_extract=true`、move/camera/combat/recovery/capture_hint 示例动作。
+- 新增 `moba_mock_v1.example.json`，声明 MOBA high 桶、`record_then_extract=true`、move/camera/combat/ui/recovery/capture_hint 示例动作。
+- 实现 `MockBehaviorRunner`，复用 `LocalRunSession`，写入 `behavior_actions.jsonl`，生成 mock 图片，并最多推进到 `capture_completed`。
+
+P4.2 明确未实现：
+
+- 不接真实 AutoHotkey。
+- 不接真实 pydirectinput。
+- 不接真实 OBS。
+- 不接真实 FFmpeg。
+- 不接真实 ADB。
+- 不接 Airtest/Appium。
+- 不接真实 Playwright。
+- 不接真实 pywinauto。
+- 不执行真实鼠标或键盘动作。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
 ## Worker 策略
 
 - Web Worker 后续优先使用 Playwright，但 P4.1 只声明能力，不接真实 Playwright。
 - PC App Worker 后续优先使用 pywinauto，但 P4.1 只声明能力，不接真实 pywinauto。
 - Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
-- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧，但 P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，不实现真实链路。
+- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，不实现真实链路。
 
 ## 行为包原则
 
@@ -44,6 +73,8 @@ P4.1 明确未实现：
 - AI 只参与启动、场景判断、按钮定位、卡住恢复等低频决策。
 - AI 不参与 Worker 高频逐帧执行。
 - 高频游戏采集不走模型逐帧控制。
+- `forbidden_context` 命中或动作 `risk_flags` 包含禁止风险时，行为包 runner 必须 `request_manual` 或 `abort`。
+- P4.2 使用 JSON 示例包，不引入 YAML 依赖。
 
 ## 禁止范围
 
@@ -51,6 +82,7 @@ P4.1 明确未实现：
 - 不让模型逐帧控制游戏。
 - 不绕过平台统一状态机。
 - 不在 Worker 中直接进入 completed。
+- 不在行为包 mock runner 中执行真实系统动作。
 
 ## 验收标准
 
@@ -58,3 +90,4 @@ P4.1 明确未实现：
 - PC 游戏 high 桶链路必须保留行为包 + OBS/FFmpeg 抽帧方向。
 - Worker 输出服从统一 bucket 规则和 valid_total 规则。
 - Mock Worker 可用于本地单元测试和后续 P4 dry-run 验证。
+- Mock Behavior Runner 可用于本地单元测试和后续 FPS/MOBA 行为包 dry-run 验证。

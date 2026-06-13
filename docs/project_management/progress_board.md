@@ -28,8 +28,9 @@
 | P3.2.1 多语言风险词表 + 审计落盘策略 | done | 已抽出可配置中英文风险词表，并固化 audit_log_path/run_dir 审计落盘策略。 |
 | P3.3 Provider 适配器骨架 + 注册中心 | done | 已建立 provider 配置、能力声明、注册中心和真实模型 stub provider。 |
 | P3.4 Model Gateway dry-run 总验收 | done | 已新增本地 dry-run 脚本，验证 registry、service、风险识别、安全拦截和审计日志串联。 |
-| P4 多类型 Worker 与行为包 | in_progress | 已进入 Worker 合同层，真实 Worker 和行为包仍待后续阶段实现。 |
+| P4 多类型 Worker 与行为包 | in_progress | 已完成 Worker 合同层和行为包 mock 合同层；真实 Worker、真实输入控制和 OBS/FFmpeg 链路仍待后续阶段实现。 |
 | P4.1 Worker 合同层 + 能力注册 + Mock Worker | done | 已建立 Worker 合同、能力注册中心和复用 LocalRunSession 的 MockWorker。 |
+| P4.2 Behavior Pack 合同层 + FPS/MOBA 示例包 + Mock Runner | done | 已建立行为包合同、JSON 示例包、安全校验和复用 LocalRunSession 的 MockBehaviorRunner。 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 能力稳定后开始。 |
 | P6 行为包自我深化 | pending | 等行为包运行数据稳定后开始。 |
 | P7 四机并发与生产化压测 | pending | 等前序能力具备后开始。 |
@@ -50,6 +51,9 @@
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、cleanup_record.json、run.log。
 - Worker 必须复用 LocalRunSession，不重复实现截图分桶、去重、summary、状态流。
 - Worker 不直接进入 completed；上传确认、清理和 completed 收口由 P2 流程负责。
+- 行为包是游戏连续操作的核心；P4.2 只实现 JSON 示例包和 MockBehaviorRunner。
+- MockBehaviorRunner 必须复用 LocalRunSession，最多推进到 capture_completed，不进入 upload_pending、uploaded_confirmed、local_deleted、completed。
+- behavior_actions.jsonl 记录行为包 mock 执行审计。
 - PC 游戏 high 桶必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明能力，不接真实 OBS/FFmpeg。
 - AI 只做低频决策，只能返回 ActionProposal，不直接执行动作。
 - 后续业务层不得直接调用 provider，应通过 ModelGatewayService。

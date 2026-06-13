@@ -1,0 +1,79 @@
+{
+  "pack_id": "fps_mock_v1",
+  "game_type": "fps",
+  "version": "1.0",
+  "status": "example",
+  "allowed_context": [
+    "match",
+    "training",
+    "combat"
+  ],
+  "forbidden_context": [
+    "captcha",
+    "payment",
+    "recharge",
+    "purchase",
+    "send_chat",
+    "account_security",
+    "anti_cheat_bypass"
+  ],
+  "capture_bucket": "high",
+  "record_then_extract": true,
+  "actions": [
+    {
+      "action_id": "fps_move_patrol",
+      "action_type": "move",
+      "description": "Mock strafe and forward movement for scene variety.",
+      "duration_ms": 400,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "pattern": "strafe_forward"
+      }
+    },
+    {
+      "action_id": "fps_camera_sweep",
+      "action_type": "camera",
+      "description": "Mock camera sweep across the play area.",
+      "duration_ms": 350,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "yaw_delta": 45
+      }
+    },
+    {
+      "action_id": "fps_combat_probe",
+      "action_type": "combat",
+      "description": "Mock combat-like input sequence without real input.",
+      "duration_ms": 300,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "mode": "mock"
+      }
+    },
+    {
+      "action_id": "fps_recovery_wait",
+      "action_type": "recovery",
+      "description": "Mock recovery wait for stuck-state handling.",
+      "duration_ms": 200,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "reason": "mock_recenter"
+      }
+    },
+    {
+      "action_id": "fps_capture_hint",
+      "action_type": "capture_hint",
+      "description": "Mark a mock high-bucket capture point.",
+      "duration_ms": 100,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "hint": "high_frequency_frame"
+      }
+    }
+  ]
+}

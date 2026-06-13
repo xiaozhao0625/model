@@ -1,0 +1,91 @@
+{
+  "pack_id": "moba_mock_v1",
+  "game_type": "moba",
+  "version": "1.0",
+  "status": "example",
+  "allowed_context": [
+    "match",
+    "lane",
+    "combat",
+    "result_screen"
+  ],
+  "forbidden_context": [
+    "captcha",
+    "payment",
+    "recharge",
+    "purchase",
+    "send_chat",
+    "account_security",
+    "anti_cheat_bypass"
+  ],
+  "capture_bucket": "high",
+  "record_then_extract": true,
+  "actions": [
+    {
+      "action_id": "moba_lane_move",
+      "action_type": "move",
+      "description": "Mock lane movement for map variation.",
+      "duration_ms": 400,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "pattern": "lane_path"
+      }
+    },
+    {
+      "action_id": "moba_camera_pan",
+      "action_type": "camera",
+      "description": "Mock camera pan across lane and minimap context.",
+      "duration_ms": 300,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "pan": "short"
+      }
+    },
+    {
+      "action_id": "moba_combat_probe",
+      "action_type": "combat",
+      "description": "Mock combat-like action without real input.",
+      "duration_ms": 300,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "mode": "mock"
+      }
+    },
+    {
+      "action_id": "moba_ui_scoreboard",
+      "action_type": "ui",
+      "description": "Mock safe UI view such as scoreboard inspection.",
+      "duration_ms": 200,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "view": "scoreboard"
+      }
+    },
+    {
+      "action_id": "moba_recovery_wait",
+      "action_type": "recovery",
+      "description": "Mock recovery wait for stuck-state handling.",
+      "duration_ms": 200,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "reason": "mock_recenter"
+      }
+    },
+    {
+      "action_id": "moba_capture_hint",
+      "action_type": "capture_hint",
+      "description": "Mark a mock high-bucket capture point.",
+      "duration_ms": 100,
+      "bucket": "high",
+      "risk_flags": [],
+      "params": {
+        "hint": "lane_frame"
+      }
+    }
+  ]
+}
