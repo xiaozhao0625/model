@@ -39,6 +39,11 @@
     "roles": ["M0"],
     "required": true,
     "detect_commands": ["psql --version"],
+    "candidate_paths": [
+      "E:\\work\\pgsql\\bin\\psql.exe",
+      "D:\\work\\pgsql\\bin\\psql.exe",
+      "C:\\Program Files\\PostgreSQL*\\bin\\psql.exe"
+    ],
     "winget_id": "PostgreSQL.PostgreSQL",
     "install_hint": "Install PostgreSQL locally on M0 and configure DATABASE_URL outside Git.",
     "manual_install_note": "Database initialization and credentials must be handled manually."

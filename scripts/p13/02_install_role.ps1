@@ -21,7 +21,8 @@ $plan = @()
 foreach ($item in $catalog) {
     if ($roleTools -contains $item.name) {
         $item.required = @($roleConfig.required_tools) -contains $item.name
-        $plan += Get-InstallStep -CatalogItem $item -Role $Role
+        $detection = Test-Tool -CatalogItem $item -Role $Role
+        $plan += Get-InstallStep -CatalogItem $item -Role $Role -DetectionReport $detection
     }
 }
 

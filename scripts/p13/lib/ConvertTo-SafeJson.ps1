@@ -61,5 +61,9 @@ function Save-SafeJson {
     )
     $parent = Split-Path -Parent $Path
     if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    if ($InputObject -is [array] -and $InputObject.Count -eq 0) {
+        '[]' | Set-Content -LiteralPath $Path -Encoding UTF8
+        return
+    }
     ConvertTo-SafeJson -InputObject $InputObject -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
 }

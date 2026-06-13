@@ -44,6 +44,62 @@ function Invoke-DetectCommand {
     }
 }
 
+function Resolve-CandidatePath {
+    param([string]$CandidatePath)
+    if (-not $CandidatePath) { return $null }
+    if ($CandidatePath -match '[\*\?]') {
+        $match = Get-ChildItem -Path $CandidatePath -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($match) { return $match.FullName }
+        return $null
+    }
+    if (Test-Path -LiteralPath $CandidatePath -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $CandidatePath).Path
+    }
+    return $null
+}
+
+function Get-ToolCandidatePaths {
+    param($CatalogItem)
+    $paths = @()
+    foreach ($field in @('candidate_paths', 'known_paths')) {
+        if ($CatalogItem.PSObject.Properties.Name -contains $field) {
+            $value = $CatalogItem.$field
+            if ($value) { $paths += @($value) }
+        }
+    }
+    return @($paths)
+}
+
+function Invoke-DetectCandidatePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$VersionArgument = '--version'
+    )
+    $resolved = Resolve-CandidatePath -CandidatePath $Path
+    if (-not $resolved) {
+        return [ordered]@{ ok = $false; output = 'candidate_path_not_found'; path = $Path }
+    }
+    try {
+        $output = & $resolved $VersionArgument 2>&1 | Select-Object -First 5
+        return [ordered]@{ ok = $true; output = (($output | Out-String).Trim()); path = $resolved }
+    } catch {
+        return [ordered]@{ ok = $false; output = $_.Exception.Message; path = $resolved }
+    }
+}
+
+function Test-PostgreSqlPort {
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $async = $client.BeginConnect('127.0.0.1', 5432, $null, $null)
+        $ok = $async.AsyncWaitHandle.WaitOne(1000, $false)
+        if ($ok) { $client.EndConnect($async) }
+        $client.Close()
+        return [bool]$ok
+    } catch {
+        return $false
+    }
+}
+
 function Test-Tool {
     param(
         [Parameter(Mandatory = $true)]$CatalogItem,
@@ -69,18 +125,45 @@ function Test-Tool {
             break
         }
     }
+    if (-not $available) {
+        foreach ($candidatePath in (Get-ToolCandidatePaths -CatalogItem $CatalogItem)) {
+            $result = Invoke-DetectCandidatePath -Path $candidatePath
+            $attempts += [pscustomobject]@{
+                command = "$candidatePath --version"
+                ok = $result.ok
+                output = $result.output
+                path = $result.path
+            }
+            if ($result.ok) {
+                $available = $true
+                $path = $result.path
+                $version = Get-VersionFromText $result.output
+                break
+            }
+        }
+    }
     $versionOk = Compare-MinVersion -Actual $version -Minimum $CatalogItem.min_version
     $status = 'available'
     if (-not $available) { $status = 'missing' }
     elseif (-not $versionOk) { $status = 'version_mismatch' }
+    $message = "tool status: $status"
+    $nextAction = $CatalogItem.install_hint
+    if ($CatalogItem.name -eq 'postgresql' -and -not $available -and (Test-PostgreSqlPort)) {
+        $status = 'partial'
+        $message = 'PostgreSQL port is reachable but psql client was not found'
+        $nextAction = 'add PostgreSQL bin to PATH or configure known path'
+    }
     [pscustomobject]@{
         name = $CatalogItem.name
         role = $Role
         required = $required
         status = $status
+        message = $message
+        next_action = $nextAction
         version = $version
         min_version = $CatalogItem.min_version
         path = $path
+        candidate_paths = Get-ToolCandidatePaths -CatalogItem $CatalogItem
         winget_id = $CatalogItem.winget_id
         install_hint = $CatalogItem.install_hint
         manual_install_note = $CatalogItem.manual_install_note

@@ -16,6 +16,8 @@ def test_p13_3_catalog_and_roles_are_complete():
     names = {item["name"] for item in catalog}
     assert {"python", "git", "nodejs", "postgresql", "redis", "nvidia_driver", "obs", "ffmpeg", "playwright", "adb"} <= names
     assert all(required_catalog_fields <= set(item) for item in catalog)
+    postgresql = next(item for item in catalog if item["name"] == "postgresql")
+    assert postgresql["candidate_paths"][0] == "E:\\work\\pgsql\\bin\\psql.exe"
     assert {"M0", "W1", "W2", "W3"} == set(matrix["roles"])
 
     for role, config in matrix["roles"].items():
@@ -91,3 +93,11 @@ def test_p13_3_remote_unreachable_is_reported_not_crashed():
     orchestrator = (REPO_ROOT / "scripts/p13/m0_orchestrator.ps1").read_text(encoding="utf-8")
     assert "remote_unreachable" in orchestrator
     assert "Enable OpenSSH Server" in orchestrator
+
+
+def test_p13_3_postgresql_partial_detection_is_explainable():
+    detector = (REPO_ROOT / "scripts/p13/lib/Detect-Tool.ps1").read_text(encoding="utf-8")
+    installer = (REPO_ROOT / "scripts/p13/lib/Install-Tool.ps1").read_text(encoding="utf-8")
+    assert "PostgreSQL port is reachable but psql client was not found" in detector
+    assert "add PostgreSQL bin to PATH or configure known path" in detector
+    assert "already_available" in installer

@@ -3,13 +3,45 @@
 function Get-InstallStep {
     param(
         [Parameter(Mandatory = $true)]$CatalogItem,
-        [Parameter(Mandatory = $true)][string]$Role
+        [Parameter(Mandatory = $true)][string]$Role,
+        $DetectionReport = $null
     )
+    if ($DetectionReport -and $DetectionReport.status -eq 'available') {
+        return [pscustomobject]@{
+            name = $CatalogItem.name
+            role = $Role
+            required = [bool]$CatalogItem.required
+            current_status = $DetectionReport.status
+            detected_path = $DetectionReport.path
+            detected_version = $DetectionReport.version
+            winget_id = $CatalogItem.winget_id
+            action = 'already_available'
+            install_hint = $CatalogItem.install_hint
+            manual_install_note = $CatalogItem.manual_install_note
+        }
+    }
+    if ($DetectionReport -and $DetectionReport.status -eq 'partial') {
+        return [pscustomobject]@{
+            name = $CatalogItem.name
+            role = $Role
+            required = [bool]$CatalogItem.required
+            current_status = $DetectionReport.status
+            detected_path = $DetectionReport.path
+            detected_version = $DetectionReport.version
+            winget_id = $CatalogItem.winget_id
+            action = 'manual_configuration_required'
+            install_hint = $DetectionReport.next_action
+            manual_install_note = $DetectionReport.message
+        }
+    }
     $manual = [bool]$CatalogItem.manual_install_note -or -not $CatalogItem.winget_id
     [pscustomobject]@{
         name = $CatalogItem.name
         role = $Role
         required = [bool]$CatalogItem.required
+        current_status = $(if ($DetectionReport) { $DetectionReport.status } else { 'not_checked' })
+        detected_path = $(if ($DetectionReport) { $DetectionReport.path } else { $null })
+        detected_version = $(if ($DetectionReport) { $DetectionReport.version } else { $null })
         winget_id = $CatalogItem.winget_id
         action = $(if ($manual) { 'manual_install_required' } else { 'winget_install' })
         install_hint = $CatalogItem.install_hint
@@ -28,6 +60,24 @@ function Invoke-InstallStep {
             action = $Step.action
             status = 'planned'
             message = 'Plan mode only; no installation executed.'
+            next_action = $Step.install_hint
+        }
+    }
+    if ($Step.action -eq 'already_available') {
+        return [pscustomobject]@{
+            name = $Step.name
+            action = $Step.action
+            status = 'already_available'
+            message = 'Tool is already detected; no installation executed.'
+            next_action = 'No action required.'
+        }
+    }
+    if ($Step.action -eq 'manual_configuration_required') {
+        return [pscustomobject]@{
+            name = $Step.name
+            action = $Step.action
+            status = 'manual_configuration_required'
+            message = $Step.manual_install_note
             next_action = $Step.install_hint
         }
     }

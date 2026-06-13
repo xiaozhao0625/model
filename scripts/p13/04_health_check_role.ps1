@@ -37,8 +37,8 @@ foreach ($item in $catalog) {
         $checks += [pscustomobject]@{
             name = "tool:$($tool.name)"
             status = $(if ($tool.status -eq 'available') { 'ok' } else { $tool.status })
-            message = "tool status: $($tool.status)"
-            next_action = $(if ($tool.status -eq 'available') { $null } else { $tool.install_hint })
+            message = $tool.message
+            next_action = $(if ($tool.status -eq 'available') { $null } else { $tool.next_action })
         }
     }
 }
