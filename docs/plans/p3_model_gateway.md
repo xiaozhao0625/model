@@ -13,9 +13,10 @@
 - ModelGatewayService。
 - 可配置风险词表。
 - 中英文输入风险规则识别。
+- Provider 配置、能力声明和注册中心。
+- 真实模型适配器 stub provider。
 - 高风险动作 safety gate。
 - act 调用 JSONL 审计日志。
-- 后续模型接入的 provider 边界。
 
 ## 核心规则
 
@@ -25,8 +26,10 @@
 - 高频截图和游戏连续动作不走模型。
 - 高频游戏采集仍由行为包 + OBS/FFmpeg 负责。
 - P3 当前不实现高频游戏采集。
-- P3 当前只支持 mock provider。
+- P3 当前只支持 mock provider 和真实模型 stub provider。
 - 后续业务层不得直接调用 provider，应通过 ModelGatewayService。
+- provider 必须声明能力，不能让不支持 act 的 provider 处理 act。
+- 安全校验仍由 ModelGatewayService + SafetyGate 负责。
 - 不新增正式 run 状态。
 - 禁止验证码、支付、充值、购买、聊天发送、账号安全验证、反作弊绕过。
 - 遇到高风险动作必须 request_manual 或 abort。
@@ -74,6 +77,27 @@
 - 如果提供 run_dir，audit_log_path 必须位于 run_dir 内，禁止路径逃逸。
 - 不指定 audit_log_path 或 run_dir 时，act 调用必须失败并给出明确错误。
 
+## P3.3 Provider 注册中心
+
+- ProviderType 固定包含 mock、ui_tars、showui、qwen_vl、omniparser、gui_actor、os_atlas。
+- ProviderCapabilities 声明 supports_scene_classify、supports_ground、supports_act、requires_gpu、default_device。
+- ProviderConfig 声明 provider_name、provider_type、enabled、capabilities、config。
+- ProviderConfigLoader 从 JSON 加载 provider 配置。
+- configs/model_gateway/providers.example.json 提供 mock、ui_tars、showui、qwen_vl、omniparser 示例配置。
+- ProviderRegistry 支持 register、get、list_enabled、select_for_task。
+- select_for_task 必须按 enabled 和 capability 过滤。
+- 不支持 act 的 provider 不能被 select_for_task(act) 选中。
+- stub provider 不调用真实模型，不导入 torch/transformers。
+
+## Stub Provider 行为
+
+- Mock 复用 MockModelGatewayProvider。
+- UI-TARS stub 不调用真实模型，只返回 request_manual 或 no_op。
+- ShowUI stub 不调用真实模型，ground 返回 found=false；act 不支持。
+- Qwen-VL stub 不调用真实模型，scene_classify 返回 unknown。
+- OmniParser stub 不调用真实模型，ground 返回 found=false；act 不支持。
+- 所有 stub provider 必须明确 provider_name。
+
 ## 风险词表结构
 
 默认风险类型：
@@ -107,6 +131,8 @@ model_gateway.log 每行至少包含：
 
 - 不接真实模型。
 - 不下载模型。
+- 不引入 torch。
+- 不引入 transformers。
 - 不实现 FastAPI。
 - 不实现 UI。
 - 不接数据库。
@@ -119,12 +145,14 @@ model_gateway.log 每行至少包含：
 
 ## 验收标准
 
-- 英文 captcha、payment 风险可识别。
-- 中文验证码、支付、充值、发送聊天风险可识别。
-- context 嵌套 dict/list 中的 anti_cheat_bypass 风险可识别。
-- 普通安全 instruction 不被误拦截。
-- Gateway Service 使用 risk_lexicon 后仍能拦截高风险 act。
-- 审计日志写入 run_dir/model_gateway.log。
-- audit_log_path 路径逃逸被拒绝。
-- 不指定 audit_log_path 或 run_dir 时，act 调用失败并给出明确错误。
+- providers.example.json 可以加载。
+- ProviderConfig 字段解析正确。
+- ProviderRegistry 可以注册 mock 和真实模型 stub provider。
+- disabled provider 不出现在 list_enabled。
+- select_for_task 按 scene_classify、ground、act capability 过滤。
+- 不支持 act 的 provider 处理 act 时失败或不可被选中。
+- 未知 provider type 报错。
+- stub provider 不执行真实动作。
+- stub provider 不导入 torch/transformers。
+- GatewayService 可以使用 registry 返回的 mock provider 完成安全 act。
 - 完整单元测试通过。

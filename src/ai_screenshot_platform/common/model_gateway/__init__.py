@@ -1,1 +1,1 @@
-"""Model Gateway contracts, mock provider, risk policy, service, and safety helpers."""
+"""Model Gateway contracts, provider registry, risk policy, service, and safety helpers."""

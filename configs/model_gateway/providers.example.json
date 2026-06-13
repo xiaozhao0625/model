@@ -1,0 +1,94 @@
+{
+  "providers": [
+    {
+      "provider_name": "mock",
+      "provider_type": "mock",
+      "enabled": true,
+      "capabilities": {
+        "supports_scene_classify": true,
+        "supports_ground": true,
+        "supports_act": true,
+        "requires_gpu": false,
+        "default_device": "cpu"
+      },
+      "config": {
+        "mode": "local_mock"
+      }
+    },
+    {
+      "provider_name": "ui_tars_stub",
+      "provider_type": "ui_tars",
+      "enabled": true,
+      "capabilities": {
+        "supports_scene_classify": false,
+        "supports_ground": false,
+        "supports_act": true,
+        "requires_gpu": true,
+        "default_device": "cuda"
+      },
+      "config": {
+        "model_path": null
+      }
+    },
+    {
+      "provider_name": "showui_stub",
+      "provider_type": "showui",
+      "enabled": true,
+      "capabilities": {
+        "supports_scene_classify": false,
+        "supports_ground": true,
+        "supports_act": false,
+        "requires_gpu": true,
+        "default_device": "cuda"
+      },
+      "config": {
+        "model_path": null
+      }
+    },
+    {
+      "provider_name": "qwen_vl_stub",
+      "provider_type": "qwen_vl",
+      "enabled": true,
+      "capabilities": {
+        "supports_scene_classify": true,
+        "supports_ground": false,
+        "supports_act": false,
+        "requires_gpu": true,
+        "default_device": "cuda"
+      },
+      "config": {
+        "model_path": null
+      }
+    },
+    {
+      "provider_name": "omniparser_stub",
+      "provider_type": "omniparser",
+      "enabled": true,
+      "capabilities": {
+        "supports_scene_classify": false,
+        "supports_ground": true,
+        "supports_act": false,
+        "requires_gpu": true,
+        "default_device": "cuda"
+      },
+      "config": {
+        "model_path": null
+      }
+    },
+    {
+      "provider_name": "disabled_mock",
+      "provider_type": "mock",
+      "enabled": false,
+      "capabilities": {
+        "supports_scene_classify": true,
+        "supports_ground": true,
+        "supports_act": true,
+        "requires_gpu": false,
+        "default_device": "cpu"
+      },
+      "config": {
+        "mode": "disabled_example"
+      }
+    }
+  ]
+}
