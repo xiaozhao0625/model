@@ -1,0 +1,14 @@
+{
+  "pack_id": "moba_real_v1_safe_template",
+  "game_type": "moba",
+  "version": "1.0",
+  "status": "disabled_template",
+  "capture_bucket": "high",
+  "record_then_extract": true,
+  "real_execution_enabled": false,
+  "actions": [
+    {"action_id": "camera_lane", "action_type": "camera", "description": "safe lane camera template", "duration_ms": 300, "bucket": "high", "risk_flags": [], "params": {}},
+    {"action_id": "ui_safe", "action_type": "ui", "description": "safe UI template", "duration_ms": 200, "bucket": "high", "risk_flags": [], "params": {}},
+    {"action_id": "capture_hint", "action_type": "capture_hint", "description": "capture hint only", "duration_ms": 0, "bucket": "high", "risk_flags": [], "params": {}}
+  ]
+}

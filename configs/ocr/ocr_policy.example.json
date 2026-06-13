@@ -1,0 +1,21 @@
+{
+  "enabled_by_default": false,
+  "default_provider": "disabled",
+  "fallback_provider": "mock",
+  "allow_real_ocr": false,
+  "providers": {
+    "disabled": {"enabled": true},
+    "mock": {"enabled": true},
+    "paddleocr": {"enabled": false, "use_gpu": false},
+    "easyocr": {"enabled": false, "use_gpu": false}
+  },
+  "privacy": {
+    "store_full_text": false,
+    "store_risk_snippets_only": true,
+    "max_snippet_length": 32
+  },
+  "risk_detection": {
+    "enabled": true,
+    "request_manual_on_risk": true
+  }
+}

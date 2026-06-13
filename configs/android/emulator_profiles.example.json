@@ -1,0 +1,20 @@
+{
+  "profiles": [
+    {
+      "profile_id": "generic_adb_dev",
+      "emulator_type": "generic_adb",
+      "display_name": "Generic ADB Device",
+      "adb_serial": null,
+      "adb_host": "127.0.0.1",
+      "adb_port": 5555,
+      "app_package": "com.example.app",
+      "app_activity": ".MainActivity",
+      "apk_path": null,
+      "screenshot_method": "screencap",
+      "ui_dump_enabled": true,
+      "ocr_fallback_enabled": false,
+      "snapshot_enabled": false,
+      "notes": "Example only; real emulator setup is manual."
+    }
+  ]
+}

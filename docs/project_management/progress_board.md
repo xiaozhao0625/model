@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-当前已完成 P12：行为包自我深化引擎。下一阶段为 P13：四机部署、分布式调度、并发压测。
+当前已完成 P12.5-P13Prep：生产采集就绪强化。下一阶段为 P13：四机部署、分布式调度、并发压测。
 
 | 阶段 | 状态 | 说明 |
 | --- | --- | --- |
@@ -19,6 +19,7 @@
 | P10 真实采集适配器接入 | done | 已完成真实采集适配器边界、可选工具健康检查、smoke 脚本和 stub fallback。 |
 | P11 模型拉取、模型部署、真实 Provider 接入 | done | 已完成模型 manifest、下载计划、Provider runtime、真实 Provider 边界和 optional smoke。 |
 | P12 行为包自我深化引擎 | done | 已完成离线输入读取、指标计算、FPS/MOBA 分析、候选包生成、人工审核、回滚和 dry-run。 |
+| P12.5-P13Prep 生产采集就绪强化 | done | 已完成 OCR 公共能力、Quality Gate、Capture Core、Android 模拟器 optional runtime 和四机部署材料预备；不进入真实四机部署。 |
 | P13 四机部署、分布式调度、并发压测 | next | 后续进入生产化部署与并发压测阶段。 |
 
 ## 当前架构基线
@@ -40,6 +41,8 @@
 - 禁止自动处理验证码、支付、充值、购买、聊天发送、账号安全验证、反作弊绕过。
 - app-screenshot-agent 只作为 Android Worker 和公共质量模块的复用来源，不整体替代新平台架构。
 - P12 行为包学习仅读取离线记录，输出候选包默认 `pending_review`，不自动启用、不训练模型、不修改原始 run 产物。
+- P12.5-P13Prep 默认 OCR 为 disabled/mock，真实 OCR、ADB、OBS、FFmpeg、Playwright、pywinauto 均 optional/skipped。
+- P12.5-P13Prep 只做生产前就绪强化，不训练模型、不下载模型、不进入真实四机部署。
 
 ## 风险与阻塞
 

@@ -1,0 +1,5 @@
+{
+  "driver_type": "pc_app",
+  "steps": ["focus_safe_panel", "scroll", "capture_hint"],
+  "real_execution_enabled": false
+}

@@ -1,0 +1,8 @@
+{
+  "default_bucket": "low",
+  "game_bucket": "high",
+  "reject_risky_scenes": true,
+  "fixed_cap": 10,
+  "target_min": 1000,
+  "target_max": 5000
+}

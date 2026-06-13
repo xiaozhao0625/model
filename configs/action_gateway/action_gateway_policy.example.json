@@ -1,0 +1,14 @@
+{
+  "default_action_on_risk": "request_manual",
+  "block_ocr_risks": true,
+  "forbidden_risks": [
+    "captcha",
+    "payment",
+    "recharge",
+    "purchase",
+    "chat_send",
+    "account_security",
+    "anti_cheat_warning"
+  ],
+  "real_action_execution_enabled": false
+}

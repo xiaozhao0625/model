@@ -1,0 +1,26 @@
+{
+  "m0": {
+    "role": "master",
+    "machine_name": "M0-5060Ti",
+    "host": "192.168.1.10",
+    "services": ["master_api", "web_console", "postgresql", "redis", "model_gateway"]
+  },
+  "w1": {
+    "role": "pc_game_worker",
+    "machine_name": "W1-3060-PC-GAME",
+    "master_url": "http://192.168.1.10:8000",
+    "capabilities": ["pc_game", "obs_capture", "ffmpeg_extract", "behavior_pack"]
+  },
+  "w2": {
+    "role": "pc_app_web_worker",
+    "machine_name": "W2-3060-PC-APP-WEB",
+    "master_url": "http://192.168.1.10:8000",
+    "capabilities": ["pc_app", "web", "playwright", "pywinauto", "mss", "dxcam", "ocr_optional"]
+  },
+  "w3": {
+    "role": "android_worker",
+    "machine_name": "W3-3060-ANDROID",
+    "master_url": "http://192.168.1.10:8000",
+    "capabilities": ["android", "adb", "emulator", "ocr_optional"]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "driver_type": "web",
+  "content_area_only": true,
+  "steps": ["scroll", "wait", "capture_hint"],
+  "real_execution_enabled": false
+}

@@ -1,0 +1,11 @@
+{
+  "risk_terms": {
+    "captcha": ["captcha", "verification", "验证码", "人机验证", "安全验证"],
+    "payment": ["payment", "pay", "checkout", "支付", "付款", "确认支付"],
+    "recharge": ["recharge", "top up", "充值"],
+    "purchase": ["purchase", "buy", "order", "购买", "订单"],
+    "account_security": ["account security", "password", "账号安全", "登录验证", "绑定手机"],
+    "chat_send": ["send chat", "chat message", "发送聊天", "发消息", "私聊"],
+    "anti_cheat_warning": ["anti-cheat", "反作弊", "绕过检测"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "pack_id": "fps_real_v1_safe_template",
+  "game_type": "fps",
+  "version": "1.0",
+  "status": "disabled_template",
+  "capture_bucket": "high",
+  "record_then_extract": true,
+  "real_execution_enabled": false,
+  "actions": [
+    {"action_id": "move_safe", "action_type": "move", "description": "safe movement template", "duration_ms": 500, "bucket": "high", "risk_flags": [], "params": {}},
+    {"action_id": "camera_safe", "action_type": "camera", "description": "safe camera template", "duration_ms": 300, "bucket": "high", "risk_flags": [], "params": {}},
+    {"action_id": "capture_hint", "action_type": "capture_hint", "description": "capture hint only", "duration_ms": 0, "bucket": "high", "risk_flags": [], "params": {}}
+  ]
+}
