@@ -3,17 +3,25 @@ import type {
   ApiEnvelope,
   AppRecord,
   GroundResult,
+  BehaviorCandidateRecord,
+  OcrStatusRecord,
+  QualityReportRecord,
   RunRecord,
   RunSummary,
   SceneClassifyResult,
+  ToolHealthRecord,
   UploadRecord,
   WorkerRecord
 } from "./api-types";
 import {
   mockApps,
+  mockBehaviorCandidates,
+  mockOcrStatus,
   mockModelProviders,
+  mockQualityReports,
   mockRuns,
   mockSummary,
+  mockToolHealth,
   mockUploads,
   mockWorkers
 } from "./mock-data";
@@ -41,6 +49,14 @@ export interface ApiClient {
   ground(payload: Record<string, unknown>): Promise<GroundResult>;
   act(payload: Record<string, unknown>): Promise<ActionProposal>;
   listModelProviders(): Promise<typeof mockModelProviders>;
+  listQualityReports(): Promise<QualityReportRecord[]>;
+  getOcrStatus(): Promise<OcrStatusRecord>;
+  listBehaviorCandidates(): Promise<BehaviorCandidateRecord[]>;
+  getBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
+  approveBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
+  rejectBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
+  rollbackBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
+  getToolHealth(): Promise<ToolHealthRecord>;
   isUsingMockFallback(): boolean;
 }
 
@@ -153,6 +169,42 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         { method: "POST", body: JSON.stringify(payload) }
       ),
     listModelProviders: async () => mockModelProviders,
+    listQualityReports: () => request("/api/quality-reports", mockQualityReports),
+    getOcrStatus: () => request("/api/ocr/status", mockOcrStatus),
+    listBehaviorCandidates: () => request("/api/behavior-candidates", mockBehaviorCandidates),
+    getBehaviorCandidate: (candidatePackId) =>
+      request(
+        `/api/behavior-candidates/${candidatePackId}`,
+        mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]
+      ),
+    approveBehaviorCandidate: (candidatePackId) =>
+      request(
+        `/api/behavior-candidates/${candidatePackId}/approve`,
+        {
+          ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
+          status: "approved"
+        },
+        { method: "POST" }
+      ),
+    rejectBehaviorCandidate: (candidatePackId) =>
+      request(
+        `/api/behavior-candidates/${candidatePackId}/reject`,
+        {
+          ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
+          status: "rejected"
+        },
+        { method: "POST" }
+      ),
+    rollbackBehaviorCandidate: (candidatePackId) =>
+      request(
+        `/api/behavior-candidates/${candidatePackId}/rollback`,
+        {
+          ...(mockBehaviorCandidates.find((candidate) => candidate.candidate_pack_id === candidatePackId) || mockBehaviorCandidates[0]),
+          status: "pending_review"
+        },
+        { method: "POST" }
+      ),
+    getToolHealth: () => request("/api/tools/health", mockToolHealth),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }

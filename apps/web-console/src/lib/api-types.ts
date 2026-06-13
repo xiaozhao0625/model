@@ -126,3 +126,60 @@ export interface ActionProposal {
   risk_flags: string[];
   provider_name: string;
 }
+
+export interface QualityReportRecord {
+  run_id: string;
+  app_id: string;
+  total_images: number;
+  accepted_count: number;
+  rejected_count: number;
+  quality_pass_rate: number;
+  black_screen_count: number;
+  white_screen_count: number;
+  blurry_count: number;
+  wrong_window_count: number;
+  browser_chrome_count: number;
+  taskbar_count: number;
+  near_duplicate_count: number;
+  ocr_risk_hit_count: number;
+  reject_reason_distribution: Record<string, number>;
+}
+
+export interface OcrStatusRecord {
+  provider: string;
+  available: boolean;
+  status: "available" | "unavailable" | "skipped" | "disabled" | "unknown" | string;
+  risk_hits: string[];
+  scene_hints: string[];
+  unavailable_reason?: string | null;
+  paddleocr_optional_status: string;
+  easyocr_optional_status: string;
+}
+
+export interface BehaviorCandidateRecord {
+  candidate_pack_id: string;
+  base_pack_id: string;
+  game_type: string;
+  version: string;
+  status: "pending_review" | "approved" | "rejected" | "enabled" | string;
+  issues: string[];
+  recommendations: string[];
+  rollback_target: string;
+  created_from_run_id: string;
+}
+
+export interface ToolHealthRecord {
+  machine_ready: string;
+  master_ready: string;
+  worker_ready: string;
+  tools: Record<string, "available" | "unavailable" | "skipped" | "disabled" | "unknown" | string>;
+  android: {
+    adb_available: boolean;
+    devices: string[];
+    selected_device: string | null;
+    screencap_status: string;
+    ui_dump_status: string;
+    ocr_fallback_status: string;
+    input_status: string;
+  };
+}

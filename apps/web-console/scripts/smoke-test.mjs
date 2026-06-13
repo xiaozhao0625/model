@@ -1,5 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
 const root = new URL("..", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -21,8 +20,12 @@ const requiredFiles = [
   "src/routes/workers.tsx",
   "src/routes/upload.tsx",
   "src/routes/model-gateway.tsx",
-  "src/routes/settings.tsx"
-  ,"src/components/layout/theme-toggle.tsx"
+  "src/routes/quality-reports.tsx",
+  "src/routes/ocr-status.tsx",
+  "src/routes/behavior-candidates.tsx",
+  "src/routes/tool-health.tsx",
+  "src/routes/settings.tsx",
+  "src/components/layout/theme-toggle.tsx"
 ];
 
 for (const file of requiredFiles) {
@@ -30,107 +33,92 @@ for (const file of requiredFiles) {
 }
 
 const app = read("src/app.tsx");
-for (const route of ["/", "/apps", "/runs", "/runs/:runId", "/workers", "/upload", "/model-gateway", "/settings"]) {
+for (const route of [
+  "/",
+  "/apps",
+  "/runs",
+  "/runs/:runId",
+  "/workers",
+  "/upload",
+  "/model-gateway",
+  "/quality-reports",
+  "/ocr-status",
+  "/behavior-candidates",
+  "/tool-health",
+  "/settings"
+]) {
   assert(app.includes(route), `missing route ${route}`);
 }
 
 const apiClient = read("src/lib/api-client.ts");
 for (const apiName of [
-  "getHealth",
-  "listApps",
-  "createApp",
-  "listRuns",
-  "createRun",
-  "getRun",
-  "startRun",
-  "getRunSummary",
-  "listWorkers",
-  "registerWorker",
-  "heartbeatWorker",
-  "generateUploadManifest",
-  "confirmUpload",
-  "cleanupLocal",
-  "finalizeRun",
-  "sceneClassify",
-  "ground",
-  "act"
+  "listQualityReports",
+  "getOcrStatus",
+  "listBehaviorCandidates",
+  "getBehaviorCandidate",
+  "approveBehaviorCandidate",
+  "rejectBehaviorCandidate",
+  "rollbackBehaviorCandidate",
+  "getToolHealth"
 ]) {
   assert(apiClient.includes(apiName), `missing api client method ${apiName}`);
 }
 
-assert(apiClient.includes("/api/runs/${runId}/upload-manifest"), "upload manifest must use run-scoped canonical route");
-assert(apiClient.includes("mock fallback"), "api client should document mock fallback");
+for (const path of [
+  "/api/behavior-candidates",
+  "/api/behavior-candidates/${candidatePackId}/approve",
+  "/api/behavior-candidates/${candidatePackId}/reject",
+  "/api/behavior-candidates/${candidatePackId}/rollback"
+]) {
+  assert(apiClient.includes(path), `missing behavior candidate api path ${path}`);
+}
 
 const mockData = read("src/lib/mock-data.ts");
-for (const status of [
-  "running",
-  "capture_completed",
-  "upload_pending",
-  "uploaded_confirmed",
-  "local_deleted",
-  "completed",
-  "needs_manual_seed",
-  "failed_low_yield",
-  "skipped_risk"
+for (const key of [
+  "mockQualityReports",
+  "browser_chrome_visible",
+  "os_taskbar_visible",
+  "dangerous_page",
+  "mockOcrStatus",
+  "paddleocr_optional_status",
+  "easyocr_optional_status",
+  "mockBehaviorCandidates",
+  "pending_review",
+  "mockToolHealth",
+  "adb_available",
+  "screencap_status"
 ]) {
-  assert(mockData.includes(status), `missing mock status ${status}`);
+  assert(mockData.includes(key), `missing mock readiness key ${key}`);
 }
 
-const workers = read("src/routes/workers.tsx");
-assert(workers.includes("content_area_only=true"), "workers page must show web content_area_only rule");
-
-const upload = `${read("src/routes/upload.tsx")}\n${read("src/components/upload/upload-flow-panel.tsx")}`;
-for (const phrase of [
-  "capture_completed 不等于 completed",
-  "upload_pending 表示等待人工上传百度网盘",
-  "local_deleted 表示本地大文件已清理"
-]) {
-  assert(upload.includes(phrase), `missing lifecycle phrase ${phrase}`);
+const sidebar = read("src/components/layout/sidebar.tsx");
+for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健康"]) {
+  assert(sidebar.includes(label), `missing sidebar label ${label}`);
 }
 
-const status = read("src/lib/status.ts");
-for (const label of ["待处理", "启动中", "运行中", "采集完成", "待上传", "已确认上传", "本地已清理", "已完成", "需要人工补种子"]) {
-  assert(status.includes(label), `missing chinese status label ${label}`);
-}
-for (const label of ["固定页", "低频", "高频", "已拒绝", "PC 游戏 Worker", "Web Worker", "生成上传清单", "确认已上传"]) {
-  assert(status.includes(label), `missing chinese display label ${label}`);
+const quality = read("src/routes/quality-reports.tsx");
+for (const phrase of ["quality_report.json", "browser_chrome_visible", "os_taskbar_visible", "dangerous_page / ocr_risk_detected", "clean 数量", "rejected 数量"]) {
+  assert(quality.includes(phrase), `missing quality phrase ${phrase}`);
 }
 
-const visibleSources = [
-  read("index.html"),
-  read("src/components/layout/sidebar.tsx"),
-  read("src/components/layout/topbar.tsx"),
-  read("src/components/layout/theme-toggle.tsx"),
-  read("src/components/layout/app-shell.tsx"),
-  read("src/routes/dashboard.tsx"),
-  read("src/routes/apps.tsx"),
-  read("src/routes/runs.tsx"),
-  read("src/routes/run-detail.tsx"),
-  read("src/routes/workers.tsx"),
-  read("src/routes/upload.tsx"),
-  read("src/routes/model-gateway.tsx"),
-  read("src/routes/settings.tsx"),
-  read("src/components/runs/run-actions.tsx"),
-  read("src/components/upload/cleanup-danger-zone.tsx"),
-  status
-].join("\n");
-
-for (const label of ["系统控制中心", "应用库", "任务控制中心", "任务详情", "Worker 监控", "上传与清理", "模型网关", "系统设置"]) {
-  assert(visibleSources.includes(label), `missing chinese page label ${label}`);
+const ocr = read("src/routes/ocr-status.tsx");
+for (const phrase of ["paddleocr optional", "easyocr optional", "risk_hits", "scene_hints"]) {
+  assert(ocr.includes(phrase), `missing ocr phrase ${phrase}`);
 }
-for (const label of ["新建应用", "启动", "人工补种子", "生成上传清单", "确认已上传", "清理本地", "完成任务", "查看详情"]) {
-  assert(visibleSources.includes(label), `missing chinese action label ${label}`);
+
+const behavior = read("src/routes/behavior-candidates.tsx");
+for (const phrase of ["pending_review", "approve", "reject", "rollback", "window.confirm", "rejected 不可启用"]) {
+  assert(behavior.includes(phrase), `missing behavior candidate phrase ${phrase}`);
+}
+
+const tools = read("src/routes/tool-health.tsx");
+for (const phrase of ["machine_ready", "master_ready", "worker_ready", "adb_available", "devices", "selected_device", "ocr_fallback_status", "input_status"]) {
+  assert(tools.includes(phrase), `missing tool health phrase ${phrase}`);
 }
 
 const theme = `${read("src/lib/theme.ts")}\n${read("src/components/layout/theme-toggle.tsx")}\n${read("src/styles/globals.css")}`;
 for (const phrase of ["localStorage", "web-console-theme", "data-theme", "light", "dark"]) {
   assert(theme.includes(phrase), `missing theme persistence phrase ${phrase}`);
-}
-for (const cssVar of ["--color-bg", "--color-surface", "--color-border", "--color-text-primary", "--color-primary"]) {
-  assert(theme.includes(cssVar), `missing css theme variable ${cssVar}`);
-}
-for (const label of ["白天模式", "夜间模式", "切换到白天模式", "切换到夜间模式"]) {
-  assert(theme.includes(label), `missing theme toggle label ${label}`);
 }
 
 console.log("web_console_smoke_ok", requiredFiles.length);

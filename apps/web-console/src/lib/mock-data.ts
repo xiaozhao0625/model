@@ -2,9 +2,13 @@ import type {
   AppRecord,
   MetaEntry,
   ModelProviderRecord,
+  BehaviorCandidateRecord,
   RunLogEntry,
   RunRecord,
   RunSummary,
+  OcrStatusRecord,
+  QualityReportRecord,
+  ToolHealthRecord,
   UploadRecord,
   WorkerRecord
 } from "./api-types";
@@ -289,4 +293,95 @@ export const mockSummary: RunSummary = {
   retry_round: 0,
   target_min: 1000,
   target_max: 5000
+};
+
+export const mockQualityReports: QualityReportRecord[] = [
+  {
+    run_id: "run_capture_done",
+    app_id: "web_portal",
+    total_images: 1271,
+    accepted_count: 1240,
+    rejected_count: 31,
+    quality_pass_rate: 0.976,
+    black_screen_count: 2,
+    white_screen_count: 1,
+    blurry_count: 3,
+    wrong_window_count: 4,
+    browser_chrome_count: 6,
+    taskbar_count: 2,
+    near_duplicate_count: 9,
+    ocr_risk_hit_count: 4,
+    reject_reason_distribution: {
+      browser_chrome_visible: 6,
+      os_taskbar_visible: 2,
+      dangerous_page: 4,
+      near_duplicate: 9,
+      black_screen: 2,
+      white_screen: 1,
+      blurry: 3,
+      wrong_window: 4
+    }
+  }
+];
+
+export const mockOcrStatus: OcrStatusRecord = {
+  provider: "mock",
+  available: true,
+  status: "available",
+  risk_hits: ["captcha", "payment", "account_security"],
+  scene_hints: ["login", "captcha", "payment"],
+  unavailable_reason: null,
+  paddleocr_optional_status: "unavailable",
+  easyocr_optional_status: "unavailable"
+};
+
+export const mockBehaviorCandidates: BehaviorCandidateRecord[] = [
+  {
+    candidate_pack_id: "fps_mock_v1_v2_0_candidate",
+    base_pack_id: "fps_mock_v1",
+    game_type: "fps",
+    version: "2.0",
+    status: "pending_review",
+    issues: ["duplicate_ratio_high", "death_loop_high"],
+    recommendations: ["降低重复移动段权重", "增加复活后恢复动作"],
+    rollback_target: "fps_mock_v1",
+    created_from_run_id: "demo_p12_run"
+  },
+  {
+    candidate_pack_id: "moba_mock_v1_v2_0_candidate",
+    base_pack_id: "moba_mock_v1",
+    game_type: "moba",
+    version: "2.0",
+    status: "approved",
+    issues: ["base_stuck_detected"],
+    recommendations: ["增加离开泉水恢复动作"],
+    rollback_target: "moba_mock_v1",
+    created_from_run_id: "demo_moba_run"
+  }
+];
+
+export const mockToolHealth: ToolHealthRecord = {
+  machine_ready: "available",
+  master_ready: "available",
+  worker_ready: "skipped",
+  tools: {
+    OBS: "unavailable",
+    FFmpeg: "unavailable",
+    Playwright: "unavailable",
+    pywinauto: "unavailable",
+    mss: "unavailable",
+    dxcam: "unavailable",
+    ADB: "unavailable",
+    "Android emulator": "skipped",
+    "OCR optional": "disabled"
+  },
+  android: {
+    adb_available: false,
+    devices: [],
+    selected_device: null,
+    screencap_status: "skipped",
+    ui_dump_status: "skipped",
+    ocr_fallback_status: "skipped",
+    input_status: "disabled"
+  }
 };
