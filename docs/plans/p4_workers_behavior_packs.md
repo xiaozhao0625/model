@@ -1,31 +1,60 @@
-# P4：多类型 Worker 与行为包
+# P4: 多类型 Worker 与行为包
 
 ## 目标
 
-建立浏览器、普通软件、Android、PC 游戏 Worker，并引入行为包机制处理可重复动作序列。
+建立 Web、PC 普通软件、Android、PC 游戏等多类型 Worker 的统一合同层，并在后续阶段引入行为包机制处理可重复动作序列。
+
+P4 仍遵守既有架构基线：Worker 复用 `LocalRunSession`，不重复实现截图分桶、去重、summary、状态流；上传确认、清理和 completed 收口仍归 P2 流程处理。
+
+## P4.1 Worker 合同层 + 能力注册 + Mock Worker
+
+状态：done。
+
+已完成内容：
+
+- 定义 `WorkerType`：`mock`、`pc_game`、`pc_app`、`web`、`android`。
+- 定义 `WorkerCapability`：`capture_low`、`capture_high`、`manual_gate`、`model_gateway`、`behavior_pack`、`obs_capture`、`ffmpeg_extract`、`adb`、`playwright`、`pywinauto`、`upload_flow`。
+- 定义 `WorkerState`：`idle`、`assigned`、`running`、`stopped`、`failed`。
+- 定义 `WorkerProfile`、`WorkerTask`、`WorkerResult`。
+- 实现 `WorkerRegistry`，支持注册、获取、列出可用 Worker、按能力筛选 Worker。
+- 实现 `MockWorkerAgent`，通过 `LocalRunSession` 完成 mock 图片采集并最多推进到 `capture_completed`。
+
+P4.1 明确未实现：
+
+- 不接真实 OBS。
+- 不接真实 FFmpeg。
+- 不接真实 ADB。
+- 不接真实 Playwright。
+- 不接真实 pywinauto。
+- 不接 Airtest/Appium。
+- 不执行真实鼠标、键盘或系统动作。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
 ## Worker 策略
 
-- 浏览器优先使用 Playwright。
-- 普通软件优先使用 pywinauto。
-- Android 优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力。
-- PC 游戏 high 桶必须使用行为包 + OBS/FFmpeg 抽帧。
+- Web Worker 后续优先使用 Playwright，但 P4.1 只声明能力，不接真实 Playwright。
+- PC App Worker 后续优先使用 pywinauto，但 P4.1 只声明能力，不接真实 pywinauto。
+- Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
+- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧，但 P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，不实现真实链路。
 
 ## 行为包原则
 
 - 行为包负责高频、重复、可审计动作。
-- AI 只参与行为包启动、场景判断、按钮定位、卡住恢复等低频决策。
-- 行为包必须记录执行结果和失败原因。
+- AI 只参与启动、场景判断、按钮定位、卡住恢复等低频决策。
+- AI 不参与 Worker 高频逐帧执行。
+- 高频游戏采集不走模型逐帧控制。
 
-## 不做
+## 禁止范围
 
 - 不自动处理验证码、支付、充值、购买、聊天发送、账号安全验证、反作弊绕过。
 - 不让模型逐帧控制游戏。
 - 不绕过平台统一状态机。
+- 不在 Worker 中直接进入 completed。
 
 ## 验收标准
 
-- 每类 Worker 有清晰边界。
-- PC 游戏 high 桶采集链路包含行为包和 OBS/FFmpeg 抽帧。
-- Worker 输出服从统一桶规则和 valid_total 规则。
-
+- 每类 Worker 有清晰能力边界。
+- PC 游戏 high 桶链路必须保留行为包 + OBS/FFmpeg 抽帧方向。
+- Worker 输出服从统一 bucket 规则和 valid_total 规则。
+- Mock Worker 可用于本地单元测试和后续 P4 dry-run 验证。

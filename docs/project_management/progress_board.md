@@ -28,22 +28,11 @@
 | P3.2.1 多语言风险词表 + 审计落盘策略 | done | 已抽出可配置中英文风险词表，并固化 audit_log_path/run_dir 审计落盘策略。 |
 | P3.3 Provider 适配器骨架 + 注册中心 | done | 已建立 provider 配置、能力声明、注册中心和真实模型 stub provider。 |
 | P3.4 Model Gateway dry-run 总验收 | done | 已新增本地 dry-run 脚本，验证 registry、service、风险识别、安全拦截和审计日志串联。 |
-| P4 多类型 Worker 与行为包 | next | 下一阶段，需架构师确认后进入。 |
+| P4 多类型 Worker 与行为包 | in_progress | 已进入 Worker 合同层，真实 Worker 和行为包仍待后续阶段实现。 |
+| P4.1 Worker 合同层 + 能力注册 + Mock Worker | done | 已建立 Worker 合同、能力注册中心和复用 LocalRunSession 的 MockWorker。 |
 | P5 补采机制与人工补种子 | pending | 等 P2/P4 能力稳定后开始。 |
 | P6 行为包自我深化 | pending | 等行为包运行数据稳定后开始。 |
 | P7 四机并发与生产化压测 | pending | 等前序能力具备后开始。 |
-
-## P0 任务清单
-
-| 任务 | 状态 | 验收 |
-| --- | --- | --- |
-| 阶段计划 | done | docs/project_management/phase_plan.md |
-| 进度看板 | done | docs/project_management/progress_board.md |
-| Codex 工作协议 | done | docs/project_management/codex_work_protocol.md |
-| 架构实现基线 | done | docs/architecture/implementation_baseline.md |
-| app-screenshot-agent 复用边界 | done | docs/integration/app_screenshot_agent_reuse.md |
-| P1-P7 分阶段计划 | done | docs/plans/*.md |
-| ADR-001 到 ADR-005 | done | docs/adr/*.md |
 
 ## 当前架构基线
 
@@ -51,6 +40,7 @@
 - fixed 可选且最多 10 张。
 - low 或 high 至少一种。
 - valid_total = fixed + low + high。
+- rejected 和 duplicate 不计入 valid_total。
 - valid_total >= 1000 且存在 low/high 后才能进入 capture_completed。
 - valid_total <= 5000；达到 5000 后停止继续采集，但不新增 completed_max 状态。
 - capture_completed 后进入 upload_pending。
@@ -58,7 +48,9 @@
 - uploaded_confirmed 后才允许删除本地图片和临时视频，并进入 local_deleted。
 - completed 只能从 local_deleted 进入。
 - 删除后必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、cleanup_record.json、run.log。
-- 本地状态恢复只读取已有轻量记录文件，不生成上传或清理记录，不删除任何文件。
+- Worker 必须复用 LocalRunSession，不重复实现截图分桶、去重、summary、状态流。
+- Worker 不直接进入 completed；上传确认、清理和 completed 收口由 P2 流程负责。
+- PC 游戏 high 桶必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明能力，不接真实 OBS/FFmpeg。
 - AI 只做低频决策，只能返回 ActionProposal，不直接执行动作。
 - 后续业务层不得直接调用 provider，应通过 ModelGatewayService。
 - provider 必须声明能力，注册中心按能力选择 provider。
@@ -71,7 +63,8 @@
 
 | 风险 | 当前处理 |
 | --- | --- |
-| P4 Worker 与行为包边界尚未展开 | P3 已收口，等待架构师下达 P4 具体任务。 |
-| 后续真实 provider 接入边界不清 | P3 当前只建立合同层、service、mock/stub provider、风险词表和审计，真实模型接入等待架构师指令。 |
+| P4 真实 Worker 与行为包尚未实现 | P4.1 只建立合同层和 MockWorker，不接真实自动化工具。 |
+| PC 游戏 high 桶真实链路复杂 | 继续保留行为包 + OBS/FFmpeg 抽帧架构方向，后续 P4 子阶段再实现。 |
+| 后续真实 provider 接入边界不清 | P3 当前只建立合同层、service、mock/stub provider、风险词表和审计；真实模型接入等待架构师指令。 |
 | 后续真实上传可能被误解为自动百度网盘 API | P2 只记录 manifest 和用户确认，不接真实百度网盘 API。 |
 | 清理流误删本地数据 | 当前只允许删除 fixed、low、high、rejected、temp_video，保留审计文件。 |
