@@ -27,6 +27,39 @@ P5.1 明确未实现：
 - 不生成上传或清理文件。
 - 不新增正式 run 状态。
 
+## P5.2 Retry Policy
+
+状态：done。
+
+已完成内容：
+
+- 新增 `RetryAction`。
+- 新增 `RetryReason`。
+- 新增 `RetryState`。
+- 新增 `RetryDecision`。
+- 新增 `RetryPolicy.evaluate()`。
+- `RetryPolicy` 复用 `CoverageManager.evaluate()`，不重复实现 `CompletionGate`。
+- 策略层只决定是否继续自动补采、是否切换策略、是否请求人工补种子、是否标记 `failed_low_yield`。
+
+P5.2 明确未实现：
+
+- 不执行任何补采动作。
+- 不调 Worker。
+- 不修改 `LocalRunSession` 状态。
+- 不做人工补种子流程。
+- 不写任何运行文件。
+- 不新增 `retrying`、`completed_max`、`cleanup_completed` 等正式状态。
+
+## Retry Policy 判断规则
+
+- 覆盖已达标：`action=none`，建议状态 `capture_completed`。
+- 未达 `target_min` 且自动轮次未耗尽：`action=continue_capture`，建议状态 `running`。
+- 缺少 low/high 主桶且自动轮次未耗尽：`action=switch_strategy`，建议状态 `running`。
+- 自动轮次耗尽且仍未达标：`action=request_manual_seed`，建议状态 `needs_manual_seed`。
+- fixed 超过 cap：`action=fail_low_yield`，建议状态 `failed_low_yield`。
+- 达到 `target_max` 且已达标：`action=none`，建议状态 `capture_completed`。
+- 超过 `target_max`：`action=fail_low_yield`，建议状态 `failed_low_yield`。
+
 ## 覆盖判断规则
 
 - fixed 可选。
