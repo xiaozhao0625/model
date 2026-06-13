@@ -1,0 +1,44 @@
+{
+  "machine_id": "LOCAL_DEV",
+  "machine_name": "local-development-node",
+  "role": "single_node_dev",
+  "gpu_name": "developer_machine_gpu_optional",
+  "services": [
+    "master-api",
+    "model-gateway",
+    "worker-pc-game",
+    "worker-pc-app-web",
+    "worker-android"
+  ],
+  "worker_profiles": [
+    {
+      "worker_id": "worker_pc_game_local",
+      "worker_type": "pc_game",
+      "capabilities": [
+        "capture_high",
+        "behavior_pack",
+        "obs_capture",
+        "ffmpeg_extract"
+      ]
+    },
+    {
+      "worker_id": "worker_pc_app_web_local",
+      "worker_type": "pc_app_web",
+      "capabilities": [
+        "capture_low",
+        "playwright",
+        "pywinauto",
+        "model_gateway"
+      ]
+    },
+    {
+      "worker_id": "worker_android_local",
+      "worker_type": "android",
+      "capabilities": [
+        "capture_low",
+        "adb",
+        "model_gateway"
+      ]
+    }
+  ]
+}

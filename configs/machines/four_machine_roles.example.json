@@ -1,0 +1,80 @@
+{
+  "machines": [
+    {
+      "machine_id": "M0",
+      "machine_name": "master-rtx-5060ti",
+      "role": "master_model_gateway",
+      "gpu_name": "RTX 5060 Ti 16GB",
+      "services": [
+        "master-api",
+        "postgresql",
+        "redis",
+        "model-gateway"
+      ],
+      "worker_profiles": []
+    },
+    {
+      "machine_id": "W1",
+      "machine_name": "worker-pc-game-rtx-3060",
+      "role": "pc_game_worker",
+      "gpu_name": "RTX 3060 12GB",
+      "services": [
+        "worker-pc-game"
+      ],
+      "worker_profiles": [
+        {
+          "worker_id": "worker_pc_game_w1",
+          "worker_type": "pc_game",
+          "capabilities": [
+            "capture_high",
+            "behavior_pack",
+            "obs_capture",
+            "ffmpeg_extract"
+          ]
+        }
+      ]
+    },
+    {
+      "machine_id": "W2",
+      "machine_name": "worker-pc-app-web-rtx-3060",
+      "role": "pc_app_web_worker",
+      "gpu_name": "RTX 3060 12GB",
+      "services": [
+        "worker-pc-app",
+        "worker-web"
+      ],
+      "worker_profiles": [
+        {
+          "worker_id": "worker_pc_app_web_w2",
+          "worker_type": "pc_app_web",
+          "capabilities": [
+            "capture_low",
+            "playwright",
+            "pywinauto",
+            "model_gateway"
+          ]
+        }
+      ]
+    },
+    {
+      "machine_id": "W3",
+      "machine_name": "worker-android-rtx-3060",
+      "role": "android_worker",
+      "gpu_name": "RTX 3060 12GB",
+      "services": [
+        "worker-android"
+      ],
+      "worker_profiles": [
+        {
+          "worker_id": "worker_android_w3",
+          "worker_type": "android",
+          "capabilities": [
+            "capture_low",
+            "adb",
+            "model_gateway"
+          ]
+        }
+      ]
+    }
+  ]
+}

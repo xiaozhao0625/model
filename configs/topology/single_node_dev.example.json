@@ -1,0 +1,62 @@
+{
+  "topology_name": "single_node_dev",
+  "mode": "development",
+  "description": "One development machine simulates master, model gateway, PC game, PC app/web, and Android workers.",
+  "master": {
+    "service_name": "master-api",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "database_url_env": "DATABASE_URL",
+    "redis_url_env": "REDIS_URL"
+  },
+  "model_gateway": {
+    "service_name": "model-gateway",
+    "host": "127.0.0.1",
+    "port": 8100,
+    "mode": "mock_or_stub",
+    "model_manifest": "configs/model_gateway/model_manifest.example.json"
+  },
+  "workers": [
+    {
+      "worker_id": "worker_pc_game_local",
+      "worker_type": "pc_game",
+      "machine_id": "LOCAL_DEV",
+      "capabilities": [
+        "capture_high",
+        "behavior_pack",
+        "obs_capture",
+        "ffmpeg_extract"
+      ],
+      "data_root": "runs/dev/pc_game",
+      "master_url": "http://127.0.0.1:8000",
+      "model_gateway_url": "http://127.0.0.1:8100"
+    },
+    {
+      "worker_id": "worker_pc_app_web_local",
+      "worker_type": "pc_app_web",
+      "machine_id": "LOCAL_DEV",
+      "capabilities": [
+        "capture_low",
+        "playwright",
+        "pywinauto",
+        "model_gateway"
+      ],
+      "data_root": "runs/dev/pc_app_web",
+      "master_url": "http://127.0.0.1:8000",
+      "model_gateway_url": "http://127.0.0.1:8100"
+    },
+    {
+      "worker_id": "worker_android_local",
+      "worker_type": "android",
+      "machine_id": "LOCAL_DEV",
+      "capabilities": [
+        "capture_low",
+        "adb",
+        "model_gateway"
+      ],
+      "data_root": "runs/dev/android",
+      "master_url": "http://127.0.0.1:8000",
+      "model_gateway_url": "http://127.0.0.1:8100"
+    }
+  ]
+}

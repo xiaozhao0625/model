@@ -1,0 +1,85 @@
+{
+  "manifest_name": "p6_model_deployment_prep",
+  "model_root": "models",
+  "notes": "Example only. P6 does not download models and does not require local model files to exist.",
+  "models": [
+    {
+      "model_id": "ui_tars",
+      "provider_type": "ui_tars",
+      "display_name": "UI-TARS",
+      "target_machine": "M0",
+      "local_path": "models/ui_tars",
+      "enabled_by_default": false,
+      "load_mode": "on_demand",
+      "gpu_required": true,
+      "vram_budget_gb": 12,
+      "health_check_mode": "manifest_only",
+      "notes": "Primary GUI agent and low-frequency decision provider. Prefer quantized or on-demand loading on M0."
+    },
+    {
+      "model_id": "showui",
+      "provider_type": "showui",
+      "display_name": "ShowUI",
+      "target_machine": "W2",
+      "local_path": "models/showui",
+      "enabled_by_default": false,
+      "load_mode": "resident",
+      "gpu_required": true,
+      "vram_budget_gb": 4,
+      "health_check_mode": "manifest_only",
+      "notes": "Lightweight coordinate grounding helper for PC app and web workflows."
+    },
+    {
+      "model_id": "qwen_vl",
+      "provider_type": "qwen_vl",
+      "display_name": "Qwen-VL",
+      "target_machine": "M0",
+      "local_path": "models/qwen_vl",
+      "enabled_by_default": false,
+      "load_mode": "on_demand",
+      "gpu_required": true,
+      "vram_budget_gb": 10,
+      "health_check_mode": "manifest_only",
+      "notes": "General visual understanding. Use on demand on M0 or W3."
+    },
+    {
+      "model_id": "omniparser",
+      "provider_type": "omniparser",
+      "display_name": "OmniParser",
+      "target_machine": "W2",
+      "local_path": "models/omniparser",
+      "enabled_by_default": false,
+      "load_mode": "resident",
+      "gpu_required": true,
+      "vram_budget_gb": 6,
+      "health_check_mode": "manifest_only",
+      "notes": "UI structure parser for PC app and web screenshots."
+    },
+    {
+      "model_id": "gui_actor",
+      "provider_type": "gui_actor",
+      "display_name": "GUI-Actor",
+      "target_machine": "M0",
+      "local_path": "models/gui_actor",
+      "enabled_by_default": false,
+      "load_mode": "on_demand",
+      "gpu_required": true,
+      "vram_budget_gb": 8,
+      "health_check_mode": "manifest_only",
+      "notes": "Backup GUI grounding provider. Keep on demand."
+    },
+    {
+      "model_id": "os_atlas",
+      "provider_type": "os_atlas",
+      "display_name": "OS-Atlas",
+      "target_machine": "M0",
+      "local_path": "models/os_atlas",
+      "enabled_by_default": false,
+      "load_mode": "on_demand",
+      "gpu_required": true,
+      "vram_budget_gb": 8,
+      "health_check_mode": "manifest_only",
+      "notes": "Cross-platform GUI grounding backup. Keep on demand."
+    }
+  ]
+}

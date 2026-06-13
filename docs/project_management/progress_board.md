@@ -40,8 +40,8 @@
 | P5.1 Coverage Manager | done | 已建立 CoverageManager，复用 CompletionGate 判断覆盖是否达标、是否缺少主桶、是否需要继续采集、是否应该停止采集。 |
 | P5.2 Retry Policy | done | 已建立 RetryPolicy，复用 CoverageManager 决定继续采集、切换策略、请求人工补种子或标记 failed_low_yield。 |
 | P5-Complete 补采机制与人工补种子阶段收口 | done | 已建立人工补种子请求/恢复记录、LocalRunSession 门控、failed_low_yield 收口方法和 P5 双场景 dry-run。 |
-| P6 行为包自我深化 | next | 等行为包运行数据稳定后开始。 |
-| P7 四机并发与生产化压测 | pending | 等前序能力具备后开始。 |
+| P6 环境配置与模型部署预备 | done | 已完成单机开发拓扑、四机生产拓扑、机器角色、env 模板、模型 manifest、检查脚本和部署文档；不下载模型、不启动服务。 |
+| P7 四机并发与生产化压测 | next | 等前序能力具备后开始。 |
 
 ## 当前架构基线
 
