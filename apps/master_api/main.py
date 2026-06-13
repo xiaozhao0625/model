@@ -10,6 +10,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from ai_screenshot_platform.master.api.app import create_app
+from ai_screenshot_platform.master.core.config import MasterSettings
 
 
-app = create_app()
+app = create_app(MasterSettings.from_env())

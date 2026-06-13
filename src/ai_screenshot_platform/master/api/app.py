@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
@@ -50,28 +51,27 @@ class MasterServices:
 
 def create_app(settings: MasterSettings | None = None) -> FastAPI:
     settings = settings or MasterSettings()
-    database = MasterDatabase(settings)
-    app_repo = AppRepo(database.connection)
-    run_repo = RunRepo(database.connection)
-    worker_repo = WorkerRepo(database.connection)
-    image_repo = ImageRepo(database.connection)
-    upload_repo = UploadRepo(database.connection)
-    services = MasterServices(
-        app_service=AppService(app_repo),
-        run_service=RunService(run_repo),
-        worker_service=WorkerService(worker_repo),
-        upload_service=UploadService(run_repo, upload_repo),
-        model_gateway_service=ModelGatewayProxyService(
-            audit_root=settings.data_root
-        ),
-        image_repo=image_repo,
-        redis_client=MemoryRedisClient(),
-    )
 
-    app = FastAPI(title="AI Screenshot Platform Master API")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        database = MasterDatabase(settings)
+        app.state.database = database
+        app.state.services = _create_services(settings, database)
+        try:
+            yield
+        finally:
+            database.close()
+
+    app = FastAPI(title="AI Screenshot Platform Master API", lifespan=lifespan)
     app.state.settings = settings
-    app.state.database = database
-    app.state.services = services
+    app.state.database = None
+    app.state.services = None
+
+    def get_services() -> MasterServices:
+        services = app.state.services
+        if services is None:
+            raise ValueError("master services are not initialized")
+        return services
 
     @app.exception_handler(KeyError)
     async def key_error_handler(_, exc: KeyError):
@@ -93,6 +93,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.post("/api/apps")
     def create_app_record(payload: AppCreateRequest):
+        services = get_services()
         return ok(
             to_api_data(
                 services.app_service.create(
@@ -106,17 +107,17 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.get("/api/apps")
     def list_apps():
-        return ok(to_api_data(services.app_service.list()))
+        return ok(to_api_data(get_services().app_service.list()))
 
     @app.get("/api/apps/{app_id}")
     def get_app_record(app_id: str):
-        return ok(to_api_data(services.app_service.get(app_id)))
+        return ok(to_api_data(get_services().app_service.get(app_id)))
 
     @app.post("/api/runs")
     def create_run(payload: RunCreateRequest):
         return ok(
             to_api_data(
-                services.run_service.create_run(
+                get_services().run_service.create_run(
                     run_id=payload.run_id,
                     app_id=payload.app_id,
                 )
@@ -125,25 +126,25 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.get("/api/runs")
     def list_runs():
-        return ok(to_api_data(services.run_service.list()))
+        return ok(to_api_data(get_services().run_service.list()))
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str):
-        return ok(to_api_data(services.run_service.get(run_id)))
+        return ok(to_api_data(get_services().run_service.get(run_id)))
 
     @app.post("/api/runs/{run_id}/start")
     def start_run(run_id: str):
-        return ok(to_api_data(services.run_service.start_run(run_id)))
+        return ok(to_api_data(get_services().run_service.start_run(run_id)))
 
     @app.get("/api/runs/{run_id}/summary")
     def get_run_summary(run_id: str):
-        return ok(services.run_service.summary(run_id))
+        return ok(get_services().run_service.summary(run_id))
 
     @app.post("/api/workers/register")
     def register_worker(payload: WorkerRegisterRequest):
         return ok(
             to_api_data(
-                services.worker_service.register(
+                get_services().worker_service.register(
                     worker_id=payload.worker_id,
                     type=payload.type,
                     capabilities=payload.capabilities,
@@ -153,49 +154,50 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.get("/api/workers")
     def list_workers():
-        return ok(to_api_data(services.worker_service.list()))
+        return ok(to_api_data(get_services().worker_service.list()))
 
     @app.post("/api/workers/{worker_id}/heartbeat")
     def worker_heartbeat(worker_id: str):
+        services = get_services()
         worker = services.worker_service.heartbeat(worker_id)
         services.redis_client.set(f"worker:{worker_id}:heartbeat", worker.heartbeat)
         return ok(to_api_data(worker))
 
     @app.post("/api/upload-manifest")
     def upload_manifest(payload: UploadRunRequest):
-        return ok(to_api_data(services.upload_service.manifest(payload.run_id)))
+        return ok(to_api_data(get_services().upload_service.manifest(payload.run_id)))
 
     @app.post("/api/confirm-upload")
     def confirm_upload(payload: UploadRunRequest):
-        return ok(to_api_data(services.upload_service.confirm(payload.run_id)))
+        return ok(to_api_data(get_services().upload_service.confirm(payload.run_id)))
 
     @app.post("/api/cleanup")
     def cleanup(payload: UploadRunRequest):
-        return ok(to_api_data(services.upload_service.cleanup(payload.run_id)))
+        return ok(to_api_data(get_services().upload_service.cleanup(payload.run_id)))
 
     @app.post("/api/finalize")
     def finalize(payload: UploadRunRequest):
-        return ok(to_api_data(services.upload_service.finalize(payload.run_id)))
+        return ok(to_api_data(get_services().upload_service.finalize(payload.run_id)))
 
     @app.post("/api/runs/{run_id}/upload-manifest")
     def run_upload_manifest(run_id: str):
-        return ok(to_api_data(services.upload_service.manifest(run_id)))
+        return ok(to_api_data(get_services().upload_service.manifest(run_id)))
 
     @app.post("/api/runs/{run_id}/confirm-upload")
     def run_confirm_upload(run_id: str):
-        return ok(to_api_data(services.upload_service.confirm(run_id)))
+        return ok(to_api_data(get_services().upload_service.confirm(run_id)))
 
     @app.post("/api/runs/{run_id}/cleanup")
     def run_cleanup(run_id: str):
-        return ok(to_api_data(services.upload_service.cleanup(run_id)))
+        return ok(to_api_data(get_services().upload_service.cleanup(run_id)))
 
     @app.post("/api/runs/{run_id}/finalize")
     def run_finalize(run_id: str):
-        return ok(to_api_data(services.upload_service.finalize(run_id)))
+        return ok(to_api_data(get_services().upload_service.finalize(run_id)))
 
     @app.post("/api/model/scene_classify")
     def scene_classify(payload: SceneClassifyApiRequest):
-        result = services.model_gateway_service.scene_classify(
+        result = get_services().model_gateway_service.scene_classify(
             SceneClassifyRequest(
                 app_id=payload.app_id,
                 run_id=payload.run_id,
@@ -207,7 +209,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.post("/api/model/ground")
     def ground(payload: GroundApiRequest):
-        result = services.model_gateway_service.ground(
+        result = get_services().model_gateway_service.ground(
             GroundRequest(
                 app_id=payload.app_id,
                 run_id=payload.run_id,
@@ -220,7 +222,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.post("/api/model/act")
     def act(payload: ActApiRequest):
-        result = services.model_gateway_service.act(
+        result = get_services().model_gateway_service.act(
             app_id=payload.app_id,
             run_id=payload.run_id,
             screenshot_path=payload.screenshot_path,
@@ -232,3 +234,22 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         return ok(to_api_data(result))
 
     return app
+
+
+def _create_services(settings: MasterSettings, database: MasterDatabase) -> MasterServices:
+    app_repo = AppRepo(database.connection)
+    run_repo = RunRepo(database.connection)
+    worker_repo = WorkerRepo(database.connection)
+    image_repo = ImageRepo(database.connection)
+    upload_repo = UploadRepo(database.connection)
+    return MasterServices(
+        app_service=AppService(app_repo),
+        run_service=RunService(run_repo),
+        worker_service=WorkerService(worker_repo),
+        upload_service=UploadService(run_repo, upload_repo),
+        model_gateway_service=ModelGatewayProxyService(
+            audit_root=settings.data_root
+        ),
+        image_repo=image_repo,
+        redis_client=MemoryRedisClient(),
+    )

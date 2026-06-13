@@ -4,6 +4,7 @@
 /captures/
 /runs/
 /models/
+*.db
 *.mp4
 *.avi
 *.mkv
