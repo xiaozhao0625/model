@@ -88,12 +88,38 @@ P4.3 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.4 PC Game Worker 适配器骨架：OBS / FFmpeg / Input Adapter 合同
+
+状态：done。
+
+已完成内容：
+
+- 新增 PC Game Worker 真实工具接入前合同层。
+- 定义 `CaptureSourceConfig`、`RecordingSession`、`ExtractedFrame`、`InputCommand`、`InputCommandResult`。
+- 定义 `ObsCaptureAdapter`、`FfmpegExtractAdapter`、`GameInputAdapter` Protocol。
+- 实现 `StubObsCaptureAdapter`，只返回 mock `RecordingSession`，不连接 OBS。
+- 实现 `StubFfmpegExtractAdapter`，只返回 mock `ExtractedFrame`，不调用 FFmpeg。
+- 实现 `StubGameInputAdapter`，永远 `executed=false`、`skipped=true`，不执行真实输入。
+- 实现 `PcGameStubPipeline`，复用 `LocalRunSession`，执行 mock input command、抽取 mock frames、保存 high 桶并最多推进到 `capture_completed`。
+
+P4.4 明确未实现：
+
+- 不接真实 OBS。
+- 不调用真实 FFmpeg。
+- 不使用 AutoHotkey。
+- 不使用 pydirectinput。
+- 不执行真实鼠标或键盘动作。
+- 不调用 subprocess。
+- 不做真实模型调用。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
 ## Worker 策略
 
 - Web Worker 后续优先使用 Playwright，但 P4.1 只声明能力，不接真实 Playwright。
 - PC App Worker 后续优先使用 pywinauto，但 P4.1 只声明能力，不接真实 pywinauto。
 - Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
-- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，P4.3 只跑通 mock pc_game high 集成，不实现真实链路。
+- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，P4.3 只跑通 mock pc_game high 集成，P4.4 只建立 OBS/FFmpeg/Input adapter 合同和 stub pipeline，不实现真实链路。
 
 ## 行为包原则
 
