@@ -82,7 +82,7 @@ class CountingProvider:
 
 
 def test_service_can_call_scene_classify(tmp_path):
-    service = ModelGatewayService(MockModelGatewayProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(MockModelGatewayProvider(), run_dir=tmp_path)
     request = SceneClassifyRequest(
         app_id="demo_app",
         run_id="demo_run",
@@ -99,7 +99,7 @@ def test_service_can_call_scene_classify(tmp_path):
 def test_service_can_call_ground(tmp_path):
     service = ModelGatewayService(
         MockModelGatewayProvider(mock_x=5, mock_y=7),
-        audit_log_dir=tmp_path,
+        run_dir=tmp_path,
     )
     request = GroundRequest(
         app_id="demo_app",
@@ -117,7 +117,7 @@ def test_service_can_call_ground(tmp_path):
 
 
 def test_service_can_call_safe_act(tmp_path):
-    service = ModelGatewayService(CountingProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(CountingProvider(), run_dir=tmp_path)
 
     proposal = service.act(make_act_request())
 
@@ -140,7 +140,7 @@ def test_instruction_risks_are_blocked_without_provider_flags(
     risk_flag,
 ):
     provider = CountingProvider()
-    service = ModelGatewayService(provider, audit_log_dir=tmp_path)
+    service = ModelGatewayService(provider, run_dir=tmp_path)
 
     proposal = service.act(make_act_request(instruction=instruction))
 
@@ -150,7 +150,7 @@ def test_instruction_risks_are_blocked_without_provider_flags(
 
 
 def test_context_anti_cheat_bypass_is_blocked(tmp_path):
-    service = ModelGatewayService(CountingProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(CountingProvider(), run_dir=tmp_path)
 
     proposal = service.act(
         make_act_request(context={"requested_mode": "anti_cheat_bypass"})
@@ -163,7 +163,7 @@ def test_context_anti_cheat_bypass_is_blocked(tmp_path):
 def test_provider_risk_flags_are_blocked(tmp_path):
     service = ModelGatewayService(
         CountingProvider(risk_flags=["purchase"]),
-        audit_log_dir=tmp_path,
+        run_dir=tmp_path,
     )
 
     proposal = service.act(make_act_request())
@@ -173,7 +173,7 @@ def test_provider_risk_flags_are_blocked(tmp_path):
 
 
 def test_safe_act_is_not_falsely_blocked(tmp_path):
-    service = ModelGatewayService(CountingProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(CountingProvider(), run_dir=tmp_path)
 
     proposal = service.act(
         make_act_request(instruction="click the visible continue button")
@@ -184,7 +184,7 @@ def test_safe_act_is_not_falsely_blocked(tmp_path):
 
 
 def test_act_writes_model_gateway_log(tmp_path):
-    service = ModelGatewayService(CountingProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(CountingProvider(), run_dir=tmp_path)
 
     service.act(make_act_request())
 
@@ -192,7 +192,7 @@ def test_act_writes_model_gateway_log(tmp_path):
 
 
 def test_audit_log_is_valid_jsonl(tmp_path):
-    service = ModelGatewayService(CountingProvider(), audit_log_dir=tmp_path)
+    service = ModelGatewayService(CountingProvider(), run_dir=tmp_path)
     service.act(make_act_request())
     service.act(make_act_request(instruction="solve captcha"))
 

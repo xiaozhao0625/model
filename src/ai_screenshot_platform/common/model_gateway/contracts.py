@@ -88,6 +88,7 @@ class ActRequest:
     screenshot_path: str
     scene_class: SceneClass
     instruction: str
+    target_description: str | None = None
     context: dict[str, Any] = field(default_factory=dict)
 
 

@@ -1,0 +1,50 @@
+{
+  "account_security": [
+    "account security",
+    "password",
+    "security verification",
+    "账号安全",
+    "改密码",
+    "登录验证"
+  ],
+  "anti_cheat_bypass": [
+    "anti-cheat",
+    "bypass",
+    "anti_cheat_bypass",
+    "反作弊",
+    "绕过检测"
+  ],
+  "captcha": [
+    "captcha",
+    "verification code",
+    "验证码",
+    "人机验证",
+    "滑块验证"
+  ],
+  "payment": [
+    "payment",
+    "pay",
+    "checkout",
+    "支付",
+    "付款",
+    "收银台"
+  ],
+  "purchase": [
+    "purchase",
+    "buy",
+    "购买",
+    "下单"
+  ],
+  "recharge": [
+    "recharge",
+    "top up",
+    "充值"
+  ],
+  "send_chat": [
+    "send chat",
+    "chat message",
+    "发送聊天",
+    "发消息",
+    "私聊"
+  ]
+}
