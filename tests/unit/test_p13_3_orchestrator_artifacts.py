@@ -41,6 +41,8 @@ def test_p13_3_catalog_and_roles_are_complete():
         if role != "M0":
             assert "postgresql" not in config["required_tools"]
             assert "DATABASE_URL" not in config["env_template_keys"]
+            assert config["ssh_user"] == "Administrator"
+            assert config["project_root"] == "D:\\work\\model"
 
 
 def test_p13_3_powershell_scripts_parse():
