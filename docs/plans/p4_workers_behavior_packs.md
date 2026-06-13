@@ -114,10 +114,38 @@ P4.4 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.5 PC App + Web Worker 适配器骨架
+
+状态：done。
+
+已完成内容：
+
+- 新增 PC 普通软件 Worker 真实工具接入前合同层。
+- 定义 `PcAppTargetConfig`、`PcAppCommand`、`PcAppCapturedFrame`、`PcAppAutomationAdapter` 和 `PcAppStubPipeline`。
+- `PcAppTargetConfig.bucket` 默认 `low`。
+- 实现 `StubPcAppAutomationAdapter`，不调用 pywinauto，不截图真实窗口，只返回 mock frame bytes。
+- 新增 Web Worker 真实工具接入前合同层。
+- 定义 `WebTargetConfig`、`WebCommand`、`WebCapturedFrame`、`WebAutomationAdapter` 和 `WebStubPipeline`。
+- `WebTargetConfig.bucket` 默认 `low`，`content_area_only` 默认 `true`。
+- 实现 `StubWebAutomationAdapter`，不调用 Playwright，不打开真实浏览器，不截图真实网页，只返回 mock frame bytes。
+- 两个 stub pipeline 均复用 `LocalRunSession`，生成 target_min 张 low 桶 mock 图片并最多推进到 `capture_completed`。
+
+P4.5 明确未实现：
+
+- 不接真实 pywinauto。
+- 不接真实 Playwright。
+- 不接 mss/dxcam。
+- 不执行真实窗口截图。
+- 不执行真实鼠标或键盘动作。
+- 不调用 subprocess。
+- 不做真实模型调用。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
 ## Worker 策略
 
-- Web Worker 后续优先使用 Playwright，但 P4.1 只声明能力，不接真实 Playwright。
-- PC App Worker 后续优先使用 pywinauto，但 P4.1 只声明能力，不接真实 pywinauto。
+- Web Worker 后续优先使用 Playwright，但 P4.5 只声明合同和 stub，不接真实 Playwright；后续真实实现必须只采集网页有效内容区，不采集浏览器地址栏、标签栏、Windows 任务栏。
+- PC App Worker 后续优先使用 pywinauto，但 P4.5 只声明合同和 stub，不接真实 pywinauto。
 - Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
 - PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，P4.3 只跑通 mock pc_game high 集成，P4.4 只建立 OBS/FFmpeg/Input adapter 合同和 stub pipeline，不实现真实链路。
 
