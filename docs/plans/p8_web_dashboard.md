@@ -46,6 +46,19 @@ P8.1 在不修改路由、API client 协议字段、状态枚举、bucket 原始
 
 内部字段、JSON key、文件名、目录名和后端协议字段保持原样。
 
+## P8.2 明暗主题切换补丁
+
+P8.2 在不改变页面结构、路由、API、状态枚举和业务逻辑的前提下，新增白天模式 / 夜间模式切换：
+
+- 默认使用夜间模式，保持 P8 暗色工业控制台风格。
+- 顶部栏提供主题切换按钮，使用已有 `lucide-react` 的 Moon / Sun 图标。
+- 主题选择保存到 `localStorage` 的 `web-console-theme`，刷新后保持上次选择。
+- 根节点使用 `data-theme="dark"` / `data-theme="light"` 标记当前主题。
+- `globals.css` 使用 CSS variables 管理核心 token：`--color-bg`、`--color-surface`、`--color-border`、`--color-text-primary`、`--color-text-secondary`、`--color-primary` 等。
+- 白天模式采用柔和工业控制台色板，不使用刺眼纯白大面积背景。
+
+P8.2 不新增依赖，不引入 i18n 框架，不接真实采集工具，不接真实模型，不做四机部署。
+
 ## API Client
 
 `apps/web-console/src/lib/api-client.ts` 封装：

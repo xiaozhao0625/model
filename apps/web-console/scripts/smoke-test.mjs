@@ -11,6 +11,7 @@ const assert = (condition, message) => {
 
 const requiredFiles = [
   "src/app.tsx",
+  "src/lib/theme.ts",
   "src/lib/api-client.ts",
   "src/lib/mock-data.ts",
   "src/routes/dashboard.tsx",
@@ -21,6 +22,7 @@ const requiredFiles = [
   "src/routes/upload.tsx",
   "src/routes/model-gateway.tsx",
   "src/routes/settings.tsx"
+  ,"src/components/layout/theme-toggle.tsx"
 ];
 
 for (const file of requiredFiles) {
@@ -98,6 +100,7 @@ const visibleSources = [
   read("index.html"),
   read("src/components/layout/sidebar.tsx"),
   read("src/components/layout/topbar.tsx"),
+  read("src/components/layout/theme-toggle.tsx"),
   read("src/components/layout/app-shell.tsx"),
   read("src/routes/dashboard.tsx"),
   read("src/routes/apps.tsx"),
@@ -117,6 +120,17 @@ for (const label of ["系统控制中心", "应用库", "任务控制中心", "�
 }
 for (const label of ["新建应用", "启动", "人工补种子", "生成上传清单", "确认已上传", "清理本地", "完成任务", "查看详情"]) {
   assert(visibleSources.includes(label), `missing chinese action label ${label}`);
+}
+
+const theme = `${read("src/lib/theme.ts")}\n${read("src/components/layout/theme-toggle.tsx")}\n${read("src/styles/globals.css")}`;
+for (const phrase of ["localStorage", "web-console-theme", "data-theme", "light", "dark"]) {
+  assert(theme.includes(phrase), `missing theme persistence phrase ${phrase}`);
+}
+for (const cssVar of ["--color-bg", "--color-surface", "--color-border", "--color-text-primary", "--color-primary"]) {
+  assert(theme.includes(cssVar), `missing css theme variable ${cssVar}`);
+}
+for (const label of ["白天模式", "夜间模式", "切换到白天模式", "切换到夜间模式"]) {
+  assert(theme.includes(label), `missing theme toggle label ${label}`);
 }
 
 console.log("web_console_smoke_ok", requiredFiles.length);

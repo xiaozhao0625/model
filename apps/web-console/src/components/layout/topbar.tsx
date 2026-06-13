@@ -1,4 +1,5 @@
 import { Database, RadioTower } from "lucide-react";
+import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar() {
   return (
@@ -9,6 +10,7 @@ export function Topbar() {
           <p className="text-xs text-slate-500">采集任务、Worker、上传清理与模型安全的运行控制台</p>
         </div>
         <div className="flex items-center gap-2 text-xs">
+          <ThemeToggle />
           <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-200">
             <RadioTower size={14} />
             API fallback 已就绪

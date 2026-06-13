@@ -44,6 +44,7 @@
 | P7 Master Backend + PostgreSQL/SQLite + API | done | 主体已完成并补齐 API 稳定性：FastAPI 可 import、/health、/openapi.json、run-scoped upload canonical routes、兼容 upload routes。 |
 | P8 Web Dashboard UI 控制台 | done | 已新增 React + Vite + TypeScript Web Console，包含 Dashboard、Apps、Runs、Run Detail、Workers、Upload、Model Gateway、Settings、API client、mock fallback、暗色工业控制台设计系统、中文化展示和 build 验收。 |
 | P8.1 Web Console 中文化 | done | 已将前端可见导航、页面、卡片、表格、按钮、状态说明、上传清理说明、模型网关说明和右侧审计面板中文化；保留 API 字段、路由、枚举、bucket 原始值、worker_type、provider_type 和 capabilities 原始值。 |
+| P8.2 Web Console 明暗主题切换 | done | 已新增白天模式 / 夜间模式切换入口，默认夜间模式，使用 localStorage 持久化选择，并通过 CSS variables 保持暗色工业风格与柔和白天模式。 |
 | P12 行为包自我深化引擎 | pending | 迁移早期行为包学习计划到 P12；后续基于历史运行、失败样本、人工补种子和质量反馈优化行为包。 |
 
 ## 当前架构基线
