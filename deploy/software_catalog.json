@@ -1,0 +1,154 @@
+[
+  {
+    "name": "python",
+    "roles": ["M0", "W1", "W2", "W3"],
+    "required": true,
+    "detect_commands": ["python --version", "py --version"],
+    "min_version": "3.11.0",
+    "winget_id": "Python.Python.3.11",
+    "install_hint": "Install Python 3.11+ and enable PATH integration."
+  },
+  {
+    "name": "git",
+    "roles": ["M0", "W1", "W2", "W3"],
+    "required": true,
+    "detect_commands": ["git --version"],
+    "min_version": "2.40.0",
+    "winget_id": "Git.Git",
+    "install_hint": "Install Git for Windows."
+  },
+  {
+    "name": "nodejs",
+    "roles": ["M0"],
+    "required": true,
+    "detect_commands": ["node --version"],
+    "min_version": "20.0.0",
+    "winget_id": "OpenJS.NodeJS.LTS",
+    "install_hint": "Install Node.js LTS for the web console."
+  },
+  {
+    "name": "npm",
+    "roles": ["M0"],
+    "required": true,
+    "detect_commands": ["npm --version"],
+    "winget_id": "OpenJS.NodeJS.LTS",
+    "install_hint": "npm is installed with Node.js LTS."
+  },
+  {
+    "name": "postgresql",
+    "roles": ["M0"],
+    "required": true,
+    "detect_commands": ["psql --version"],
+    "winget_id": "PostgreSQL.PostgreSQL",
+    "install_hint": "Install PostgreSQL locally on M0 and configure DATABASE_URL outside Git.",
+    "manual_install_note": "Database initialization and credentials must be handled manually."
+  },
+  {
+    "name": "redis",
+    "roles": ["M0"],
+    "required": false,
+    "detect_commands": ["redis-server --version", "redis-cli --version"],
+    "install_hint": "Install Redis or provide a documented fallback for local development.",
+    "manual_install_note": "Use a Windows-compatible Redis distribution or container according to site policy."
+  },
+  {
+    "name": "openssh_client",
+    "roles": ["M0", "W1", "W2", "W3"],
+    "required": true,
+    "detect_commands": ["ssh -V"],
+    "install_hint": "Enable Windows OpenSSH Client capability."
+  },
+  {
+    "name": "openssh_server",
+    "roles": ["W1", "W2", "W3"],
+    "required": true,
+    "detect_commands": ["Get-Service sshd"],
+    "install_hint": "Enable Windows OpenSSH Server on worker machines.",
+    "manual_install_note": "Configure LAN-only firewall access from M0."
+  },
+  {
+    "name": "nvidia_driver",
+    "roles": ["M0", "W1", "W2", "W3"],
+    "required": true,
+    "detect_commands": ["nvidia-smi"],
+    "install_hint": "Install the NVIDIA driver appropriate for the GPU.",
+    "manual_install_note": "Driver installation is intentionally manual."
+  },
+  {
+    "name": "obs",
+    "roles": ["W1"],
+    "required": true,
+    "detect_commands": ["obs64 --version"],
+    "winget_id": "OBSProject.OBSStudio",
+    "install_hint": "Install OBS Studio for PC game capture.",
+    "manual_install_note": "Scene, source, and account-specific settings remain manual."
+  },
+  {
+    "name": "ffmpeg",
+    "roles": ["W1"],
+    "required": true,
+    "detect_commands": ["ffmpeg -version"],
+    "winget_id": "Gyan.FFmpeg",
+    "install_hint": "Install FFmpeg and ensure it is on PATH."
+  },
+  {
+    "name": "playwright",
+    "roles": ["W2"],
+    "required": true,
+    "detect_commands": ["python -m playwright --version"],
+    "install_hint": "Install the Python Playwright package and browsers according to project policy."
+  },
+  {
+    "name": "browser_chromium_or_edge",
+    "roles": ["W2"],
+    "required": true,
+    "detect_commands": ["msedge --version", "chrome --version"],
+    "winget_id": "Microsoft.Edge",
+    "install_hint": "Use Microsoft Edge or a managed Chromium installation."
+  },
+  {
+    "name": "pywinauto",
+    "roles": ["W2"],
+    "required": true,
+    "detect_commands": ["python -c \"import pywinauto; print(pywinauto.__version__)\""],
+    "install_hint": "Install pywinauto in the worker Python environment."
+  },
+  {
+    "name": "mss",
+    "roles": ["W2"],
+    "required": true,
+    "detect_commands": ["python -c \"import mss; print(mss.__version__)\""],
+    "install_hint": "Install mss in the worker Python environment."
+  },
+  {
+    "name": "dxcam",
+    "roles": ["W2"],
+    "required": true,
+    "detect_commands": ["python -c \"import dxcam; print('dxcam')\""],
+    "install_hint": "Install dxcam in the worker Python environment."
+  },
+  {
+    "name": "adb",
+    "roles": ["W3"],
+    "required": true,
+    "detect_commands": ["adb version"],
+    "winget_id": "Google.PlatformTools",
+    "install_hint": "Install Android Platform Tools."
+  },
+  {
+    "name": "android_emulator",
+    "roles": ["W3"],
+    "required": true,
+    "detect_commands": ["emulator -version"],
+    "install_hint": "Install Android Studio Emulator or a managed emulator runtime.",
+    "manual_install_note": "AVD images and hardware acceleration are manual site setup."
+  },
+  {
+    "name": "autohotkey",
+    "roles": ["W1", "W2"],
+    "required": false,
+    "detect_commands": ["AutoHotkey64.exe /ErrorStdOut"],
+    "winget_id": "AutoHotkey.AutoHotkey",
+    "install_hint": "Optional automation helper for controlled local workflows."
+  }
+]
