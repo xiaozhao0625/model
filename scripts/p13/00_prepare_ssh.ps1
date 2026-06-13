@@ -22,9 +22,14 @@ if (-not (Test-Path -LiteralPath $pubKey)) {
     New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
     $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
     if ($sshKeygen) {
-        & ssh-keygen -t ed25519 -f $privateKey -N '' -C "p13-m0-orchestrator" | Out-Null
-        $generated = $true
-        Write-DeployLog -LogPath $logPath -Role $Role -Action 'prepare_ssh' -Message 'Generated M0 public key pair. Private key not logged.'
+        $keygenArgs = @('-t', 'ed25519', '-f', $privateKey, '-N', '""', '-C', 'p13-m0-orchestrator')
+        $keygenOutput = & cmd /c "ssh-keygen $($keygenArgs -join ' ')" 2>&1
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $pubKey)) {
+            $generated = $true
+            Write-DeployLog -LogPath $logPath -Role $Role -Action 'prepare_ssh' -Message 'Generated M0 public key pair. Private key not logged.'
+        } else {
+            Write-DeployLog -LogPath $logPath -Role $Role -Action 'prepare_ssh' -Level 'WARN' -Message 'M0 public key generation did not complete.' -Data @{ output = $keygenOutput }
+        }
     }
 }
 

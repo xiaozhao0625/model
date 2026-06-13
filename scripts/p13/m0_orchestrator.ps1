@@ -16,9 +16,9 @@ $matrix = Get-Content -LiteralPath (Join-Path $RepoRoot 'deploy/role_matrix.json
 $targetRoles = if ($Role) { @($Role) } else { @('M0','W1','W2','W3') }
 
 function Invoke-LocalP13Script {
-    param([string]$ScriptName, [string[]]$Args)
+    param([string]$ScriptName, [string[]]$ScriptArgs)
     $scriptPath = Join-Path $PSScriptRoot $ScriptName
-    $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath @Args 2>&1
+    $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath @ScriptArgs 2>&1
     return [pscustomobject]@{
         exit_code = $LASTEXITCODE
         output = (($output | Out-String).Trim())
@@ -26,7 +26,7 @@ function Invoke-LocalP13Script {
 }
 
 function Invoke-RemoteP13Script {
-    param([string]$TargetRole, [string]$ScriptName, [string[]]$Args)
+    param([string]$TargetRole, [string]$ScriptName, [string[]]$ScriptArgs)
     $roleConfig = $matrix.roles.$TargetRole
     $sshCheck = Test-TcpPort -HostName $roleConfig.ip -Port 22 -TimeoutSeconds 2
     if ($sshCheck.status -ne 'ok') {
@@ -37,7 +37,7 @@ function Invoke-RemoteP13Script {
             next_action = 'Enable OpenSSH Server on the worker, verify LAN/firewall, then rerun.'
         }
     }
-    $remoteScript = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/p13/$ScriptName $($Args -join ' ')"
+    $remoteScript = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/p13/$ScriptName $($ScriptArgs -join ' ')"
     try {
         $output = & ssh $roleConfig.ip $remoteScript 2>&1
         return [pscustomobject]@{
@@ -71,7 +71,7 @@ function Invoke-RoleAction {
     }
     Write-DeployLog -LogPath $logPath -Role $TargetRole -Action $TargetAction -Message "Dispatching $script."
     if ($TargetRole -eq 'M0') {
-        $result = Invoke-LocalP13Script -ScriptName $script -Args $args
+        $result = Invoke-LocalP13Script -ScriptName $script -ScriptArgs $args
         return [pscustomobject]@{
             role = $TargetRole
             action = $TargetAction
@@ -81,7 +81,7 @@ function Invoke-RoleAction {
             next_action = $(if ($result.exit_code -eq 0 -or $null -eq $result.exit_code) { $null } else { 'Review local script output.' })
         }
     }
-    return Invoke-RemoteP13Script -TargetRole $TargetRole -ScriptName $script -Args $args
+    return Invoke-RemoteP13Script -TargetRole $TargetRole -ScriptName $script -ScriptArgs $args
 }
 
 $actions = if ($Action -eq 'FullDryRun') { @('Inventory','PlanInstall','HealthCheck') } else { @($Action) }

@@ -9,6 +9,9 @@ function ConvertTo-SafeObject {
             }
             return $InputObject
         }
+        if ($InputObject -is [bool] -or $InputObject -is [int] -or $InputObject -is [long] -or $InputObject -is [double] -or $InputObject -is [decimal] -or $InputObject -is [datetime]) {
+            return $InputObject
+        }
         if ($InputObject -is [System.Collections.IDictionary]) {
             $safe = [ordered]@{}
             foreach ($key in $InputObject.Keys) {
