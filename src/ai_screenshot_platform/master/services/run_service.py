@@ -15,9 +15,21 @@ class RunService:
         self.run_repo = run_repo
         self.lifecycle = lifecycle or RunLifecycle()
 
-    def create_run(self, run_id: str, app_id: str) -> RunRecord:
+    def create_run(
+        self,
+        run_id: str,
+        app_id: str,
+        target_min: int = 1000,
+        target_max: int = 5000,
+    ) -> RunRecord:
         return self.run_repo.create(
-            RunRecord(run_id=run_id, app_id=app_id, status=RunStatus.PENDING)
+            RunRecord(
+                run_id=run_id,
+                app_id=app_id,
+                status=RunStatus.PENDING,
+                target_min=target_min,
+                target_max=target_max,
+            )
         )
 
     def list(self) -> list[RunRecord]:
@@ -42,6 +54,8 @@ class RunService:
             "run_id": record.run_id,
             "app_id": record.app_id,
             "status": record.status.value,
+            "target_min": record.target_min,
+            "target_max": record.target_max,
             "valid_total": record.valid_total,
             "fixed_count": record.fixed_count,
             "low_count": record.low_count,

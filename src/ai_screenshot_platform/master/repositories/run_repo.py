@@ -14,14 +14,17 @@ class RunRepo:
         self.connection.execute(
             """
             INSERT INTO runs (
-                run_id, app_id, status, valid_total, fixed_count, low_count,
+                run_id, app_id, status, target_min, target_max, valid_total,
+                fixed_count, low_count,
                 high_count, rejected_count, retry_round
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
                 record.app_id,
                 record.status.value,
+                record.target_min,
+                record.target_max,
                 record.valid_total,
                 record.fixed_count,
                 record.low_count,
@@ -36,7 +39,7 @@ class RunRepo:
     def list(self) -> list[RunRecord]:
         rows = self.connection.execute(
             """
-            SELECT run_id, app_id, status, valid_total, fixed_count, low_count,
+            SELECT run_id, app_id, status, target_min, target_max, valid_total, fixed_count, low_count,
                    high_count, rejected_count, retry_round
             FROM runs ORDER BY run_id
             """
@@ -46,7 +49,7 @@ class RunRepo:
     def get(self, run_id: str) -> RunRecord | None:
         row = self.connection.execute(
             """
-            SELECT run_id, app_id, status, valid_total, fixed_count, low_count,
+            SELECT run_id, app_id, status, target_min, target_max, valid_total, fixed_count, low_count,
                    high_count, rejected_count, retry_round
             FROM runs WHERE run_id = ?
             """,
@@ -65,11 +68,50 @@ class RunRepo:
             raise KeyError(f"run not found: {run_id}")
         return record
 
+    def update_from_worker_result(
+        self,
+        run_id: str,
+        status: RunStatus,
+        valid_total: int,
+        fixed_count: int,
+        low_count: int,
+        high_count: int,
+        rejected_count: int,
+    ) -> RunRecord:
+        self.connection.execute(
+            """
+            UPDATE runs
+            SET status = ?,
+                valid_total = ?,
+                fixed_count = ?,
+                low_count = ?,
+                high_count = ?,
+                rejected_count = ?
+            WHERE run_id = ?
+            """,
+            (
+                status.value,
+                valid_total,
+                fixed_count,
+                low_count,
+                high_count,
+                rejected_count,
+                run_id,
+            ),
+        )
+        self.connection.commit()
+        record = self.get(run_id)
+        if record is None:
+            raise KeyError(f"run not found: {run_id}")
+        return record
+
     def _from_row(self, row: sqlite3.Row) -> RunRecord:
         return RunRecord(
             run_id=str(row["run_id"]),
             app_id=str(row["app_id"]),
             status=RunStatus(str(row["status"])),
+            target_min=int(row["target_min"]),
+            target_max=int(row["target_max"]),
             valid_total=int(row["valid_total"]),
             fixed_count=int(row["fixed_count"]),
             low_count=int(row["low_count"]),

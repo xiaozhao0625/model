@@ -27,14 +27,16 @@
 | P6 | 环境配置与模型部署预备 | done |
 | P7 | Master Backend + PostgreSQL/SQLite + API | done |
 | P8 | Web Dashboard UI 控制台 | done |
+| P9 | Worker Runtime 与 Master/Worker 通信 | done |
 | P12 | 行为包自我深化引擎 | pending |
 | P13 | 四机部署、分布式调度、并发压测 | pending |
 
 ## 当前状态
 
-当前项目已完成 P8：Web Dashboard UI 控制台，并完成 P8.1 中文化补丁和 P8.2 明暗主题切换补丁。
+当前项目已完成 P9：Worker Runtime 与 Master/Worker 通信。P8 Web Dashboard UI 控制台已完成，并完成 P8.1 中文化补丁和 P8.2 明暗主题切换补丁。
 
 P8 将 P7 后端控制平面产品化为可操作、可监控、可交付的中文 Web 控制台，并支持白天模式 / 夜间模式切换；仍不写真实 Worker 执行逻辑，不做真实截图/行为包/真实模型推理，不做四机实机部署。
+P9 建立单机 Master/Worker mock 闭环：Worker 注册、心跳、领取任务、复用 P4 mock/stub pipeline 执行、上报结果，并由 Master 更新 run 到 capture_completed；仍不接真实采集工具、不接真实模型、不做四机部署。
 
 ## app-screenshot-agent 复用边界
 

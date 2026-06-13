@@ -18,6 +18,8 @@ class RunRecord:
     run_id: str
     app_id: str
     status: RunStatus
+    target_min: int = 1000
+    target_max: int = 5000
     valid_total: int = 0
     fixed_count: int = 0
     low_count: int = 0
@@ -30,9 +32,11 @@ class RunRecord:
 class WorkerRecord:
     worker_id: str
     type: str
+    machine_name: str | None = None
     capabilities: list[str] = field(default_factory=list)
     state: str = "idle"
     heartbeat: str | None = None
+    current_run_id: str | None = None
 
 
 @dataclass(frozen=True)

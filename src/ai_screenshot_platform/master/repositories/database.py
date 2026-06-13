@@ -37,6 +37,8 @@ class MasterDatabase:
                 run_id TEXT PRIMARY KEY,
                 app_id TEXT NOT NULL,
                 status TEXT NOT NULL,
+                target_min INTEGER NOT NULL DEFAULT 1000,
+                target_max INTEGER NOT NULL DEFAULT 5000,
                 valid_total INTEGER NOT NULL,
                 fixed_count INTEGER NOT NULL,
                 low_count INTEGER NOT NULL,
@@ -48,9 +50,11 @@ class MasterDatabase:
             CREATE TABLE IF NOT EXISTS workers (
                 worker_id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
+                machine_name TEXT,
                 capabilities TEXT NOT NULL,
                 state TEXT NOT NULL,
-                heartbeat TEXT
+                heartbeat TEXT,
+                current_run_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS images (
@@ -68,7 +72,21 @@ class MasterDatabase:
             );
             """
         )
+        self._ensure_column("runs", "target_min", "INTEGER NOT NULL DEFAULT 1000")
+        self._ensure_column("runs", "target_max", "INTEGER NOT NULL DEFAULT 5000")
+        self._ensure_column("workers", "machine_name", "TEXT")
+        self._ensure_column("workers", "current_run_id", "TEXT")
         self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
+
+    def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
+        columns = {
+            str(row["name"])
+            for row in self.connection.execute(f"PRAGMA table_info({table_name})")
+        }
+        if column_name not in columns:
+            self.connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+            )

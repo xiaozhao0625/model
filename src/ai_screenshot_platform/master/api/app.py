@@ -27,6 +27,7 @@ from ai_screenshot_platform.master.schemas.api import (
     SceneClassifyApiRequest,
     UploadRunRequest,
     WorkerRegisterRequest,
+    WorkerResultReportRequest,
 )
 from ai_screenshot_platform.master.services.app_service import AppService
 from ai_screenshot_platform.master.services.model_gateway_service import (
@@ -120,6 +121,8 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
                 get_services().run_service.create_run(
                     run_id=payload.run_id,
                     app_id=payload.app_id,
+                    target_min=payload.target_min,
+                    target_max=payload.target_max,
                 )
             )
         )
@@ -147,6 +150,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
                 get_services().worker_service.register(
                     worker_id=payload.worker_id,
                     type=payload.type,
+                    machine_name=payload.machine_name,
                     capabilities=payload.capabilities,
                 )
             )
@@ -162,6 +166,21 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         worker = services.worker_service.heartbeat(worker_id)
         services.redis_client.set(f"worker:{worker_id}:heartbeat", worker.heartbeat)
         return ok(to_api_data(worker))
+
+    @app.post("/api/workers/{worker_id}/claim")
+    def worker_claim(worker_id: str):
+        return ok(to_api_data(get_services().worker_service.claim(worker_id)))
+
+    @app.post("/api/workers/{worker_id}/runs/{run_id}/report")
+    def worker_report(worker_id: str, run_id: str, payload: WorkerResultReportRequest):
+        if payload.run_id != run_id:
+            raise ValueError("payload run_id must match route run_id")
+        result = get_services().worker_service.report(
+            worker_id=worker_id,
+            run_id=run_id,
+            result=payload,
+        )
+        return ok(to_api_data(result))
 
     @app.post("/api/upload-manifest")
     def upload_manifest(payload: UploadRunRequest):
@@ -245,7 +264,12 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
     return MasterServices(
         app_service=AppService(app_repo),
         run_service=RunService(run_repo),
-        worker_service=WorkerService(worker_repo),
+        worker_service=WorkerService(
+            worker_repo,
+            run_repo=run_repo,
+            app_repo=app_repo,
+            data_root=settings.data_root,
+        ),
         upload_service=UploadService(run_repo, upload_repo),
         model_gateway_service=ModelGatewayProxyService(
             audit_root=settings.data_root

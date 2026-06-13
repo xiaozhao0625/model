@@ -1,0 +1,44 @@
+{
+  "workers": [
+    {
+      "worker_id": "worker_mock_single_node",
+      "worker_type": "mock",
+      "machine_name": "single-node-dev",
+      "capabilities": ["capture_low"],
+      "master_url": "http://127.0.0.1:8000",
+      "data_root": "runs/worker_agent/mock",
+      "heartbeat_interval_sec": 5,
+      "execution_mode": "mock"
+    },
+    {
+      "worker_id": "worker_pc_game_stub_single_node",
+      "worker_type": "pc_game",
+      "machine_name": "single-node-dev",
+      "capabilities": ["capture_high", "behavior_pack", "obs_capture", "ffmpeg_extract"],
+      "master_url": "http://127.0.0.1:8000",
+      "data_root": "runs/worker_agent/pc_game_stub",
+      "heartbeat_interval_sec": 5,
+      "execution_mode": "pc_game_stub"
+    },
+    {
+      "worker_id": "worker_web_stub_single_node",
+      "worker_type": "web",
+      "machine_name": "single-node-dev",
+      "capabilities": ["capture_low", "playwright"],
+      "master_url": "http://127.0.0.1:8000",
+      "data_root": "runs/worker_agent/web_stub",
+      "heartbeat_interval_sec": 5,
+      "execution_mode": "web_stub"
+    },
+    {
+      "worker_id": "worker_android_stub_single_node",
+      "worker_type": "android",
+      "machine_name": "single-node-dev",
+      "capabilities": ["capture_low", "adb"],
+      "master_url": "http://127.0.0.1:8000",
+      "data_root": "runs/worker_agent/android_stub",
+      "heartbeat_interval_sec": 5,
+      "execution_mode": "android_stub"
+    }
+  ]
+}
