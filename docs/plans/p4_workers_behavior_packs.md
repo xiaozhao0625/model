@@ -60,12 +60,40 @@ P4.2 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.3 Behavior Pack 接入 Worker，跑通 mock pc_game high 采集
+
+状态：done。
+
+已完成内容：
+
+- 扩展 `WorkerTask`，增加可选 `behavior_pack_path`、`behavior_pack_id`、`context`。
+- 扩展 `WorkerResult`，增加可选 `behavior_pack_id`、`behavior_actions_path`。
+- 新增 `BehaviorWorkerAgent`，用于模拟 PC Game Worker 通过行为包生成 high 桶截图。
+- `BehaviorWorkerAgent` 复用 `BehaviorPackLoader`、`BehaviorSafetyGate`、`MockBehaviorRunner` 和 `LocalRunSession`。
+- 成功执行后生成 `summary.json`、`meta.jsonl`、`run.log`、`behavior_actions.jsonl`。
+- target_min 较小时可推进到 `capture_completed`。
+- forbidden_context 或高风险 action 命中时返回 `WorkerResult.error`，不生成有效截图，不进入 `capture_completed`。
+
+P4.3 明确未实现：
+
+- 不接真实 OBS。
+- 不接真实 FFmpeg。
+- 不接真实 AutoHotkey。
+- 不接真实 pydirectinput。
+- 不接真实 ADB。
+- 不接 Airtest/Appium。
+- 不接真实 Playwright。
+- 不接真实 pywinauto。
+- 不执行真实鼠标或键盘动作。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
 ## Worker 策略
 
 - Web Worker 后续优先使用 Playwright，但 P4.1 只声明能力，不接真实 Playwright。
 - PC App Worker 后续优先使用 pywinauto，但 P4.1 只声明能力，不接真实 pywinauto。
 - Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
-- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，不实现真实链路。
+- PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，P4.3 只跑通 mock pc_game high 集成，不实现真实链路。
 
 ## 行为包原则
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from ai_screenshot_platform.common.domain.run_status import RunStatus
 
@@ -59,6 +60,9 @@ class WorkerTask:
     target_max: int
     bucket: str
     root_dir: str | Path
+    behavior_pack_path: str | Path | None = None
+    behavior_pack_id: str | None = None
+    context: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -74,3 +78,5 @@ class WorkerResult:
     run_dir: Path
     summary_path: Path
     error: str | None = None
+    behavior_pack_id: str | None = None
+    behavior_actions_path: Path | None = None
