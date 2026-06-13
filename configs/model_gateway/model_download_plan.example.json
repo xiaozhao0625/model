@@ -1,0 +1,6 @@
+{
+  "plan_name": "p11_model_download_plan_example",
+  "dry_run": true,
+  "notes": "Generated download plans are instructions only; P11 does not download models automatically.",
+  "items": []
+}

@@ -15,7 +15,7 @@ REQUIRED_MODELS = {
     "gui_actor",
     "os_atlas",
 }
-ALLOWED_LOAD_MODES = {"resident", "on_demand"}
+ALLOWED_LOAD_MODES = {"resident", "on_demand", "disabled"}
 
 
 class ManifestCheckError(ValueError):
@@ -53,6 +53,12 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(vram_budget, int) or vram_budget <= 0:
             raise ManifestCheckError(f"vram_budget_gb must be a positive integer for {model_id}")
         require_string(model, "health_check_mode")
+        if not isinstance(model.get("expected_files"), list):
+            raise ManifestCheckError(f"expected_files must be a list for {model_id}")
+        if not isinstance(model.get("download"), dict):
+            raise ManifestCheckError(f"download must be an object for {model_id}")
+        if not isinstance(model.get("runtime"), dict):
+            raise ManifestCheckError(f"runtime must be an object for {model_id}")
         model_ids.append(model_id)
         load_modes.append(load_mode)
 

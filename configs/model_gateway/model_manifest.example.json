@@ -1,7 +1,7 @@
 {
-  "manifest_name": "p6_model_deployment_prep",
+  "manifest_name": "p11_model_runtime_boundaries",
   "model_root": "models",
-  "notes": "Example only. P6 does not download models and does not require local model files to exist.",
+  "notes": "Example only. P11 does not download models and does not require local model files to exist. Heavy models are on-demand; PC Game Worker must not keep large models resident.",
   "models": [
     {
       "model_id": "ui_tars",
@@ -13,8 +13,19 @@
       "load_mode": "on_demand",
       "gpu_required": true,
       "vram_budget_gb": 12,
-      "health_check_mode": "manifest_only",
-      "notes": "Primary GUI agent and low-frequency decision provider. Prefer quantized or on-demand loading on M0."
+      "health_check_mode": "expected_files",
+      "notes": "Primary GUI agent and low-frequency decision provider. Prefer quantized or on-demand loading on M0/W3. Do not keep resident on PC Game Worker.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place UI-TARS model files under MODEL_ROOT/ui_tars after architecture approval.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "ui_tars_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": false
+      }
     },
     {
       "model_id": "showui",
@@ -26,8 +37,19 @@
       "load_mode": "resident",
       "gpu_required": true,
       "vram_budget_gb": 4,
-      "health_check_mode": "manifest_only",
-      "notes": "Lightweight coordinate grounding helper for PC app and web workflows."
+      "health_check_mode": "expected_files",
+      "notes": "Lightweight coordinate grounding helper for PC app and web workflows. Prefer first real smoke candidate.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place ShowUI model files under MODEL_ROOT/showui.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "showui_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": true
+      }
     },
     {
       "model_id": "qwen_vl",
@@ -39,8 +61,19 @@
       "load_mode": "on_demand",
       "gpu_required": true,
       "vram_budget_gb": 10,
-      "health_check_mode": "manifest_only",
-      "notes": "General visual understanding. Use on demand on M0 or W3."
+      "health_check_mode": "expected_files",
+      "notes": "General visual understanding. Use on demand on M0 or W3; do not assume 5060Ti 16GB can keep all models resident.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place Qwen-VL compatible model files under MODEL_ROOT/qwen_vl.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "qwen_vl_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": false
+      }
     },
     {
       "model_id": "omniparser",
@@ -52,8 +85,19 @@
       "load_mode": "resident",
       "gpu_required": true,
       "vram_budget_gb": 6,
-      "health_check_mode": "manifest_only",
-      "notes": "UI structure parser for PC app and web screenshots."
+      "health_check_mode": "expected_files",
+      "notes": "UI structure parser for PC app and web screenshots. Prefer resident only when VRAM budget allows.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place OmniParser files under MODEL_ROOT/omniparser.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "omniparser_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": true
+      }
     },
     {
       "model_id": "gui_actor",
@@ -65,8 +109,19 @@
       "load_mode": "on_demand",
       "gpu_required": true,
       "vram_budget_gb": 8,
-      "health_check_mode": "manifest_only",
-      "notes": "Backup GUI grounding provider. Keep on demand."
+      "health_check_mode": "expected_files",
+      "notes": "Backup GUI grounding provider. Keep on demand; 3060 12GB should prioritize Worker tools over resident model load.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place GUI-Actor files under MODEL_ROOT/gui_actor.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "gui_actor_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": false
+      }
     },
     {
       "model_id": "os_atlas",
@@ -78,8 +133,19 @@
       "load_mode": "on_demand",
       "gpu_required": true,
       "vram_budget_gb": 8,
-      "health_check_mode": "manifest_only",
-      "notes": "Cross-platform GUI grounding backup. Keep on demand."
+      "health_check_mode": "expected_files",
+      "notes": "Cross-platform GUI grounding backup. Keep on demand on W3/M0.",
+      "expected_files": ["config.json"],
+      "download": {
+        "source": "manual",
+        "url_or_hint": "Place OS-Atlas files under MODEL_ROOT/os_atlas.",
+        "requires_network": true
+      },
+      "runtime": {
+        "provider_module": "os_atlas_provider",
+        "max_loaded_instances": 1,
+        "cpu_fallback": false
+      }
     }
   ]
 }

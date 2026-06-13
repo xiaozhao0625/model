@@ -1,0 +1,14 @@
+{
+  "default_provider": "mock",
+  "fallback_provider": "mock",
+  "enabled_providers": ["mock"],
+  "provider_timeouts": {
+    "scene_classify_sec": 15,
+    "ground_sec": 15,
+    "act_sec": 20
+  },
+  "max_loaded_models": 1,
+  "allow_gpu": false,
+  "allow_cpu_fallback": true,
+  "audit_log_dir": "runs/model_gateway_audit"
+}

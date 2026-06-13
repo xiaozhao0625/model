@@ -47,6 +47,7 @@
 | P8.2 Web Console 明暗主题切换 | done | 已新增白天模式 / 夜间模式切换入口，默认夜间模式，使用 localStorage 持久化选择，并通过 CSS variables 保持暗色工业风格与柔和白天模式。 |
 | P9 Worker Runtime 与 Master/Worker 通信 | done | 已新增 Worker Agent 配置、Master API client、单轮 runtime、executor resolver、Master claim/report 路由和 P9 dry-run；当前只跑 mock/stub，不接真实采集工具或真实模型。 |
 | P10 真实采集适配器接入 | done | 已建立单机 Worker HTTP 进程边界、Web/PC App/PC Game/Android 真实适配器入口、真实工具健康检查、可选 smoke 脚本和 stub fallback；默认测试不依赖真实工具，不进入四机部署。 |
+| P11 模型拉取、模型部署、真实 Provider 接入 | done | 已补强模型 manifest、Provider runtime 配置、模型路径解析、文件健康检查、下载计划脚本、真实 Provider 边界和 optional smoke；默认不下载模型、不要求 GPU、不引入真实模型依赖。 |
 | P12 行为包自我深化引擎 | pending | 迁移早期行为包学习计划到 P12；后续基于历史运行、失败样本、人工补种子和质量反馈优化行为包。 |
 
 ## 当前架构基线

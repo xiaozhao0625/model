@@ -29,16 +29,18 @@
 | P8 | Web Dashboard UI 控制台 | done |
 | P9 | Worker Runtime 与 Master/Worker 通信 | done |
 | P10 | 真实采集适配器接入 | done |
+| P11 | 模型拉取、模型部署、真实 Provider 接入 | done |
 | P12 | 行为包自我深化引擎 | pending |
 | P13 | 四机部署、分布式调度、并发压测 | pending |
 
 ## 当前状态
 
-当前项目已完成 P10：真实采集适配器接入。P8 Web Dashboard UI 控制台已完成，并完成 P8.1 中文化补丁和 P8.2 明暗主题切换补丁。
+当前项目已完成 P11：模型拉取、模型部署、真实 Provider 接入。P8 Web Dashboard UI 控制台已完成，并完成 P8.1 中文化补丁和 P8.2 明暗主题切换补丁。
 
 P8 将 P7 后端控制平面产品化为可操作、可监控、可交付的中文 Web 控制台，并支持白天模式 / 夜间模式切换；仍不写真实 Worker 执行逻辑，不做真实截图/行为包/真实模型推理，不做四机实机部署。
 P9 建立单机 Master/Worker mock 闭环：Worker 注册、心跳、领取任务、复用 P4 mock/stub pipeline 执行、上报结果，并由 Master 更新 run 到 capture_completed；仍不接真实采集工具、不接真实模型、不做四机部署。
 P10 开始定义真实采集适配器入口和 Worker HTTP 进程边界，新增 Web/PC App/PC Game/Android 可选真实工具健康检查与 smoke 脚本；默认仍使用 stub/fallback，不强制安装真实工具，不进入四机部署。
+P11 建立模型 manifest、模型文件健康检查、下载计划、Provider runtime、真实 Provider 边界和 mock fallback；默认不下载模型、不要求 GPU、不引入 torch/transformers 默认依赖。
 
 ## app-screenshot-agent 复用边界
 
