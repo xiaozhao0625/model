@@ -26,15 +26,15 @@
 | P5 | 补采机制与人工补种子 | pending |
 | P6 | 环境配置与模型部署预备 | done |
 | P7 | Master Backend + PostgreSQL/SQLite + API | done |
-| P8 | Web Dashboard UI 控制台 | next |
+| P8 | Web Dashboard UI 控制台 | done |
 | P12 | 行为包自我深化引擎 | pending |
 | P13 | 四机部署、分布式调度、并发压测 | pending |
 
 ## 当前状态
 
-当前项目已完成 P7：Master Backend + PostgreSQL/SQLite + API。
+当前项目已完成 P8：Web Dashboard UI 控制台。
 
-P7 建立后端控制平面，不写 Worker 执行逻辑，不做截图/行为包/真实模型推理，不做 UI，不做四机实机部署。
+P8 将 P7 后端控制平面产品化为可操作、可监控、可交付的 Web 控制台；仍不写真实 Worker 执行逻辑，不做真实截图/行为包/真实模型推理，不做四机实机部署。
 
 ## app-screenshot-agent 复用边界
 
