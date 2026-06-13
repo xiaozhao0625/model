@@ -1,0 +1,165 @@
+{
+  "topology": {
+    "master_url": "http://192.168.1.18:8000",
+    "machines": {
+      "M0": {
+        "ip": "192.168.1.18",
+        "machine_name": "M0-5060TI-MASTER",
+        "role": "Master API + PostgreSQL + Redis + Web Console + Model Gateway"
+      },
+      "W1": {
+        "ip": "192.168.1.19",
+        "machine_name": "W1-3060-PC-GAME",
+        "role": "PC Game Worker + OBS + FFmpeg + Behavior Pack"
+      },
+      "W2": {
+        "ip": "192.168.1.20",
+        "machine_name": "W2-3060-PC-APP-WEB",
+        "role": "PC App/Web Worker + Playwright + pywinauto + mss + dxcam"
+      },
+      "W3": {
+        "ip": "192.168.1.21",
+        "machine_name": "W3-3060-ANDROID",
+        "role": "Android Worker + ADB + Android Emulator"
+      }
+    }
+  },
+  "software": {
+    "common": [
+      {
+        "name": "Python",
+        "severity": "required",
+        "official_url": "https://www.python.org/downloads/",
+        "install_hint": "Install Python 3.11+ and enable Add python.exe to PATH.",
+        "verify_command": "python --version"
+      },
+      {
+        "name": "Git",
+        "severity": "required",
+        "official_url": "https://git-scm.com/install/windows",
+        "install_hint": "Install Git for Windows.",
+        "verify_command": "git --version"
+      },
+      {
+        "name": "NVIDIA Driver",
+        "severity": "optional",
+        "official_url": "https://www.nvidia.com/en-us/geforce/drivers/",
+        "install_hint": "Install the official NVIDIA driver for the local GPU.",
+        "verify_command": "nvidia-smi"
+      }
+    ],
+    "M0": [
+      {
+        "name": "PostgreSQL psql",
+        "severity": "required",
+        "official_url": "https://www.postgresql.org/download/windows/",
+        "install_hint": "Install PostgreSQL or set PSQL_PATH to psql.exe.",
+        "verify_command": "psql --version"
+      },
+      {
+        "name": "Redis",
+        "severity": "required",
+        "official_url": "https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/install-redis-on-windows/",
+        "install_hint": "Use WSL2, Docker, or an approved local Redis service.",
+        "verify_command": "redis-cli ping"
+      },
+      {
+        "name": "Node.js",
+        "severity": "required",
+        "official_url": "https://nodejs.org/en/download",
+        "install_hint": "Install Node.js LTS.",
+        "verify_command": "node --version"
+      }
+    ],
+    "W1": [
+      {
+        "name": "OBS Studio",
+        "severity": "required",
+        "official_url": "https://obsproject.com/download",
+        "install_hint": "Install OBS Studio and enable obs-websocket when needed.",
+        "verify_command": "obs64 --version"
+      },
+      {
+        "name": "FFmpeg",
+        "severity": "required",
+        "official_url": "https://ffmpeg.org/download.html",
+        "install_hint": "Install FFmpeg and add it to PATH.",
+        "verify_command": "ffmpeg -version"
+      },
+      {
+        "name": "AutoHotkey",
+        "severity": "optional",
+        "official_url": "https://www.autohotkey.com/",
+        "install_hint": "Install only if a reviewed behavior pack needs it.",
+        "verify_command": "autohotkey /?"
+      }
+    ],
+    "W2": [
+      {
+        "name": "Playwright Python package",
+        "severity": "required",
+        "official_url": "https://playwright.dev/python/docs/intro",
+        "install_hint": "pip install playwright",
+        "verify_command": "python -m playwright --version"
+      },
+      {
+        "name": "Playwright browsers",
+        "severity": "required",
+        "official_url": "https://playwright.dev/python/docs/browsers",
+        "install_hint": "python -m playwright install",
+        "verify_command": "python -m playwright install --dry-run"
+      },
+      {
+        "name": "pywinauto",
+        "severity": "required",
+        "official_url": "https://pypi.org/project/pywinauto/",
+        "install_hint": "pip install pywinauto",
+        "verify_command": "python -c \"import pywinauto\""
+      },
+      {
+        "name": "mss",
+        "severity": "required",
+        "official_url": "https://pypi.org/project/mss/",
+        "install_hint": "pip install mss",
+        "verify_command": "python -c \"import mss\""
+      },
+      {
+        "name": "dxcam",
+        "severity": "optional",
+        "official_url": "https://pypi.org/project/dxcam/",
+        "install_hint": "pip install dxcam",
+        "verify_command": "python -c \"import dxcam\""
+      }
+    ],
+    "W3": [
+      {
+        "name": "Android SDK Platform-Tools",
+        "severity": "required",
+        "official_url": "https://developer.android.com/tools/releases/platform-tools",
+        "install_hint": "Install platform-tools and add adb to PATH.",
+        "verify_command": "adb version"
+      },
+      {
+        "name": "Android Emulator",
+        "severity": "required",
+        "official_url": "https://developer.android.com/studio",
+        "install_hint": "Install Android Studio and create an emulator profile.",
+        "verify_command": "emulator -version"
+      },
+      {
+        "name": "Airtest",
+        "severity": "optional",
+        "official_url": "https://airtest.netease.com/",
+        "install_hint": "Install only if the Android Worker plan requires it.",
+        "verify_command": "python -c \"import airtest\""
+      },
+      {
+        "name": "Appium Python Client",
+        "severity": "optional",
+        "official_url": "https://pypi.org/project/Appium-Python-Client/",
+        "install_hint": "pip install Appium-Python-Client",
+        "verify_command": "python -c \"import appium\""
+      }
+    ]
+  }
+}
