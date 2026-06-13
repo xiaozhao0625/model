@@ -1,4 +1,5 @@
 import { mockWorkers } from "../../lib/mock-data";
+import { capabilityLabels, workerStateLabels } from "../../lib/status";
 import { Badge } from "../ui/badge";
 
 export function WorkerSummary() {
@@ -12,13 +13,13 @@ export function WorkerSummary() {
               <p className="mt-1 text-xs text-slate-500">{worker.machine_name}</p>
             </div>
             <Badge className={worker.state === "stopped" ? "border-slate-600 bg-slate-700/20 text-slate-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}>
-              {worker.state}
+              {workerStateLabels[worker.state] || worker.state}
             </Badge>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {worker.capabilities.slice(0, 4).map((capability) => (
               <Badge key={capability} className="border-slate-700 bg-slate-900 text-slate-400">
-                {capability}
+                {capabilityLabels[capability] || capability}
               </Badge>
             ))}
           </div>

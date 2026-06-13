@@ -1,19 +1,19 @@
 import type { RunStatus } from "./api-types";
 
 export const statusLabels: Record<RunStatus, string> = {
-  pending: "Pending",
-  launching: "Launching",
-  waiting_manual: "Waiting Manual",
-  profiling: "Profiling",
-  running: "Running",
-  capture_completed: "Capture Completed",
-  upload_pending: "Upload Pending",
-  uploaded_confirmed: "Uploaded Confirmed",
-  local_deleted: "Local Deleted",
-  completed: "Completed",
-  needs_manual_seed: "Needs Manual Seed",
-  failed_low_yield: "Failed Low Yield",
-  skipped_risk: "Skipped Risk"
+  pending: "待处理",
+  launching: "启动中",
+  waiting_manual: "等待人工处理",
+  profiling: "识别中",
+  running: "运行中",
+  capture_completed: "采集完成",
+  upload_pending: "待上传",
+  uploaded_confirmed: "已确认上传",
+  local_deleted: "本地已清理",
+  completed: "已完成",
+  needs_manual_seed: "需要人工补种子",
+  failed_low_yield: "低产失败",
+  skipped_risk: "风险跳过"
 };
 
 export const statusTone: Record<RunStatus, string> = {
@@ -43,6 +43,68 @@ export const lifecycleSteps: RunStatus[] = [
   "local_deleted",
   "completed"
 ];
+
+export const bucketLabels: Record<string, string> = {
+  fixed: "固定页",
+  low: "低频",
+  high: "高频",
+  rejected: "已拒绝"
+};
+
+export const workerTypeLabels: Record<string, string> = {
+  pc_game: "PC 游戏 Worker",
+  pc_app: "PC 软件 Worker",
+  web: "Web Worker",
+  android_app: "Android 应用",
+  android_game: "Android 游戏",
+  android: "Android Worker",
+  mock: "Mock Worker",
+  other: "其他类型"
+};
+
+export const workerStateLabels: Record<string, string> = {
+  idle: "空闲",
+  assigned: "已分配",
+  running: "运行中",
+  stopped: "已停止",
+  failed: "故障"
+};
+
+export const capabilityLabels: Record<string, string> = {
+  capture_low: "低频采集",
+  capture_high: "高频采集",
+  behavior_pack: "行为包",
+  obs_capture: "OBS 录制",
+  ffmpeg_extract: "FFmpeg 抽帧",
+  pywinauto: "pywinauto 自动化",
+  playwright: "Playwright 自动化",
+  adb: "ADB 入口",
+  "content_area_only=true": "仅内容区",
+  "app-screenshot-agent-reuse": "复用 app-screenshot-agent"
+};
+
+export const providerTypeLabels: Record<string, string> = {
+  mock: "Mock Provider",
+  ui_tars: "UI-TARS 骨架",
+  showui: "ShowUI 骨架",
+  qwen_vl: "Qwen-VL 骨架",
+  omniparser: "OmniParser 骨架",
+  gui_actor: "GUI Actor 骨架",
+  os_atlas: "OS-Atlas 骨架"
+};
+
+export const actionLabels: Record<string, string> = {
+  start: "启动",
+  stop: "停止",
+  retry: "补采",
+  manual_seed: "人工补种子",
+  mark_failed: "标记低产失败",
+  upload_manifest: "生成上传清单",
+  confirm_upload: "确认已上传",
+  cleanup: "清理本地",
+  finalize: "完成任务",
+  view_detail: "查看详情"
+};
 
 export function isTerminalStatus(status: RunStatus): boolean {
   return status === "completed" || status === "failed_low_yield" || status === "skipped_risk";

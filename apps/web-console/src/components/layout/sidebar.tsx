@@ -2,13 +2,13 @@ import { Activity, AppWindow, Bot, Gauge, HardDriveUpload, PlaySquare, Settings,
 import { NavLink } from "react-router-dom";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: Gauge },
-  { to: "/apps", label: "Apps", icon: AppWindow },
-  { to: "/runs", label: "Runs", icon: PlaySquare },
-  { to: "/workers", label: "Workers", icon: Server },
-  { to: "/upload", label: "Upload", icon: HardDriveUpload },
-  { to: "/model-gateway", label: "Model Gateway", icon: Bot },
-  { to: "/settings", label: "Settings", icon: Settings }
+  { to: "/", label: "系统控制中心", icon: Gauge },
+  { to: "/apps", label: "应用库", icon: AppWindow },
+  { to: "/runs", label: "任务控制中心", icon: PlaySquare },
+  { to: "/workers", label: "Worker 监控", icon: Server },
+  { to: "/upload", label: "上传与清理", icon: HardDriveUpload },
+  { to: "/model-gateway", label: "模型网关", icon: Bot },
+  { to: "/settings", label: "系统设置", icon: Settings }
 ];
 
 export function Sidebar() {
@@ -19,8 +19,8 @@ export function Sidebar() {
           <Activity size={20} />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-100">AI Screenshot</p>
-          <p className="text-xs text-slate-500">Control Center</p>
+          <p className="text-sm font-semibold text-slate-100">AI 截图平台</p>
+          <p className="text-xs text-slate-500">系统控制中心</p>
         </div>
       </div>
       <nav className="mt-6 space-y-1">

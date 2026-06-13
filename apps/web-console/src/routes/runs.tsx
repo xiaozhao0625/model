@@ -4,6 +4,7 @@ import { apiClient } from "../lib/api-client";
 import type { RunRecord, RunStatus } from "../lib/api-types";
 import { mockApps, mockRuns } from "../lib/mock-data";
 import { formatNumber } from "../lib/format";
+import { actionLabels, bucketLabels, statusLabels } from "../lib/status";
 import { PageHeader } from "../components/layout/page-header";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -32,20 +33,20 @@ export function RunsRoute() {
 
   return (
     <div>
-      <PageHeader title="Run Control" description="Create, filter, start, and inspect capture runs. Worker execution remains outside this UI stage." />
+      <PageHeader title="任务控制中心" description="创建、筛选、启动和查看采集任务。P8 只调用 API 入口，不执行真实 Worker。" />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card title="Runs" eyebrow="list">
+        <Card title="任务列表" eyebrow="运行队列">
           <div className="mb-4 grid gap-3 md:grid-cols-2">
             <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | RunStatus)}>
-              <option value="all">all statuses</option>
+              <option value="all">全部状态</option>
               {[...new Set(runs.map((run) => run.status))].map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {statusLabels[status]}
                 </option>
               ))}
             </Select>
             <Select value={appFilter} onChange={(event) => setAppFilter(event.target.value)}>
-              <option value="all">all apps</option>
+              <option value="all">全部应用</option>
               {mockApps.map((app) => (
                 <option key={app.app_id} value={app.app_id}>
                   {app.app_id}
@@ -53,7 +54,7 @@ export function RunsRoute() {
               ))}
             </Select>
           </div>
-          <DataTable columns={["run_id", "app_id", "status", "valid_total", "fixed / low / high / rejected", "retry", "worker", "action"]}>
+          <DataTable columns={["run_id", "app_id", "状态", "valid_total", "固定页 / 低频 / 高频 / 已拒绝", "补采轮次", "Worker", "操作"]}>
             {filtered.map((run) => (
               <tr key={run.run_id}>
                 <td>
@@ -67,33 +68,38 @@ export function RunsRoute() {
                 </td>
                 <td className="font-mono text-slate-300">{formatNumber(run.valid_total)}</td>
                 <td className="font-mono text-xs text-slate-500">
-                  {run.fixed_count} / {run.low_count} / {run.high_count} / {run.rejected_count}
+                    {bucketLabels.fixed}:{run.fixed_count} / {bucketLabels.low}:{run.low_count} / {bucketLabels.high}:{run.high_count} / {bucketLabels.rejected}:{run.rejected_count}
                 </td>
                 <td className="text-slate-400">{run.retry_round}</td>
                 <td className="font-mono text-xs text-slate-500">{run.worker_id || "none"}</td>
                 <td>
-                  <Button disabled={run.status !== "pending"} onClick={() => void startRun(run.run_id)}>
-                    Start Run
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={run.status !== "pending"} onClick={() => void startRun(run.run_id)}>
+                      {actionLabels.start}
+                    </Button>
+                    <Link className="inline-flex min-h-9 items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 hover:border-slate-500" to={`/runs/${run.run_id}`}>
+                      {actionLabels.view_detail}
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}
           </DataTable>
         </Card>
-        <Card title="Create Run" eyebrow="task">
+        <Card title="新建任务" eyebrow="任务配置">
           <div className="grid gap-3">
-            <Input value={runId} onChange={(event) => setRunId(event.target.value)} aria-label="run id" />
-            <Select value={appId} onChange={(event) => setAppId(event.target.value)} aria-label="app id">
+            <Input value={runId} onChange={(event) => setRunId(event.target.value)} aria-label="任务 ID" />
+            <Select value={appId} onChange={(event) => setAppId(event.target.value)} aria-label="应用 ID">
               {mockApps.map((app) => (
-                <option key={app.app_id} value={app.app_id}>
+              <option key={app.app_id} value={app.app_id}>
                   {app.app_id}
                 </option>
               ))}
             </Select>
-            <Input readOnly value="target_min=1000" aria-label="target min" />
-            <Input readOnly value="target_max=5000" aria-label="target max" />
+            <Input readOnly value="target_min=1000" aria-label="最小目标" />
+            <Input readOnly value="target_max=5000" aria-label="最大目标" />
             <Button variant="primary" onClick={() => void createRun()}>
-              Create Run
+              新建任务
             </Button>
           </div>
         </Card>

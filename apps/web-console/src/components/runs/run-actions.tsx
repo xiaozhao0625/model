@@ -1,4 +1,5 @@
 import type { RunRecord } from "../../lib/api-types";
+import { actionLabels } from "../../lib/status";
 import { Button } from "../ui/button";
 
 interface RunActionsProps {
@@ -9,27 +10,27 @@ interface RunActionsProps {
 export function RunActions({ run, onAction }: RunActionsProps) {
   const status = run.status;
   return (
-    <div aria-label="Run actions" className="grid gap-2">
+    <div aria-label="任务操作" className="grid gap-2">
       <Button disabled={status !== "pending"} onClick={() => onAction("start")}>
-        Start
+        {actionLabels.start}
       </Button>
       <Button disabled={status !== "running"} onClick={() => onAction("manual_seed")}>
-        Manual Seed
+        {actionLabels.manual_seed}
       </Button>
       <Button disabled={status !== "running"} variant="danger" onClick={() => onAction("mark_failed")}>
-        Mark Failed
+        {actionLabels.mark_failed}
       </Button>
       <Button disabled={status !== "capture_completed"} variant="primary" onClick={() => onAction("upload_manifest")}>
-        Generate Upload Manifest
+        {actionLabels.upload_manifest}
       </Button>
       <Button disabled={status !== "upload_pending"} onClick={() => onAction("confirm_upload")}>
-        Confirm Upload
+        {actionLabels.confirm_upload}
       </Button>
       <Button disabled={status !== "uploaded_confirmed"} onClick={() => onAction("cleanup")}>
-        Cleanup Local
+        {actionLabels.cleanup}
       </Button>
       <Button disabled={status !== "local_deleted"} onClick={() => onAction("finalize")}>
-        Finalize
+        {actionLabels.finalize}
       </Button>
     </div>
   );

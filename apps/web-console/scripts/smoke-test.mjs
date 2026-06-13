@@ -79,11 +79,44 @@ assert(workers.includes("content_area_only=true"), "workers page must show web c
 
 const upload = `${read("src/routes/upload.tsx")}\n${read("src/components/upload/upload-flow-panel.tsx")}`;
 for (const phrase of [
-  "capture_completed is not completed",
-  "upload_pending waits for manual Baidu Netdisk upload",
-  "local_deleted means local heavy files were removed"
+  "capture_completed 不等于 completed",
+  "upload_pending 表示等待人工上传百度网盘",
+  "local_deleted 表示本地大文件已清理"
 ]) {
   assert(upload.includes(phrase), `missing lifecycle phrase ${phrase}`);
+}
+
+const status = read("src/lib/status.ts");
+for (const label of ["待处理", "启动中", "运行中", "采集完成", "待上传", "已确认上传", "本地已清理", "已完成", "需要人工补种子"]) {
+  assert(status.includes(label), `missing chinese status label ${label}`);
+}
+for (const label of ["固定页", "低频", "高频", "已拒绝", "PC 游戏 Worker", "Web Worker", "生成上传清单", "确认已上传"]) {
+  assert(status.includes(label), `missing chinese display label ${label}`);
+}
+
+const visibleSources = [
+  read("index.html"),
+  read("src/components/layout/sidebar.tsx"),
+  read("src/components/layout/topbar.tsx"),
+  read("src/components/layout/app-shell.tsx"),
+  read("src/routes/dashboard.tsx"),
+  read("src/routes/apps.tsx"),
+  read("src/routes/runs.tsx"),
+  read("src/routes/run-detail.tsx"),
+  read("src/routes/workers.tsx"),
+  read("src/routes/upload.tsx"),
+  read("src/routes/model-gateway.tsx"),
+  read("src/routes/settings.tsx"),
+  read("src/components/runs/run-actions.tsx"),
+  read("src/components/upload/cleanup-danger-zone.tsx"),
+  status
+].join("\n");
+
+for (const label of ["系统控制中心", "应用库", "任务控制中心", "任务详情", "Worker 监控", "上传与清理", "模型网关", "系统设置"]) {
+  assert(visibleSources.includes(label), `missing chinese page label ${label}`);
+}
+for (const label of ["新建应用", "启动", "人工补种子", "生成上传清单", "确认已上传", "清理本地", "完成任务", "查看详情"]) {
+  assert(visibleSources.includes(label), `missing chinese action label ${label}`);
 }
 
 console.log("web_console_smoke_ok", requiredFiles.length);

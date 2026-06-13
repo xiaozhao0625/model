@@ -10,10 +10,10 @@ import type {
 } from "./api-types";
 
 export const mockApps: AppRecord[] = [
-  { app_id: "fps_arena", name: "FPS Arena", type: "pc_game", platform: "windows" },
-  { app_id: "office_suite", name: "Office Suite", type: "pc_app", platform: "windows" },
-  { app_id: "web_portal", name: "Web Portal", type: "web", platform: "browser" },
-  { app_id: "android_shop", name: "Android Shop", type: "android_app", platform: "android" }
+  { app_id: "fps_arena", name: "FPS 竞技场", type: "pc_game", platform: "windows" },
+  { app_id: "office_suite", name: "办公套件", type: "pc_app", platform: "windows" },
+  { app_id: "web_portal", name: "Web 门户", type: "web", platform: "browser" },
+  { app_id: "android_shop", name: "Android 商店", type: "android_app", platform: "android" }
 ];
 
 export const mockRuns: RunRecord[] = [
@@ -208,7 +208,7 @@ export const mockModelProviders: ModelProviderRecord[] = [
     supports_ground: true,
     supports_act: true,
     blocked_count: 7,
-    last_event: "request_manual blocked payment intent"
+    last_event: "request_manual 已拦截支付意图"
   },
   {
     provider_name: "ui_tars_stub",
@@ -218,7 +218,7 @@ export const mockModelProviders: ModelProviderRecord[] = [
     supports_ground: true,
     supports_act: true,
     blocked_count: 0,
-    last_event: "stub only"
+    last_event: "仅 stub 骨架"
   },
   {
     provider_name: "qwen_vl_stub",
@@ -228,7 +228,7 @@ export const mockModelProviders: ModelProviderRecord[] = [
     supports_ground: false,
     supports_act: false,
     blocked_count: 0,
-    last_event: "model not deployed"
+    last_event: "模型未部署"
   }
 ];
 

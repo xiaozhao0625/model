@@ -12,12 +12,12 @@ export function SystemMetrics() {
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-      <MetricCard label="Apps" value={mockApps.length} detail="registered targets" icon={<AppWindow size={18} />} tone="blue" />
-      <MetricCard label="Runs" value={mockRuns.length} detail={`${running} running now`} icon={<PlaySquare size={18} />} tone="green" />
-      <MetricCard label="Upload Pending" value={uploadPending} detail="waiting manual upload" icon={<UploadCloud size={18} />} tone="amber" />
-      <MetricCard label="Failed" value={failed} detail="low yield or risk skipped" icon={<AlertTriangle size={18} />} tone="red" />
-      <MetricCard label="Workers Online" value={`${workerOnline}/${mockWorkers.length}`} detail="heartbeat visible" icon={<Server size={18} />} tone="slate" />
-      <MetricCard label="Valid Images" value={formatNumber(validToday)} detail="mock today total" icon={<Images size={18} />} tone="blue" />
+      <MetricCard label="应用总数" value={mockApps.length} detail="已登记采集目标" icon={<AppWindow size={18} />} tone="blue" />
+      <MetricCard label="任务总数" value={mockRuns.length} detail={`${running} 个正在运行`} icon={<PlaySquare size={18} />} tone="green" />
+      <MetricCard label="待上传" value={uploadPending} detail="等待人工上传确认" icon={<UploadCloud size={18} />} tone="amber" />
+      <MetricCard label="失败/跳过" value={failed} detail="低产失败或风险跳过" icon={<AlertTriangle size={18} />} tone="red" />
+      <MetricCard label="Worker 在线" value={`${workerOnline}/${mockWorkers.length}`} detail="心跳可见" icon={<Server size={18} />} tone="slate" />
+      <MetricCard label="有效截图" value={formatNumber(validToday)} detail="今日 mock 汇总" icon={<Images size={18} />} tone="blue" />
     </div>
   );
 }

@@ -7,13 +7,13 @@ export function CleanupDangerZone({ disabled, onCleanup }: { disabled: boolean; 
       <div className="flex items-start gap-3">
         <ShieldAlert className="text-red-300" size={20} />
         <div>
-          <h3 className="text-sm font-semibold text-red-100">Local cleanup guard</h3>
+          <h3 className="text-sm font-semibold text-red-100">本地清理保护</h3>
           <p className="mt-2 text-sm text-red-100/70">
-            Cleanup is only enabled after uploaded_confirmed. The platform keeps summary.json, meta.jsonl, upload_manifest.json, upload_record.json,
-            cleanup_record.json, and run.log.
+            只有 uploaded_confirmed 后才允许清理。平台必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、
+            cleanup_record.json 和 run.log。
           </p>
           <Button className="mt-4" variant="danger" disabled={disabled} onClick={onCleanup}>
-            Cleanup Local
+            清理本地
           </Button>
         </div>
       </div>

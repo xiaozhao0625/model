@@ -15,23 +15,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="grid min-h-[calc(100dvh-65px)] grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0">{children}</main>
             <aside className="space-y-4">
-              <Card title="Operational Notes" eyebrow="right panel">
+              <Card title="运行提示" eyebrow="右侧面板">
                 <div className="space-y-3 text-sm text-slate-400">
                   <div className="flex gap-3">
                     <ShieldCheck className="mt-0.5 text-emerald-300" size={17} />
-                    <p>AI actions return proposals only. No real mouse, keyboard, model, or capture tool is executed here.</p>
+                    <p>AI 只返回动作建议，本控制台不执行真实鼠标、键盘、模型或采集工具。</p>
                   </div>
                   <div className="flex gap-3">
                     <AlertTriangle className="mt-0.5 text-amber-300" size={17} />
-                    <p>Upload cleanup requires manual Baidu Netdisk confirmation before local deletion.</p>
+                    <p>上传清理必须先由用户确认已上传百度网盘，之后才允许本地清理。</p>
                   </div>
                   <div className="flex gap-3">
                     <FileText className="mt-0.5 text-blue-300" size={17} />
-                    <p>Mock fallback keeps this console usable when the Master API is offline.</p>
+                    <p>当 Master API 不可用时，mock fallback 会保持控制台可浏览、可演示。</p>
                   </div>
                 </div>
               </Card>
-              <Card title="Recent Run Log" eyebrow="jsonl">
+              <Card title="最近 run.log" eyebrow="jsonl">
                 <div className="space-y-3">
                   {mockRunLogs.map((entry) => (
                     <div key={`${entry.timestamp}-${entry.event}`} className="rounded-lg border border-slate-800 bg-slate-950 p-3">

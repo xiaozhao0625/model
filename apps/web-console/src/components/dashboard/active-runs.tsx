@@ -1,13 +1,14 @@
 import { Link } from "react-router-dom";
 import { mockRuns } from "../../lib/mock-data";
 import { formatNumber, formatPercent } from "../../lib/format";
+import { bucketLabels } from "../../lib/status";
 import { StatusPill } from "../ui/status-pill";
 import { DataTable } from "../ui/table";
 
 export function ActiveRuns() {
   const active = mockRuns.filter((run) => run.status !== "completed").slice(0, 6);
   return (
-    <DataTable columns={["run", "app", "status", "valid", "bucket mix", "worker"]}>
+    <DataTable columns={["任务", "应用", "状态", "有效数", "分桶结构", "Worker"]}>
       {active.map((run) => (
         <tr key={run.run_id}>
           <td>
@@ -21,9 +22,9 @@ export function ActiveRuns() {
           </td>
           <td className="text-slate-300">{formatNumber(run.valid_total)}</td>
           <td className="text-slate-400">
-            low {formatPercent(run.low_count, run.valid_total)} / high {formatPercent(run.high_count, run.valid_total)}
+            {bucketLabels.low} {formatPercent(run.low_count, run.valid_total)} / {bucketLabels.high} {formatPercent(run.high_count, run.valid_total)}
           </td>
-          <td className="font-mono text-xs text-slate-500">{run.worker_id || "unassigned"}</td>
+          <td className="font-mono text-xs text-slate-500">{run.worker_id || "未分配"}</td>
         </tr>
       ))}
     </DataTable>

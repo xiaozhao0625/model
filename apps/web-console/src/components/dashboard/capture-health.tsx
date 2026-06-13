@@ -1,5 +1,6 @@
 import { mockRuns } from "../../lib/mock-data";
 import { formatNumber } from "../../lib/format";
+import { bucketLabels } from "../../lib/status";
 
 export function CaptureHealth() {
   const totals = mockRuns.reduce(
@@ -18,7 +19,7 @@ export function CaptureHealth() {
       {Object.entries(totals).map(([bucket, count]) => (
         <div key={bucket}>
           <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="capitalize text-slate-300">{bucket}</span>
+            <span className="text-slate-300">{bucketLabels[bucket] || bucket}</span>
             <span className="font-mono text-slate-500">{formatNumber(count)}</span>
           </div>
           <div className="h-2 rounded-full bg-slate-800">

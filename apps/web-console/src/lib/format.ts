@@ -13,7 +13,7 @@ export function formatDateTime(value?: string | null): string {
   if (!value) {
     return "never";
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
