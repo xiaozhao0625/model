@@ -142,11 +142,38 @@ P4.5 明确未实现：
 - 不生成 `upload_manifest.json`。
 - 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
+## P4.6 Android Worker 复用入口
+
+状态：done。
+
+已完成内容：
+
+- 新增 Android Worker 真实设备接入前合同层。
+- 定义 `AndroidTargetConfig`、`AndroidDeviceCommand`、`AndroidCapturedFrame`、`AndroidUiObservation`、`AndroidQualityResult`。
+- 定义 `AndroidDeviceAdapter`、`AndroidUiObserverAdapter`、`AndroidQualityAdapter` Protocol。
+- `AndroidTargetConfig.bucket` 默认 `low`。
+- 实现 `AndroidReuseMapping`，明确 app-screenshot-agent 能力到新平台边界的映射。
+- 实现 `StubAndroidDeviceAdapter`，不调用 ADB，不启动模拟器，不操作真实设备，只返回 mock frame bytes。
+- 实现 `StubAndroidUiObserverAdapter`，返回 mock UI observation。
+- 实现 `StubAndroidQualityAdapter`，返回 `valid=true` 的 mock quality result。
+- 实现 `AndroidStubPipeline`，复用 `LocalRunSession`，生成 target_min 张 low 桶 mock 图片并最多推进到 `capture_completed`。
+
+P4.6 明确未实现：
+
+- 不接真实 ADB。
+- 不接 Airtest/Appium。
+- 不启动模拟器。
+- 不接 OCR。
+- 不执行 `subprocess adb`。
+- 不复制整个 app-screenshot-agent 仓库。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
 ## Worker 策略
 
 - Web Worker 后续优先使用 Playwright，但 P4.5 只声明合同和 stub，不接真实 Playwright；后续真实实现必须只采集网页有效内容区，不采集浏览器地址栏、标签栏、Windows 任务栏。
 - PC App Worker 后续优先使用 pywinauto，但 P4.5 只声明合同和 stub，不接真实 pywinauto。
-- Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、去重、质量检测、状态管理能力，但 P4.1 只声明能力，不接真实 ADB。
+- Android Worker 后续优先复用 app-screenshot-agent 的 ADB、OCR、UIAutomator、质量检测、去重、状态管理能力，但 P4.6 只定义复用入口和 stub，不接真实设备或 OCR。
 - PC 游戏 high 桶后续必须使用行为包 + OBS/FFmpeg 抽帧；P4.1 只声明 `behavior_pack`、`obs_capture`、`ffmpeg_extract` 能力，P4.2 只建立行为包合同和 mock runner，P4.3 只跑通 mock pc_game high 集成，P4.4 只建立 OBS/FFmpeg/Input adapter 合同和 stub pipeline，不实现真实链路。
 
 ## 行为包原则
