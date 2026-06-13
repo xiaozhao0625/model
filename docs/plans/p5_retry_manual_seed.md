@@ -78,11 +78,56 @@ P5.2 明确未实现：
 
 ## 后续范围
 
-- valid_total 不足时的补采计划。
-- 重复率或质量不足时的补采计划。
-- 人工补种子入口。
-- 补采审计。
-- 补采后的状态回写。
+- P5 已完成人工补种子入口、审计记录和状态回写。
+- 后续 P6 才进入行为包自我深化，不在 P5 执行真实补采。
+- 后续真实 Worker 调度仍需等待架构师指令。
+
+## P5-Complete Manual Seed Gate
+
+状态：done。
+
+已完成内容：
+
+- 新增 `ManualSeedRecord`。
+- 新增 `ManualSeedGate.request_manual_seed()`。
+- 新增 `ManualSeedGate.resume_after_manual_seed()`。
+- `running -> needs_manual_seed` 必须通过 `RunLifecycle`。
+- `needs_manual_seed -> running` 必须通过 `RunLifecycle`。
+- 写入 `manual_seed_record.jsonl`，事件包含 `manual_seed_requested` 和 `manual_seed_completed`。
+- `LocalRunSession` 增加 `request_manual_seed()` 和 `resume_after_manual_seed()`，并写入 `run.log`。
+
+Manual Seed Gate 明确不做：
+
+- 不执行真实补采动作。
+- 不调用 Worker。
+- 不保存截图。
+- 不修改 fixed、low、high、rejected 计数。
+- 不生成 `upload_manifest.json`。
+- 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
+
+## P5-Complete failed_low_yield 收口
+
+状态：done。
+
+已完成内容：
+
+- `LocalRunSession.mark_failed_low_yield()` 仅允许 `running -> failed_low_yield`。
+- 状态推进必须通过 `RunLifecycle`。
+- `failed_low_yield` 表示多轮补采或人工补种子后仍不足目标数量。
+- 写入 `run.log` 事件 `failed_low_yield`。
+- `failed_low_yield` 是终止态，不进入 `completed`。
+
+## P5 dry-run 总验收
+
+状态：done。
+
+已完成内容：
+
+- 新增 `scripts/dev/mock_p5_recovery_run.py`。
+- 场景 A `manual_seed_success`：retry 耗尽后进入 `needs_manual_seed`，人工补种子恢复到 `running`，随后达到 `target_min` 并进入 `capture_completed`。
+- 场景 B `failed_low_yield`：retry 耗尽后进入人工补种子流程，仍不足目标数量后进入 `failed_low_yield`。
+- dry-run 不生成 `upload_manifest.json`。
+- dry-run 不进入 `upload_pending`、`uploaded_confirmed`、`local_deleted`、`completed`。
 
 ## 禁止范围
 

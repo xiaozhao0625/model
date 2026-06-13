@@ -8,7 +8,15 @@ from ai_screenshot_platform.common.domain.completion_gate import (
     CompletionDecision,
     CompletionGate,
 )
-from ai_screenshot_platform.common.domain.run_lifecycle import RunLifecycle
+from ai_screenshot_platform.common.coverage.manual_seed_gate import (
+    ManualSeedError,
+    ManualSeedGate,
+    ManualSeedRecord,
+)
+from ai_screenshot_platform.common.domain.run_lifecycle import (
+    RunLifecycle,
+    RunTransitionError,
+)
 from ai_screenshot_platform.common.domain.run_status import RunStatus
 from ai_screenshot_platform.common.logging.run_logger import RunEventLogger
 from ai_screenshot_platform.common.runtime.run_status_resolver import RunStatusResolver
@@ -58,6 +66,12 @@ class LocalRunSession:
         self.upload_confirmation_manager = UploadConfirmationManager()
         self.local_cleanup_manager = LocalCleanupManager()
         self.status_resolver = RunStatusResolver(self.completion_gate)
+        self.manual_seed_gate = ManualSeedGate(
+            run_dir=self.run_dir,
+            app_id=config.app_id,
+            run_id=config.run_id,
+            lifecycle=self.lifecycle,
+        )
 
     @property
     def run_dir(self) -> Path:
@@ -78,6 +92,10 @@ class LocalRunSession:
     @property
     def cleanup_record_path(self) -> Path:
         return self.run_dir / "cleanup_record.json"
+
+    @property
+    def manual_seed_record_path(self) -> Path:
+        return self.run_dir / "manual_seed_record.jsonl"
 
     def start(self) -> RunStatus:
         self._transition_to(RunStatus.LAUNCHING)
@@ -211,6 +229,83 @@ class LocalRunSession:
     def finalize_completed(self) -> RunStatus:
         self._transition_to(RunStatus.COMPLETED)
         self.logger.log("completed", self.status)
+        return self.status
+
+    def request_manual_seed(
+        self,
+        reason: str,
+        retry_round: int,
+        operator: str,
+        note: str = "",
+    ) -> ManualSeedRecord:
+        record = self.manual_seed_gate.request_manual_seed(
+            current_status=self.status,
+            reason=reason,
+            retry_round=retry_round,
+            operator=operator,
+            note=note,
+        )
+        self.status = RunStatus(record.status)
+        self.logger.log(
+            "manual_seed_requested",
+            self.status,
+            {
+                "reason": reason,
+                "retry_round": retry_round,
+                "operator": operator,
+                "note": note,
+            },
+        )
+        return record
+
+    def resume_after_manual_seed(
+        self,
+        reason: str,
+        retry_round: int,
+        operator: str,
+        note: str = "",
+    ) -> ManualSeedRecord:
+        record = self.manual_seed_gate.resume_after_manual_seed(
+            current_status=self.status,
+            reason=reason,
+            retry_round=retry_round,
+            operator=operator,
+            note=note,
+        )
+        self.status = RunStatus(record.status)
+        self.logger.log(
+            "manual_seed_completed",
+            self.status,
+            {
+                "reason": reason,
+                "retry_round": retry_round,
+                "operator": operator,
+                "note": note,
+            },
+        )
+        return record
+
+    def mark_failed_low_yield(
+        self,
+        reason: str,
+        retry_round: int,
+        operator: str,
+        note: str = "",
+    ) -> RunStatus:
+        try:
+            self._transition_to(RunStatus.FAILED_LOW_YIELD)
+        except RunTransitionError as error:
+            raise ManualSeedError(str(error)) from error
+        self.logger.log(
+            "failed_low_yield",
+            self.status,
+            {
+                "reason": reason,
+                "retry_round": retry_round,
+                "operator": operator,
+                "note": note,
+            },
+        )
         return self.status
 
     def restore_status(self) -> RunStatus:
