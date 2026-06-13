@@ -3,6 +3,9 @@ name = "ai-screenshot-platform"
 version = "0.1.0"
 description = "Core domain model for the multi-type app/game screenshot collection platform."
 requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.136.3",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -24,16 +24,18 @@
 | P3 | 模型网关 | pending |
 | P4 | 多类型 Worker 与行为包 | pending |
 | P5 | 补采机制与人工补种子 | pending |
-| P6 | 行为包自我深化 | pending |
-| P7 | 四机并发与生产化压测 | pending |
+| P6 | 环境配置与模型部署预备 | done |
+| P7 | Master Backend + PostgreSQL/SQLite + API | done |
+| P8 | Web Dashboard UI 控制台 | next |
+| P12 | 行为包自我深化引擎 | pending |
+| P13 | 四机实机部署与生产化压测 | pending |
 
 ## 当前状态
 
-当前项目处于 P0.1：Git 基线与 P0 文档入库。
+当前项目已完成 P7：Master Backend + PostgreSQL/SQLite + API。
 
-本阶段只建立项目根目录基线并纳入 P0 文档，不写业务代码，不接模型，不改 UI，不新增依赖。
+P7 建立后端控制平面，不写 Worker 执行逻辑，不做截图/行为包/真实模型推理，不做 UI，不做四机实机部署。
 
 ## app-screenshot-agent 复用边界
 
 app-screenshot-agent 仅作为 Android Worker 和公共质量模块的复用来源。新平台不直接在 app-screenshot-agent 旧仓库中开发，也不让 app-screenshot-agent 整体替代新平台架构。
-

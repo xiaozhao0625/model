@@ -41,7 +41,8 @@
 | P5.2 Retry Policy | done | 已建立 RetryPolicy，复用 CoverageManager 决定继续采集、切换策略、请求人工补种子或标记 failed_low_yield。 |
 | P5-Complete 补采机制与人工补种子阶段收口 | done | 已建立人工补种子请求/恢复记录、LocalRunSession 门控、failed_low_yield 收口方法和 P5 双场景 dry-run。 |
 | P6 环境配置与模型部署预备 | done | 已完成单机开发拓扑、四机生产拓扑、机器角色、env 模板、模型 manifest、检查脚本和部署文档；不下载模型、不启动服务。 |
-| P7 四机并发与生产化压测 | next | 等前序能力具备后开始。 |
+| P7 Master Backend + PostgreSQL/SQLite + API | done | 已建立 FastAPI 控制平面、Service/Repository 分层、SQLite 开发持久化、PostgreSQL URL 配置识别、Worker 注册心跳、Upload mock 编排和 Model Gateway mock 代理。 |
+| P8 Web Dashboard UI 控制台 | next | 等 Master Backend API 稳定后开始。 |
 | P12 行为包自我深化引擎 | pending | 迁移早期行为包学习计划到 P12；后续基于历史运行、失败样本、人工补种子和质量反馈优化行为包。 |
 
 ## 当前架构基线

@@ -13,7 +13,12 @@
 | P4 | 多类型 Worker 与行为包 | 建立浏览器、普通软件、Android、PC 游戏 Worker 与行为包机制 | PC 游戏 high 桶走行为包 + OBS/FFmpeg 抽帧 |
 | P5 | 补采机制与人工补种子 | 支持未达标任务补采、人工补种子、失败恢复与审计 | 不突破禁止操作边界 |
 | P6 | 环境配置与模型部署预备 | 建立单机开发、四机生产、机器角色、环境变量、模型 manifest 和检查脚本 | 只做配置和校验，不下载模型、不启动服务 |
-| P7 | 四机并发与生产化压测 | 支持四机并发、资源隔离、生产化压测与运行看板 | 验证吞吐、稳定性、数据完整性 |
+| P7 | Master Backend + PostgreSQL/SQLite + API | 建立 App、Run、Worker、Upload、Model Gateway 控制平面 | 不写 Worker 执行、截图、行为包、真实模型、UI 或四机部署 |
+| P8 | Web Dashboard UI 控制台 | 基于 Master Backend API 建立操作控制台 | 不改变后端状态规则 |
+| P9 | Worker Runtime + Master/Worker 通信 | 建立真实 Worker Runtime 和通信协议 | 不引入未批准的真实采集工具 |
+| P10 | 真实采集适配器接入 | 接入 OBS、FFmpeg、ADB、Playwright、pywinauto 等真实适配器 | 保持安全边界和审计规则 |
+| P11 | 模型拉取、部署与真实 Provider 接入 | 按 model manifest 下载与接入真实开源模型 | 不绕过风险动作安全门 |
+| P13 | 四机实机部署与生产化压测 | 支持四机并发、资源隔离、生产化压测与运行看板 | 验证吞吐、稳定性、数据完整性 |
 | P12 | 行为包自我深化引擎 | 基于历史运行结果、失败样本、人工补种子和质量反馈优化行为包策略 | AI 只参与低频分析与建议 |
 
 ## 阶段准入规则
