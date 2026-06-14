@@ -215,6 +215,9 @@ function captureLabel(sample: ArtifactSampleRecord): string {
   if (sample.capture_method === "obs_or_ffmpeg" || sample.source_type?.includes("game")) {
     return "OBS/游戏源";
   }
+  if (sample.capture_method === "windows_safe_window_capture") {
+    return "安全窗口";
+  }
   if (sample.capture_method === "adb_screencap") {
     return "Android 设备屏幕";
   }
@@ -230,6 +233,9 @@ function sourceDescription(sample: ArtifactSampleRecord): string {
   }
   if (sample.capture_method === "obs_or_ffmpeg" || sample.source_type?.includes("game")) {
     return "OBS canvas、source 或游戏窗口有效画面";
+  }
+  if (sample.capture_method === "windows_safe_window_capture") {
+    return "记事本/计算器/资源管理器等本地安全测试窗口；不包含任务栏";
   }
   if (sample.capture_method === "adb_screencap") {
     return "ADB screencap 设备屏幕分辨率";

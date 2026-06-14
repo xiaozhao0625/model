@@ -12,7 +12,7 @@ from urllib import request
 
 
 WORKER_METHODS = {
-    "worker_pc_game_w1": "ffmpeg_testsrc",
+    "worker_pc_game_w1": "windows_safe_window",
     "worker_pc_app_web_w2": "playwright_edge_local_html",
     "worker_android_w3": "adb_emulator_screencap",
 }
@@ -76,10 +76,15 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         folder.mkdir(parents=True, exist_ok=True)
 
     started_at = now_iso()
+    extra_metadata: dict[str, dict[str, Any]] = {}
     if method == "ffmpeg_testsrc":
         files = capture_ffmpeg_testsrc(Path(args.ffmpeg_path), low_dir, args.target_total)
         platform = "pc_obs"
         capture_method = "ffmpeg_testsrc"
+    elif method == "windows_safe_window":
+        files, extra_metadata = capture_windows_safe_window(run_dir, low_dir, args.target_total)
+        platform = "pc_app"
+        capture_method = "windows_safe_window_capture"
     elif method == "playwright_edge_local_html":
         files = capture_playwright_local_html(Path(args.edge_path), low_dir, run_dir, args.target_total)
         platform = "web"
@@ -103,6 +108,7 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         platform=platform,
         capture_method=capture_method,
         source_method=method,
+        extra_metadata=extra_metadata,
     )
     finished_at = now_iso()
     meta_path = run_dir / "meta.jsonl"
@@ -156,6 +162,20 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
                 "production_capture": True,
             }
         )
+    if method == "windows_safe_window":
+        summary.update(
+            {
+                "capture_method": "windows_safe_window_capture",
+                "source_type": "safe_windows_test_app",
+                "allowed_windows": ["notepad.exe"],
+                "test_source": False,
+                "production_capture": True,
+                "taskbar_included": False,
+                "browser_chrome_included": False,
+                "real_safe_window_capture": True,
+                "ffmpeg_testsrc_used": False,
+            }
+        )
     if method == "adb_emulator_screencap":
         summary.update({"apk_installed": False, "game_started": False, "real_app_capture": False, "test_source": False, "production_capture": True})
     if method == "adb_safe_ui_variation":
@@ -168,12 +188,18 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
                 "test_source": False,
                 "production_capture": True,
                 "safe_actions": [
-                    "home",
-                    "quick_settings",
-                    "notifications",
                     "settings_home",
-                    "app_drawer_or_home",
-                    "home_return",
+                    "settings_wifi",
+                    "settings_bluetooth",
+                    "settings_display",
+                    "settings_sound",
+                    "settings_apps",
+                    "settings_storage",
+                    "settings_accessibility",
+                    "settings_date",
+                    "settings_locale",
+                    "settings_device_info",
+                    "settings_home_scrolled",
                 ],
             }
         )
@@ -258,6 +284,143 @@ body{margin:0;background:#101827;color:#e5e7eb;font-family:Arial,sans-serif}
     return files
 
 
+def capture_windows_safe_window(run_dir: Path, low_dir: Path, total: int) -> tuple[list[Path], dict[str, dict[str, Any]]]:
+    workspace = run_dir / "safe_window_workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    capture_script = run_dir / "capture_safe_windows.ps1"
+    manifest_path = run_dir / "windows_safe_window_manifest.json"
+    safe_files_manifest_path = run_dir / "windows_safe_files.json"
+    safe_files = []
+    for index in range(1, total + 1):
+        safe_file = workspace / f"p14_safe_notepad_{index:03d}.txt"
+        safe_file.write_text(
+            "\n".join(
+                [
+                    f"P14.3.1 W1 safe Notepad target #{index:03d}",
+                    "This is a synthetic local safety window.",
+                    "No account, no game, no real user page, no secrets.",
+                    f"Variation token: SAFE-WINDOW-{index:03d}-{index * 7919}",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        safe_files.append(safe_file)
+    safe_files_manifest_path.write_text(json.dumps([str(item) for item in safe_files], ensure_ascii=False), encoding="utf-8")
+
+    capture_script.write_text(
+        r"""
+param(
+  [string]$OutputDir,
+  [string]$ManifestPath,
+  [string]$SafeFilesManifestPath
+)
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class Win32Capture {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+}
+"@
+function Wait-WindowHandle([System.Diagnostics.Process]$Process, [string]$TitleHint) {
+  for ($i = 0; $i -lt 80; $i++) {
+    $Process.Refresh()
+    if ($Process.MainWindowHandle -ne [IntPtr]::Zero) { return $Process.MainWindowHandle }
+    $candidate = Get-Process -Name "notepad" -ErrorAction SilentlyContinue |
+      Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -and ($_.MainWindowTitle -like "*$TitleHint*" -or $_.MainWindowTitle -like "*P14*") } |
+      Select-Object -First 1
+    if ($candidate) { return $candidate.MainWindowHandle }
+    $fallback = Get-Process -Name "notepad" -ErrorAction SilentlyContinue |
+      Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+      Sort-Object StartTime -Descending |
+      Select-Object -First 1
+    if ($fallback) { return $fallback.MainWindowHandle }
+    Start-Sleep -Milliseconds 250
+  }
+  throw "window handle not available for process $($Process.Id)"
+}
+function Capture-Window([IntPtr]$Handle, [string]$Path) {
+  $rect = New-Object Win32Capture+RECT
+  [void][Win32Capture]::GetWindowRect($Handle, [ref]$rect)
+  $client = New-Object Win32Capture+RECT
+  [void][Win32Capture]::GetClientRect($Handle, [ref]$client)
+  $width = [Math]::Max(1, $rect.Right - $rect.Left)
+  $height = [Math]::Max(1, $rect.Bottom - $rect.Top)
+  $bitmap = New-Object System.Drawing.Bitmap $width, $height
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+  $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+  $graphics.Dispose()
+  $bitmap.Dispose()
+  return @{
+    window_rect = @{ left = $rect.Left; top = $rect.Top; right = $rect.Right; bottom = $rect.Bottom }
+    client_rect = @{ left = 0; top = 0; right = $client.Right; bottom = $client.Bottom }
+    crop_rect = @{ left = 0; top = 0; right = $width; bottom = $height }
+    output_width = $width
+    output_height = $height
+  }
+}
+$SafeFiles = Get-Content -Raw $SafeFilesManifestPath | ConvertFrom-Json
+$records = @()
+$index = 0
+foreach ($safeFile in $SafeFiles) {
+  $index += 1
+  $process = Start-Process -FilePath "notepad.exe" -ArgumentList @($safeFile) -PassThru
+  try {
+    $handle = Wait-WindowHandle $process ([System.IO.Path]::GetFileName($safeFile))
+    [void][Win32Capture]::MoveWindow($handle, 80, 80, 960, 640, $true)
+    [void][Win32Capture]::SetForegroundWindow($handle)
+    Start-Sleep -Milliseconds 700
+    $output = Join-Path $OutputDir ("windows_safe_notepad_{0:D3}.png" -f $index)
+    $metadata = Capture-Window $handle $output
+    $metadata.file = $output
+    $metadata.app_name = "notepad.exe"
+    $metadata.window_title = "P14.3.1 safe Notepad target"
+    $metadata.source_type = "pc_app_safe_window"
+    $metadata.taskbar_included = $false
+    $metadata.browser_chrome_included = $false
+    $records += [pscustomobject]$metadata
+  } finally {
+    if (!$process.HasExited) {
+      $process.CloseMainWindow() | Out-Null
+      Start-Sleep -Milliseconds 300
+      if (!$process.HasExited) { $process.Kill() }
+    }
+  }
+}
+$records | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ManifestPath
+""",
+        encoding="utf-8",
+    )
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(capture_script),
+        "-OutputDir",
+        str(low_dir),
+        "-ManifestPath",
+        str(manifest_path),
+        "-SafeFilesManifestPath",
+        str(safe_files_manifest_path),
+    ]
+    subprocess.run(command, check=True)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if isinstance(manifest, dict):
+        manifest = [manifest]
+    extra_metadata = {str(Path(item["file"]).resolve()): item for item in manifest}
+    files = sorted(low_dir.glob("windows_safe_notepad_*.png"))
+    return files, extra_metadata
+
+
 def capture_adb_emulator(adb: Path, low_dir: Path, total: int) -> list[Path]:
     if not adb.exists():
         raise FileNotFoundError(str(adb))
@@ -281,33 +444,30 @@ def capture_adb_safe_variation(adb: Path, low_dir: Path, total: int) -> list[Pat
     if not adb.exists():
         raise FileNotFoundError(str(adb))
     ensure_adb_ready(adb)
-    actions = [
-        ("home", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
-        ("quick_settings", [[str(adb), "shell", "cmd", "statusbar", "expand-settings"]]),
-        ("notifications", [[str(adb), "shell", "cmd", "statusbar", "expand-notifications"]]),
-        (
-            "settings_home",
-            [
-                [str(adb), "shell", "cmd", "statusbar", "collapse"],
-                [str(adb), "shell", "am", "start", "-a", "android.settings.SETTINGS"],
-            ],
-        ),
-        (
-            "app_drawer_or_home",
-            [
-                [str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"],
-                [str(adb), "shell", "input", "swipe", "540", "2100", "540", "600", "300"],
-            ],
-        ),
-        ("home_return", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
+    settings_actions = [
+        ("settings_home", "android.settings.SETTINGS", []),
+        ("settings_wifi", "android.settings.WIFI_SETTINGS", []),
+        ("settings_bluetooth", "android.settings.BLUETOOTH_SETTINGS", []),
+        ("settings_display", "android.settings.DISPLAY_SETTINGS", []),
+        ("settings_sound", "android.settings.SOUND_SETTINGS", []),
+        ("settings_apps", "android.settings.APPLICATION_SETTINGS", []),
+        ("settings_storage", "android.settings.INTERNAL_STORAGE_SETTINGS", []),
+        ("settings_accessibility", "android.settings.ACCESSIBILITY_SETTINGS", []),
+        ("settings_date", "android.settings.DATE_SETTINGS", []),
+        ("settings_locale", "android.settings.LOCALE_SETTINGS", []),
+        ("settings_device_info", "android.settings.DEVICE_INFO_SETTINGS", []),
+        ("settings_home_scrolled", "android.settings.SETTINGS", [[str(adb), "shell", "input", "swipe", "540", "2050", "540", "700", "450"]]),
     ]
     files: list[Path] = []
-    selected_actions = [actions[(index - 1) % len(actions)] for index in range(1, max(1, total) + 1)]
-    for index, (name, commands) in enumerate(selected_actions, start=1):
-        for command in commands:
+    selected_actions = [settings_actions[(index - 1) % len(settings_actions)] for index in range(1, max(1, total) + 1)]
+    for index, (name, intent, post_commands) in enumerate(selected_actions, start=1):
+        subprocess.run([str(adb), "shell", "cmd", "statusbar", "collapse"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([str(adb), "shell", "am", "start", "-a", intent], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1.4)
+        for command in post_commands:
             subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.8)
-        output = low_dir / f"adb_safe_ui_{index:03d}_{name}.png"
+        output = low_dir / f"adb_settings_safe_{index:03d}_{name}.png"
         with output.open("wb") as handle:
             subprocess.run([str(adb), "exec-out", "screencap", "-p"], check=True, stdout=handle)
         files.append(output)
@@ -332,6 +492,7 @@ def build_records(
     platform: str,
     capture_method: str,
     source_method: str,
+    extra_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     seen: set[str] = set()
     records: list[dict[str, Any]] = []
@@ -353,6 +514,8 @@ def build_records(
             width=width,
             height=height,
         )
+        extra = (extra_metadata or {}).get(str(file_path.resolve()), {})
+        metadata.update(extra)
         records.append(
             {
                 "run_id": run_id,
@@ -415,6 +578,20 @@ def capture_metadata(capture_method: str, source_method: str, width: int, height
             "output_height": height,
             "test_source": False,
             "production_capture": True,
+        }
+    if capture_method == "windows_safe_window_capture":
+        return {
+            "source_type": "pc_app_safe_window",
+            "window_rect": {"left": 0, "top": 0, "right": width, "bottom": height},
+            "client_rect": {"left": 0, "top": 0, "right": width, "bottom": height},
+            "crop_rect": {"left": 0, "top": 0, "right": width, "bottom": height},
+            "source_resolution": f"{width}x{height} safe window",
+            "output_width": width,
+            "output_height": height,
+            "test_source": False,
+            "production_capture": True,
+            "taskbar_included": False,
+            "browser_chrome_included": False,
         }
     return {
         "output_width": width,
