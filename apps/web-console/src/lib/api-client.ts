@@ -22,7 +22,6 @@ import {
   mockRuns,
   mockSummary,
   mockToolHealth,
-  mockUploads,
   mockWorkers
 } from "./mock-data";
 
@@ -58,6 +57,7 @@ export interface ApiClient {
   rollbackBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   getToolHealth(): Promise<ToolHealthRecord>;
   isUsingMockFallback(): boolean;
+  getBaseUrl(): string;
 }
 
 const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "http://localhost:8000";
@@ -76,9 +76,11 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         throw new Error(`${options.fallbackLabel || path} failed with ${response.status}`);
       }
       const envelope = (await response.json()) as ApiEnvelope<T>;
-      if (!envelope.ok || envelope.data === undefined) {
-        throw new Error(envelope.error || `${options.fallbackLabel || path} returned an error`);
+      const success = envelope.ok === true || envelope.code === 0;
+      if (!success || envelope.data === undefined) {
+        throw new Error(envelope.error || envelope.message || `${options.fallbackLabel || path} returned an error`);
       }
+      usingMockFallback = false;
       return envelope.data;
     } catch {
       usingMockFallback = true;
@@ -203,9 +205,10 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           status: "pending_review"
         },
         { method: "POST", body: JSON.stringify({}) }
-      ),
+    ),
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
-    isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
+    isUsingMockFallback: () => usingMockFallback,
+    getBaseUrl: () => root
   };
 }
 

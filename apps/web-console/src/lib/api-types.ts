@@ -96,7 +96,9 @@ export interface ModelProviderRecord {
 }
 
 export interface ApiEnvelope<T> {
-  ok: boolean;
+  ok?: boolean;
+  code?: number;
+  message?: string;
   data?: T;
   error?: string;
 }

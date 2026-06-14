@@ -1,11 +1,33 @@
-import { mockWorkers } from "../../lib/mock-data";
+import { useEffect, useState } from "react";
+import { apiClient } from "../../lib/api-client";
+import type { WorkerRecord } from "../../lib/api-types";
 import { capabilityLabels, workerStateLabels } from "../../lib/status";
 import { Badge } from "../ui/badge";
 
 export function WorkerSummary() {
+  const [workers, setWorkers] = useState<WorkerRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    apiClient.listWorkers().then((records) => {
+      if (active) {
+        setWorkers(records);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (workers.length === 0) {
+    return <p className="text-sm text-slate-500">No live workers reported.</p>;
+  }
+
   return (
     <div className="grid gap-3 md:grid-cols-2">
-      {mockWorkers.map((worker) => (
+      {workers.map((worker) => (
         <div key={worker.worker_id} className="rounded-lg border border-slate-800 bg-slate-950 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
