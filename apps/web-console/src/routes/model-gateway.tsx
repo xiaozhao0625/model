@@ -40,7 +40,7 @@ export function ModelGatewayRoute() {
             <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
               <Bot className="text-blue-300" size={22} />
               <p className="mt-3 text-2xl font-semibold text-blue-100">仅 mock</p>
-              <p className="mt-1 text-sm text-blue-100/70">P8 不连接真实模型</p>
+              <p className="mt-1 text-sm text-blue-100/70">当前阶段不连接真实模型</p>
             </div>
           </div>
           <div className="mt-4 space-y-3">

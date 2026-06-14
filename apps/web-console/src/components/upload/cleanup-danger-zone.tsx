@@ -9,8 +9,7 @@ export function CleanupDangerZone({ disabled, onCleanup }: { disabled: boolean; 
         <div>
           <h3 className="text-sm font-semibold text-red-100">本地清理保护</h3>
           <p className="mt-2 text-sm text-red-100/70">
-            只有 uploaded_confirmed 后才允许清理。平台必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、
-            cleanup_record.json 和 run.log。
+            只有 uploaded_confirmed 后才允许清理。本地必须保留 summary.json、meta.jsonl、upload_manifest.json、upload_record.json、cleanup_record.json 和 run.log。
           </p>
           <Button className="mt-4" variant="danger" disabled={disabled} onClick={onCleanup}>
             清理本地

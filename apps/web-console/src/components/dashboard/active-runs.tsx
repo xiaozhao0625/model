@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { mockRuns } from "../../lib/mock-data";
 import { formatNumber, formatPercent } from "../../lib/format";
+import { mockRuns } from "../../lib/mock-data";
 import { bucketLabels } from "../../lib/status";
 import { StatusPill } from "../ui/status-pill";
 import { DataTable } from "../ui/table";

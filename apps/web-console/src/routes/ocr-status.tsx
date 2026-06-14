@@ -16,7 +16,7 @@ export function OcrStatusRoute() {
 
   return (
     <div>
-      <PageHeader title="OCR 状态" description="展示 OCR runtime、风险命中和 scene hints。真实 PaddleOCR / EasyOCR 仍为 optional，不要求本机存在。" />
+      <PageHeader title="OCR 状态" description="展示 OCR runtime、风险命中和 scene hints。PaddleOCR / EasyOCR 仍为 optional，本阶段不要求存在。" />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Runtime" eyebrow="ocr_report">
           <div className="grid gap-3">
@@ -26,12 +26,12 @@ export function OcrStatusRoute() {
             <Field label="unavailable_reason" value={status.unavailable_reason || "-"} />
           </div>
         </Card>
-        <Card title="Optional Provider" eyebrow="runtime check">
+        <Card title="可选 Provider" eyebrow="runtime check">
           <div className="grid gap-3 sm:grid-cols-2">
             <ProviderStatus name="paddleocr optional" status={status.paddleocr_optional_status} />
             <ProviderStatus name="easyocr optional" status={status.easyocr_optional_status} />
           </div>
-          <p className="mt-4 text-sm text-slate-500">缺少真实 OCR 依赖时保持 unavailable/skipped，不影响控制台与测试。</p>
+          <p className="mt-4 text-sm text-slate-500">缺少真实 OCR 依赖时保持 unavailable/skipped，不影响控制台和测试。</p>
         </Card>
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

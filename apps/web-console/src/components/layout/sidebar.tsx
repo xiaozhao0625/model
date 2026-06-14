@@ -2,15 +2,15 @@ import { Activity, AppWindow, Bot, ClipboardCheck, Gauge, GitBranch, HardDriveUp
 import { NavLink } from "react-router-dom";
 
 const navItems = [
-  { to: "/", label: "系统控制中心", icon: Gauge },
+  { to: "/", label: "系统控制台", icon: Gauge },
   { to: "/apps", label: "应用库", icon: AppWindow },
-  { to: "/runs", label: "任务控制中心", icon: PlaySquare },
+  { to: "/runs", label: "采集任务", icon: PlaySquare },
   { to: "/workers", label: "Worker 监控", icon: Server },
   { to: "/upload", label: "上传与清理", icon: HardDriveUpload },
   { to: "/model-gateway", label: "模型网关", icon: Bot },
   { to: "/quality-reports", label: "质量报告", icon: ClipboardCheck },
   { to: "/ocr-status", label: "OCR 状态", icon: ScanText },
-  { to: "/behavior-candidates", label: "行为包候选", icon: GitBranch },
+  { to: "/behavior-candidates", label: "行为候选", icon: GitBranch },
   { to: "/tool-health", label: "工具健康", icon: Stethoscope },
   { to: "/settings", label: "系统设置", icon: Settings }
 ];
@@ -24,7 +24,7 @@ export function Sidebar() {
         </div>
         <div>
           <p className="text-sm font-semibold text-slate-100">AI 截图平台</p>
-          <p className="text-xs text-slate-500">系统控制中心</p>
+          <p className="text-xs text-slate-500">操作员控制台</p>
         </div>
       </div>
       <nav className="mt-6 space-y-1">

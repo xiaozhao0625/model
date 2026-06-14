@@ -8,7 +8,7 @@ import { Card } from "../components/ui/card";
 export function DashboardRoute() {
   return (
     <div>
-      <PageHeader title="系统控制中心" description="面向应用、任务、Worker、上传压力与采集健康度的运行总览。" />
+      <PageHeader title="系统控制台" description="面向应用、任务、Worker、上传压力与采集健康度的运行总览。" />
       <SystemMetrics />
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <Card title="活跃任务" eyebrow="任务控制">

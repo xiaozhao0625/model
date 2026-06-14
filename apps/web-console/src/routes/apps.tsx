@@ -1,15 +1,15 @@
 import { useState } from "react";
-import type { AppRecord } from "../lib/api-types";
-import { apiClient } from "../lib/api-client";
-import { mockApps } from "../lib/mock-data";
 import { AppCard } from "../components/apps/app-card";
 import { CreateAppForm } from "../components/apps/create-app-form";
 import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
+import { apiClient } from "../lib/api-client";
+import type { AppRecord } from "../lib/api-types";
+import { mockApps } from "../lib/mock-data";
 
 export function AppsRoute() {
   const [apps, setApps] = useState<AppRecord[]>(mockApps);
-  const [message, setMessage] = useState("已加载 mock 数据，API fallback 可用。");
+  const [message, setMessage] = useState("已加载本地演示数据；实时 API 不可用时会使用兜底。");
 
   async function handleCreate(app: AppRecord) {
     const created = await apiClient.createApp(app);

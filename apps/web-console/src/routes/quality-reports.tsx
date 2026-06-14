@@ -37,33 +37,37 @@ export function QualityReportsRoute() {
 
   return (
     <div>
-      <PageHeader title="Quality Reports" description="Inspect screenshot quality reports, rejection reasons, and contamination checks from the live Master API." />
-      {loading ? <Card title="Loading" eyebrow="quality_report.json"><p className="text-sm text-slate-400">Loading quality reports...</p></Card> : null}
+      <PageHeader title="质量报告" description="查看截图质量、拒绝原因、污染检查和安全风险统计。" />
+      {loading ? (
+        <Card title="加载中" eyebrow="quality_report.json">
+          <p className="text-sm text-slate-400">正在加载质量报告...</p>
+        </Card>
+      ) : null}
       {error ? (
-        <Card title="Quality Reports Unavailable" eyebrow="error">
+        <Card title="质量报告不可用" eyebrow="错误">
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
             <p>{error}</p>
             <button className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-red-400/40 px-3 py-2 text-sm" onClick={() => void loadReports()}>
               <RefreshCw size={16} />
-              Retry
+              重试
             </button>
           </div>
         </Card>
       ) : null}
       {!loading && !error && reports.length === 0 ? (
-        <Card title="Quality Reports" eyebrow="empty">
-          <p className="text-sm text-slate-400">No quality reports have been ingested yet.</p>
+        <Card title="质量报告" eyebrow="空">
+          <p className="text-sm text-slate-400">尚未接入质量报告。</p>
         </Card>
       ) : null}
       {report ? (
         <>
           <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-            <Card title="Quality Overview" eyebrow="quality_report.json">
+            <Card title="质量概览" eyebrow="quality_report.json">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Metric label="Total images" value={report.total_images} />
-                <Metric label="clean count" value={report.accepted_count} tone="success" />
-                <Metric label="rejected count" value={report.rejected_count} tone="danger" />
-                <Metric label="pass rate" value={`${(report.quality_pass_rate * 100).toFixed(1)}%`} />
+                <Metric label="图片总数" value={report.total_images} />
+                <Metric label="通过数" value={report.accepted_count} tone="success" />
+                <Metric label="拒绝数" value={report.rejected_count} tone="danger" />
+                <Metric label="通过率" value={`${(report.quality_pass_rate * 100).toFixed(1)}%`} />
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <RiskFlag active={hasBrowserChrome} label="browser_chrome_visible" />
@@ -71,9 +75,9 @@ export function QualityReportsRoute() {
                 <RiskFlag active={hasDangerousPage} label="dangerous_page / ocr_risk_detected" />
               </div>
             </Card>
-            <Card title="Reject Reason Distribution" eyebrow="rejected_quality_manifest">
+            <Card title="拒绝原因分布" eyebrow="rejected_quality_manifest">
               <div className="space-y-2">
-                {Object.keys(distribution).length === 0 ? <p className="text-sm text-slate-400">No rejection reasons reported.</p> : null}
+                {Object.keys(distribution).length === 0 ? <p className="text-sm text-slate-400">暂无拒绝原因。</p> : null}
                 {Object.entries(distribution).map(([reason, count]) => (
                   <div key={reason} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
                     <span className="font-mono text-xs text-slate-300">{reason}</span>
@@ -83,8 +87,8 @@ export function QualityReportsRoute() {
               </div>
             </Card>
           </div>
-          <Card title="Quality Details" eyebrow="core fields" className="mt-4">
-            <DataTable columns={["run_id", "app_id", "black", "white", "blur", "wrong window", "browser chrome", "taskbar", "near duplicate", "OCR risk"]}>
+          <Card title="质量明细" eyebrow="核心字段" className="mt-4">
+            <DataTable columns={["任务 ID", "应用 ID", "黑屏", "白屏", "模糊", "错误窗口", "浏览器外壳", "任务栏", "近重复", "OCR 风险"]}>
               {reports.map((item) => (
                 <tr key={item.run_id}>
                   <td className="font-mono text-blue-300">{item.run_id}</td>
@@ -122,7 +126,7 @@ function RiskFlag({ active, label }: { active: boolean; label: string }) {
     <div className={`rounded-lg border p-3 ${active ? "border-red-500/40 bg-red-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
       <div className="flex items-center gap-2">
         {active ? <ShieldAlert size={18} className="text-red-300" /> : <CheckCircle2 size={18} className="text-emerald-300" />}
-        <span className={active ? "text-red-100" : "text-emerald-100"}>{active ? "Detected" : "Clear"}</span>
+        <span className={active ? "text-red-100" : "text-emerald-100"}>{active ? "已检测到" : "未发现"}</span>
       </div>
       <p className="mt-2 break-all font-mono text-xs text-slate-400">
         <AlertTriangle size={14} className="mr-1 inline" />

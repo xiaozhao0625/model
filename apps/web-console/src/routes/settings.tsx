@@ -13,7 +13,7 @@ const settings = [
 export function SettingsRoute() {
   return (
     <div>
-      <PageHeader title="系统设置" description="只读环境配置视图。P8 不写入配置，也不启动服务。" />
+      <PageHeader title="系统设置" description="只读环境配置视图。控制台不写入配置，也不会启动服务。" />
       <Card title="运行配置" eyebrow="只读">
         <div className="grid gap-3">
           {settings.map(([key, value]) => (

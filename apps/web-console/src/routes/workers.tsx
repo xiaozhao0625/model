@@ -62,25 +62,22 @@ export function WorkersRoute() {
 
   return (
     <div>
-      <PageHeader
-        title="Worker Monitor"
-        description="Live worker capabilities, heartbeat state, assigned work, and platform boundaries from the Master API."
-      />
+      <PageHeader title="Worker 监控" description="从 Master API 查看 Worker 能力、心跳、任务分配和平台安全边界。" />
       <div className="mb-4 rounded-[10px] border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
-        Web worker contract: content_area_only=true. Browser chrome, tabs, address bars, and the Windows taskbar stay outside valid captures.
+        Web Worker 采集约束：content_area_only=true。有效截图不包含浏览器标签栏、地址栏、窗口外壳和 Windows 任务栏。
       </div>
       {usingFallback ? (
         <div className="mb-4 rounded-[10px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-          Worker data is using local demo fallback because the live Master API request failed.
+          实时 Master API 请求失败，当前显示本地演示兜底数据。
           {fallbackDetail ? <span className="mt-1 block font-mono text-xs text-amber-200">{fallbackDetail}</span> : null}
         </div>
       ) : null}
       <MasterNodeCard health={masterHealth} workerCount={workers.length} />
-      <Card title="Worker List" eyebrow="Live collection nodes">
+      <Card title="Worker 列表" eyebrow="实时采集节点">
         {loading ? (
-          <p className="text-sm text-slate-400">Loading live workers from {apiClient.getBaseUrl()}...</p>
+          <p className="text-sm text-slate-400">正在从 {apiClient.getBaseUrl()} 加载 Worker...</p>
         ) : workers.length === 0 ? (
-          <p className="text-sm text-slate-400">No workers reported by the Master API.</p>
+          <p className="text-sm text-slate-400">Master API 暂无 Worker 上报。</p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {workers.map((worker) => (
@@ -108,25 +105,24 @@ function MasterNodeCard({ health, workerCount }: { health: MasterNodeHealth | nu
   const redisStatus = health?.redis_status || node.redis || "unknown";
 
   return (
-    <Card title="M0-MASTER" eyebrow="Master / Control Plane">
+    <Card title="M0-MASTER" eyebrow="主控 / 控制平面">
       <div className="grid gap-3 text-sm md:grid-cols-3">
-        <StatusField label="Role" value={node.role || "Master / PostgreSQL / Redis / Web Console / Model Gateway"} />
+        <StatusField label="角色" value={node.role || "Master / PostgreSQL / Redis / Web Console / Model Gateway"} />
         <StatusField label="IP" value={node.ip || "192.168.1.18"} mono />
         <StatusField label="Master API" value={node.master_api || "ok"} />
-        <StatusField label="DB backend" value={dbBackend} tone={dbBackend === "postgresql" ? "good" : "warn"} />
+        <StatusField label="数据库后端" value={dbBackend} tone={dbBackend === "postgresql" ? "good" : "warn"} />
         <StatusField label="PostgreSQL" value={postgresStatus} tone={postgresStatus === "available" ? "good" : "warn"} />
         <StatusField label="Redis" value={`${redisStatus}${health?.redis_backend ? ` (${health.redis_backend})` : ""}`} tone={redisStatus === "available" ? "good" : "warn"} />
         <StatusField label="Web Console" value={node.web_console || "ok"} />
-        <StatusField label="Worker count" value={String(workerCount)} mono />
-        <StatusField label="Node type" value="Control plane, not a Worker" />
+        <StatusField label="Worker 数量" value={String(workerCount)} mono />
+        <StatusField label="节点类型" value="控制平面，不是 Worker" />
       </div>
     </Card>
   );
 }
 
 function StatusField({ label, value, mono = false, tone = "neutral" }: { label: string; value: string; mono?: boolean; tone?: "good" | "warn" | "neutral" }) {
-  const valueClass =
-    tone === "good" ? "text-emerald-200" : tone === "warn" ? "text-amber-200" : "text-slate-200";
+  const valueClass = tone === "good" ? "text-emerald-200" : tone === "warn" ? "text-amber-200" : "text-slate-200";
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
       <dt className="text-xs text-slate-500">{label}</dt>

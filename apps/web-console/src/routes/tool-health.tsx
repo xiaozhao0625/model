@@ -17,7 +17,7 @@ export function ToolHealthRoute() {
 
   return (
     <div>
-      <PageHeader title="工具健康" description="展示 P13-Prep readiness JSON。真实工具缺失时显示 unavailable/skipped，不阻塞控制台。" />
+      <PageHeader title="工具健康" description="展示 P13/P14 readiness 状态。真实工具缺失时显示 unavailable/skipped，不自动安装。" />
       <div className="grid gap-4 lg:grid-cols-3">
         <HealthCard title="machine_ready" status={health.machine_ready} />
         <HealthCard title="master_ready" status={health.master_ready} />
@@ -36,7 +36,7 @@ export function ToolHealthRoute() {
             ))}
           </DataTable>
         </Card>
-        <Card title="Android Runtime" eyebrow="emulator / adb">
+        <Card title="Android 运行态" eyebrow="emulator / adb">
           <div className="grid gap-3">
             <Field label="adb_available" value={health.android.adb_available ? "true" : "false"} />
             <Field label="devices" value={health.android.devices.length ? health.android.devices.join(", ") : "[]"} />

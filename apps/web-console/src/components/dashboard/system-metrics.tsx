@@ -2,8 +2,8 @@ import { AlertTriangle, AppWindow, Images, PlaySquare, Server, UploadCloud } fro
 import { useEffect, useState } from "react";
 import { apiClient } from "../../lib/api-client";
 import type { WorkerRecord } from "../../lib/api-types";
-import { mockApps, mockRuns } from "../../lib/mock-data";
 import { formatNumber } from "../../lib/format";
+import { mockApps, mockRuns } from "../../lib/mock-data";
 import { MetricCard } from "../ui/metric-card";
 
 export function SystemMetrics() {
@@ -33,18 +33,12 @@ export function SystemMetrics() {
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-      <MetricCard label="Apps" value={mockApps.length} detail="Registered capture targets" icon={<AppWindow size={18} />} tone="blue" />
-      <MetricCard label="Runs" value={mockRuns.length} detail={`${running} running`} icon={<PlaySquare size={18} />} tone="green" />
-      <MetricCard label="Upload pending" value={uploadPending} detail="Waiting for confirmation" icon={<UploadCloud size={18} />} tone="amber" />
-      <MetricCard label="Failed/skipped" value={failed} detail="Low-yield or risk-skipped runs" icon={<AlertTriangle size={18} />} tone="red" />
-      <MetricCard
-        label="Workers online"
-        value={`${workerOnline}/${workers.length}`}
-        detail={workerFallback ? "Demo fallback data" : "Live Master API"}
-        icon={<Server size={18} />}
-        tone="slate"
-      />
-      <MetricCard label="Valid images" value={formatNumber(validToday)} detail="Mock run summary" icon={<Images size={18} />} tone="blue" />
+      <MetricCard label="应用数" value={mockApps.length} detail="已登记采集目标" icon={<AppWindow size={18} />} tone="blue" />
+      <MetricCard label="任务数" value={mockRuns.length} detail={`${running} 个运行中`} icon={<PlaySquare size={18} />} tone="green" />
+      <MetricCard label="待上传" value={uploadPending} detail="等待人工确认" icon={<UploadCloud size={18} />} tone="amber" />
+      <MetricCard label="失败/跳过" value={failed} detail="低产出或风险跳过" icon={<AlertTriangle size={18} />} tone="red" />
+      <MetricCard label="在线 Worker" value={`${workerOnline}/${workers.length}`} detail={workerFallback ? "演示兜底数据" : "实时 Master API"} icon={<Server size={18} />} tone="slate" />
+      <MetricCard label="有效截图" value={formatNumber(validToday)} detail="任务摘要统计" icon={<Images size={18} />} tone="blue" />
     </div>
   );
 }

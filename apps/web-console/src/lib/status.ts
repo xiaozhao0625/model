@@ -45,10 +45,10 @@ export const lifecycleSteps: RunStatus[] = [
 ];
 
 export const bucketLabels: Record<string, string> = {
-  fixed: "固定页",
-  low: "低频",
-  high: "高频",
-  rejected: "已拒绝"
+  fixed: "修复",
+  low: "低质",
+  high: "高质",
+  rejected: "拒绝"
 };
 
 export const workerTypeLabels: Record<string, string> = {

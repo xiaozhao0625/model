@@ -77,18 +77,18 @@ export function RunsRoute() {
 
   return (
     <div>
-      <PageHeader title="Run Control Center" description="Create, filter, start, and inspect capture runs from the live Master API." />
+      <PageHeader title="采集任务" description="从实时 Master API 创建、筛选、启动和查看采集任务。" />
       {usingFallback ? (
         <div className="mb-4 rounded-[10px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-          Run data is using local demo fallback because the live Master API request failed.
+          实时 Master API 请求失败，当前显示本地演示兜底数据。
           {fallbackDetail ? <span className="mt-1 block font-mono text-xs text-amber-200">{fallbackDetail}</span> : null}
         </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card title="Run List" eyebrow="live queue">
+        <Card title="任务列表" eyebrow="实时队列">
           <div className="mb-4 grid gap-3 md:grid-cols-2">
             <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | RunStatus)}>
-              <option value="all">All statuses</option>
+              <option value="all">全部状态</option>
               {[...new Set(runs.map((run) => run.status))].map((status) => (
                 <option key={status} value={status}>
                   {statusLabels[status] || status}
@@ -96,7 +96,7 @@ export function RunsRoute() {
               ))}
             </Select>
             <Select value={appFilter} onChange={(event) => setAppFilter(event.target.value)}>
-              <option value="all">All apps</option>
+              <option value="all">全部应用</option>
               {appOptions.map((app) => (
                 <option key={app} value={app}>
                   {app}
@@ -105,11 +105,11 @@ export function RunsRoute() {
             </Select>
           </div>
           {loading ? (
-            <p className="text-sm text-slate-400">Loading runs from {apiClient.getBaseUrl()}...</p>
+            <p className="text-sm text-slate-400">正在从 {apiClient.getBaseUrl()} 加载任务...</p>
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-slate-400">No runs reported by the Master API.</p>
+            <p className="text-sm text-slate-400">Master API 暂无任务。</p>
           ) : (
-            <DataTable columns={["run_id", "app_id", "status", "valid_total", "fixed / low / high / rejected", "retry", "worker", "actions"]}>
+            <DataTable columns={["任务 ID", "应用 ID", "状态", "有效数", "修复 / 低质 / 高质 / 拒绝", "重试", "Worker", "操作"]}>
               {filtered.map((run) => (
                 <tr key={run.run_id}>
                   <td>
@@ -127,7 +127,7 @@ export function RunsRoute() {
                     {run.rejected_count}
                   </td>
                   <td className="text-slate-400">{run.retry_round}</td>
-                  <td className="font-mono text-xs text-slate-500">{run.worker_id || "none"}</td>
+                  <td className="font-mono text-xs text-slate-500">{run.worker_id || "未分配"}</td>
                   <td>
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={run.status !== "pending"} onClick={() => void startRun(run.run_id)}>
@@ -143,20 +143,20 @@ export function RunsRoute() {
             </DataTable>
           )}
         </Card>
-        <Card title="Create Run" eyebrow="live API">
+        <Card title="创建任务" eyebrow="实时 API">
           <div className="grid gap-3">
-            <Input value={runId} onChange={(event) => setRunId(event.target.value)} aria-label="Run ID" />
-            <Select value={appId} onChange={(event) => setAppId(event.target.value)} aria-label="App ID">
+            <Input value={runId} onChange={(event) => setRunId(event.target.value)} aria-label="任务 ID" />
+            <Select value={appId} onChange={(event) => setAppId(event.target.value)} aria-label="应用 ID">
               {appOptions.map((app) => (
                 <option key={app} value={app}>
                   {app}
                 </option>
               ))}
             </Select>
-            <Input readOnly value="target_min=1000" aria-label="Minimum target" />
-            <Input readOnly value="target_max=5000" aria-label="Maximum target" />
+            <Input readOnly value="target_min=1000" aria-label="最小目标数" />
+            <Input readOnly value="target_max=5000" aria-label="最大目标数" />
             <Button variant="primary" disabled={!appId || !runId} onClick={() => void createRun()}>
-              Create run
+              创建任务
             </Button>
           </div>
         </Card>

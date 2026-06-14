@@ -1,8 +1,4 @@
 import { useState } from "react";
-import { apiClient } from "../lib/api-client";
-import { mockRuns } from "../lib/mock-data";
-import type { RunRecord } from "../lib/api-types";
-import { actionLabels } from "../lib/status";
 import { PageHeader } from "../components/layout/page-header";
 import { CleanupDangerZone } from "../components/upload/cleanup-danger-zone";
 import { UploadFlowPanel } from "../components/upload/upload-flow-panel";
@@ -10,10 +6,14 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { StatusPill } from "../components/ui/status-pill";
 import { DataTable } from "../components/ui/table";
+import { apiClient } from "../lib/api-client";
+import type { RunRecord } from "../lib/api-types";
+import { mockRuns } from "../lib/mock-data";
+import { actionLabels } from "../lib/status";
 
 export function UploadRoute() {
   const [runs, setRuns] = useState<RunRecord[]>(mockRuns.filter((run) => ["capture_completed", "upload_pending", "uploaded_confirmed", "local_deleted"].includes(run.status)));
-  const [message, setMessage] = useState("P8 不调用真实百度网盘 API。");
+  const [message, setMessage] = useState("本页只生成上传清单和记录操作状态，不直接上传外部网盘。");
 
   async function update(run: RunRecord, action: "manifest" | "confirm" | "cleanup" | "finalize") {
     const result =
@@ -32,9 +32,9 @@ export function UploadRoute() {
 
   return (
     <div>
-      <PageHeader title="上传与清理" description="按 run 维度执行上传清单、确认上传、本地清理和最终完成。删除前必须人工确认已上传百度网盘。" />
+      <PageHeader title="上传与清理" description="按 run 维度执行上传清单、确认上传、本地清理和最终完成；删除本地文件前必须人工确认。" />
       <div className="space-y-4">
-        <Card title="P2 状态流规则" eyebrow="状态标准">
+        <Card title="P2 状态流规则" eyebrow="状态门禁">
           <UploadFlowPanel status={focused.status} />
           <p className="mt-4 text-sm text-slate-500">{message}</p>
         </Card>

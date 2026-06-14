@@ -22,7 +22,7 @@ export function WorkerSummary() {
   }, []);
 
   if (workers.length === 0) {
-    return <p className="text-sm text-slate-500">No live workers reported.</p>;
+    return <p className="text-sm text-slate-500">暂无实时 Worker 上报。</p>;
   }
 
   return (

@@ -302,7 +302,8 @@ def capture_adb_safe_variation(adb: Path, low_dir: Path, total: int) -> list[Pat
         ("home_return", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
     ]
     files: list[Path] = []
-    for index, (name, commands) in enumerate(actions[: max(1, total)], start=1):
+    selected_actions = [actions[(index - 1) % len(actions)] for index in range(1, max(1, total) + 1)]
+    for index, (name, commands) in enumerate(selected_actions, start=1):
         for command in commands:
             subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.8)
