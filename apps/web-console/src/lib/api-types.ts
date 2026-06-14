@@ -163,6 +163,31 @@ export interface ModelProviderRecord {
   last_event: string;
 }
 
+export interface ModelDeploymentNode {
+  role: string;
+  ip: string;
+  gpu: string;
+  vram_gb: number;
+  models_dir: string;
+  ocr_dir: string;
+  runtime_dir: string;
+  capabilities: string[];
+  planned_components: string[];
+  estimated_vram_gb: string;
+  capture_impact: string;
+  enabled: boolean;
+}
+
+export interface ModelDeploymentMatrix {
+  schema_version: string;
+  status: string;
+  online_inference_enabled: boolean;
+  model_downloaded: boolean;
+  ocr_installed: boolean;
+  scheduler_rules: Record<string, boolean>;
+  nodes: ModelDeploymentNode[];
+}
+
 export interface ApiEnvelope<T> {
   ok?: boolean;
   code?: number;

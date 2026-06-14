@@ -111,6 +111,7 @@ def test_openapi_contains_stable_master_routes(tmp_path):
         assert "/api/runs/{run_id}/confirm-upload" in paths
         assert "/api/runs/{run_id}/cleanup" in paths
         assert "/api/runs/{run_id}/finalize" in paths
+        assert "/api/model/deployment-matrix" in paths
 
 
 def test_app_can_be_created_listed_and_fetched(tmp_path):
@@ -327,6 +328,19 @@ def test_capture_completed_run_can_be_marked_failed_low_yield_with_audit(tmp_pat
         assert events[-1]["previous_status"] == RunStatus.CAPTURE_COMPLETED.value
         assert events[-1]["new_status"] == RunStatus.FAILED_LOW_YIELD.value
         assert events[-1]["operator_action"] == "mark_failed_low_yield"
+
+
+def test_model_deployment_matrix_is_plan_only_and_distributed(tmp_path):
+    with make_client(tmp_path) as client:
+        matrix = data(client.get("/api/model/deployment-matrix"))
+
+        assert matrix["status"] == "planned_only"
+        assert matrix["online_inference_enabled"] is False
+        assert matrix["model_downloaded"] is False
+        assert matrix["ocr_installed"] is False
+        assert [node["role"] for node in matrix["nodes"]] == ["M0", "W1", "W2", "W3"]
+        assert next(node for node in matrix["nodes"] if node["role"] == "M0")["models_dir"] == r"E:\work\models"
+        assert next(node for node in matrix["nodes"] if node["role"] == "W2")["ocr_dir"] == r"D:\work\ocr"
 
 
 def test_mock_upload_flow_reaches_completed_without_local_file_cleanup(tmp_path):

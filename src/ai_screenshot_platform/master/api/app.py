@@ -383,6 +383,10 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     def get_ocr_status():
         return ok(to_api_data(get_services().production_readiness_service.latest_ocr_status()))
 
+    @app.get("/api/model/deployment-matrix")
+    def get_model_deployment_matrix():
+        return ok(to_api_data(get_services().production_readiness_service.model_deployment_matrix()))
+
     @app.get("/api/ocr/reports")
     def list_ocr_reports():
         return ok(to_api_data(get_services().production_readiness_service.list_ocr_reports()))

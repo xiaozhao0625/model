@@ -1,6 +1,7 @@
 import type {
   AppRecord,
   MetaEntry,
+  ModelDeploymentMatrix,
   ModelProviderRecord,
   BehaviorCandidateRecord,
   RunLogEntry,
@@ -384,4 +385,77 @@ export const mockToolHealth: ToolHealthRecord = {
     ocr_fallback_status: "skipped",
     input_status: "disabled"
   }
+};
+
+export const mockModelDeploymentMatrix: ModelDeploymentMatrix = {
+  schema_version: "p13.5.0",
+  status: "planned_only",
+  online_inference_enabled: false,
+  model_downloaded: false,
+  ocr_installed: false,
+  scheduler_rules: {
+    local_first: true,
+    m0_fallback: true,
+    idle_only: true,
+    worker_direct_postgresql: false,
+    production_capture_assist_enabled: false
+  },
+  nodes: [
+    {
+      role: "M0",
+      ip: "192.168.1.18",
+      gpu: "RTX 5060Ti",
+      vram_gb: 16,
+      models_dir: "E:\\work\\models",
+      ocr_dir: "E:\\work\\ocr",
+      runtime_dir: "E:\\work\\model_runtime",
+      capabilities: ["central_model_gateway", "heavy_vlm", "central_ocr", "offline_batch_analysis"],
+      planned_components: ["central OCR", "heavy VLM", "offline batch analysis"],
+      estimated_vram_gb: "6-14",
+      capture_impact: "none, control plane only",
+      enabled: false
+    },
+    {
+      role: "W1",
+      ip: "192.168.1.34",
+      gpu: "RTX 3060",
+      vram_gb: 12,
+      models_dir: "D:\\work\\models",
+      ocr_dir: "D:\\work\\ocr",
+      runtime_dir: "D:\\work\\model_runtime",
+      capabilities: ["pc_game_capture_priority", "local_ocr_optional", "light_model_optional", "idle_only"],
+      planned_components: ["optional OCR", "optional light sampling"],
+      estimated_vram_gb: "0-2 idle-only",
+      capture_impact: "must not affect OBS/FFmpeg/game capture",
+      enabled: false
+    },
+    {
+      role: "W2",
+      ip: "192.168.1.20",
+      gpu: "RTX 3060",
+      vram_gb: 12,
+      models_dir: "D:\\work\\models",
+      ocr_dir: "D:\\work\\ocr",
+      runtime_dir: "D:\\work\\model_runtime",
+      capabilities: ["local_ocr", "ui_parser", "web_pc_app_analysis", "light_model"],
+      planned_components: ["local OCR", "UI parser", "light model"],
+      estimated_vram_gb: "2-6 idle-aware",
+      capture_impact: "local analysis only when capture is idle or safe",
+      enabled: false
+    },
+    {
+      role: "W3",
+      ip: "192.168.1.21",
+      gpu: "RTX 3060",
+      vram_gb: 12,
+      models_dir: "D:\\work\\models",
+      ocr_dir: "D:\\work\\ocr",
+      runtime_dir: "D:\\work\\model_runtime",
+      capabilities: ["local_ocr", "android_ui_parser", "light_model", "m0_heavy_fallback"],
+      planned_components: ["Android OCR", "Android UI parser", "light model"],
+      estimated_vram_gb: "2-4 when emulator is not busy",
+      capture_impact: "must not affect Android emulator/ADB flow",
+      enabled: false
+    }
+  ]
 };

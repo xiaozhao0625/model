@@ -53,6 +53,7 @@ for (const route of [
 const apiClient = read("src/lib/api-client.ts");
 for (const apiName of [
   "createApp",
+  "getModelDeploymentMatrix",
   "listQualityReports",
   "getOcrStatus",
   "listBehaviorCandidates",
@@ -67,6 +68,7 @@ for (const apiName of [
 }
 
 for (const path of [
+  "/api/model/deployment-matrix",
   "/api/runs/${runId}/mark-failed-low-yield",
   "/api/behavior-candidates",
   "/api/behavior-candidates/${candidatePackId}/approve",
@@ -83,6 +85,11 @@ for (const phrase of ["disableFallback: true", "mark failed low yield"]) {
 const runsRoute = read("src/routes/runs.tsx");
 for (const phrase of ["executed_by", "assigned_worker_id", "未分配"]) {
   assert(runsRoute.includes(phrase), `missing run worker display phrase ${phrase}`);
+}
+
+const modelGateway = read("src/routes/model-gateway.tsx");
+for (const phrase of ["online_inference_enabled", "model_downloaded", "ocr_installed", "planned"]) {
+  assert(modelGateway.includes(phrase), `missing model gateway matrix phrase ${phrase}`);
 }
 
 const mockData = read("src/lib/mock-data.ts");

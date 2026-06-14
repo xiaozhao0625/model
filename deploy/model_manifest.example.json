@@ -1,0 +1,54 @@
+{
+  "schema_version": "p13.5.0",
+  "enabled_default": false,
+  "providers": [
+    {
+      "name": "omniparser",
+      "enabled": false,
+      "priority": 1,
+      "planned_roles": ["M0", "W2"],
+      "model_dir_template": "{root}\\models\\omniparser",
+      "source": "official_repository_or_model_hub",
+      "version": "to_be_selected",
+      "hash_recorded": false,
+      "gpu_required": true,
+      "min_vram_gb": 8,
+      "idle_only_on_workers": true,
+      "download_now": false,
+      "health_check": "scripts/p13_5/check_model_health.ps1",
+      "status": "planned"
+    },
+    {
+      "name": "showui",
+      "enabled": false,
+      "priority": 2,
+      "planned_roles": ["M0", "W2", "W3"],
+      "model_dir_template": "{root}\\models\\showui",
+      "source": "official_repository_or_model_hub",
+      "version": "to_be_selected",
+      "hash_recorded": false,
+      "gpu_required": true,
+      "min_vram_gb": 6,
+      "idle_only_on_workers": true,
+      "download_now": false,
+      "health_check": "scripts/p13_5/check_model_health.ps1",
+      "status": "planned"
+    },
+    {
+      "name": "qwen_vl",
+      "enabled": false,
+      "priority": 3,
+      "planned_roles": ["M0"],
+      "model_dir_template": "{root}\\models\\qwen_vl",
+      "source": "official_repository_or_model_hub",
+      "version": "small_or_medium_to_be_selected",
+      "hash_recorded": false,
+      "gpu_required": true,
+      "min_vram_gb": 12,
+      "idle_only_on_workers": true,
+      "download_now": false,
+      "health_check": "scripts/p13_5/check_model_health.ps1",
+      "status": "planned"
+    }
+  ]
+}

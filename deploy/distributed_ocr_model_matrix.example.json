@@ -1,0 +1,101 @@
+{
+  "schema_version": "p13.5.0",
+  "online_inference_enabled": false,
+  "model_downloaded": false,
+  "ocr_installed": false,
+  "scheduler_rules": {
+    "local_first": true,
+    "m0_fallback": true,
+    "idle_only": true,
+    "worker_direct_postgresql": false,
+    "production_capture_assist_enabled": false
+  },
+  "nodes": [
+    {
+      "role": "M0",
+      "host": "M0",
+      "ip": "192.168.1.18",
+      "gpu": "RTX 5060Ti",
+      "vram_gb": 16,
+      "root": "E:\\work",
+      "models_dir": "E:\\work\\models",
+      "ocr_dir": "E:\\work\\ocr",
+      "runtime_dir": "E:\\work\\model_runtime",
+      "capabilities": {
+        "central_model_gateway": true,
+        "heavy_vlm": true,
+        "central_ocr": true,
+        "offline_batch_analysis": true
+      },
+      "planned_components": ["paddleocr_cpu_or_gpu", "easyocr_optional", "qwen_vl_small_or_medium", "omniparser_or_showui"],
+      "estimated_vram_gb": "6-14 depending on provider",
+      "capture_priority": "control_plane",
+      "enabled": false
+    },
+    {
+      "role": "W1",
+      "host": "PC Game Worker",
+      "ip": "192.168.1.34",
+      "gpu": "RTX 3060",
+      "vram_gb": 12,
+      "root": "D:\\work",
+      "models_dir": "D:\\work\\models",
+      "ocr_dir": "D:\\work\\ocr",
+      "runtime_dir": "D:\\work\\model_runtime",
+      "capabilities": {
+        "pc_game_capture_priority": true,
+        "local_ocr": "optional",
+        "light_model": "optional",
+        "heavy_model": false,
+        "idle_only": true
+      },
+      "planned_components": ["local_ocr_optional", "light_ui_classifier_optional"],
+      "estimated_vram_gb": "0-2 idle-only",
+      "capture_priority": "OBS/FFmpeg/game capture",
+      "enabled": false
+    },
+    {
+      "role": "W2",
+      "host": "PC App / Web Worker",
+      "ip": "192.168.1.20",
+      "gpu": "RTX 3060",
+      "vram_gb": 12,
+      "root": "D:\\work",
+      "models_dir": "D:\\work\\models",
+      "ocr_dir": "D:\\work\\ocr",
+      "runtime_dir": "D:\\work\\model_runtime",
+      "capabilities": {
+        "local_ocr": true,
+        "ui_parser": true,
+        "web_pc_app_analysis": true,
+        "light_model": true,
+        "heavy_model": "optional_idle_only"
+      },
+      "planned_components": ["paddleocr_or_easyocr", "ui_parser_light", "showui_or_omniparser_light"],
+      "estimated_vram_gb": "2-6 idle-aware",
+      "capture_priority": "web and PC app capture",
+      "enabled": false
+    },
+    {
+      "role": "W3",
+      "host": "Android Worker",
+      "ip": "192.168.1.21",
+      "gpu": "RTX 3060",
+      "vram_gb": 12,
+      "root": "D:\\work",
+      "models_dir": "D:\\work\\models",
+      "ocr_dir": "D:\\work\\ocr",
+      "runtime_dir": "D:\\work\\model_runtime",
+      "capabilities": {
+        "local_ocr": true,
+        "android_ui_parser": true,
+        "light_model": true,
+        "heavy_model": "false_or_idle_only"
+      },
+      "planned_components": ["android_ocr", "android_ui_parser_light", "m0_fallback_for_heavy_vlm"],
+      "estimated_vram_gb": "2-4 while emulator is not busy",
+      "capture_priority": "Android emulator and ADB",
+      "enabled": false
+    }
+  ]
+}

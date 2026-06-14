@@ -6,6 +6,7 @@ import type {
   ArtifactSampleRecord,
   GroundResult,
   BehaviorCandidateRecord,
+  ModelDeploymentMatrix,
   OcrStatusRecord,
   QualityReportRecord,
   RunArtifactRecord,
@@ -19,6 +20,7 @@ import type {
 import {
   mockApps,
   mockBehaviorCandidates,
+  mockModelDeploymentMatrix,
   mockOcrStatus,
   mockModelProviders,
   mockQualityReports,
@@ -64,6 +66,7 @@ export interface ApiClient {
   ground(payload: Record<string, unknown>): Promise<GroundResult>;
   act(payload: Record<string, unknown>): Promise<ActionProposal>;
   listModelProviders(): Promise<typeof mockModelProviders>;
+  getModelDeploymentMatrix(): Promise<ModelDeploymentMatrix>;
   listQualityReports(): Promise<QualityReportRecord[]>;
   getOcrStatus(): Promise<OcrStatusRecord>;
   listBehaviorCandidates(): Promise<BehaviorCandidateRecord[]>;
@@ -251,6 +254,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         { method: "POST", body: JSON.stringify(payload) }
       ),
     listModelProviders: async () => mockModelProviders,
+    getModelDeploymentMatrix: () => request("/api/model/deployment-matrix", mockModelDeploymentMatrix),
     listQualityReports: () => request("/api/quality-reports", mockQualityReports),
     getOcrStatus: () => request("/api/ocr/status", mockOcrStatus),
     listBehaviorCandidates: () => request("/api/behavior-candidates", mockBehaviorCandidates),

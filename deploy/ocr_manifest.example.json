@@ -1,0 +1,36 @@
+{
+  "schema_version": "p13.5.0",
+  "enabled_default": false,
+  "engines": [
+    {
+      "name": "paddleocr",
+      "enabled": false,
+      "install_scope": ["M0", "W2", "W3"],
+      "preferred_roles": ["W2", "W3"],
+      "fallback_roles": ["M0"],
+      "runtime_dir_template": "{root}\\ocr\\engines\\paddleocr",
+      "venv_template": "{root}\\model_runtime\\venvs\\ocr-runtime",
+      "source": "official_or_pypi",
+      "version": "to_be_selected",
+      "hash_recorded": false,
+      "install_now": false,
+      "idle_only": true,
+      "health_check": "scripts/p13_5/check_ocr_health.ps1"
+    },
+    {
+      "name": "easyocr",
+      "enabled": false,
+      "install_scope": ["M0", "W2", "W3"],
+      "preferred_roles": ["W2", "W3"],
+      "fallback_roles": ["M0"],
+      "runtime_dir_template": "{root}\\ocr\\engines\\easyocr",
+      "venv_template": "{root}\\model_runtime\\venvs\\ocr-runtime",
+      "source": "official_or_pypi",
+      "version": "to_be_selected",
+      "hash_recorded": false,
+      "install_now": false,
+      "idle_only": true,
+      "health_check": "scripts/p13_5/check_ocr_health.ps1"
+    }
+  ]
+}
