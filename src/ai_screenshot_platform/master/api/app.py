@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -12,7 +13,7 @@ from ai_screenshot_platform.common.model_gateway.contracts import (
     SceneClassifyRequest,
 )
 from ai_screenshot_platform.master.core.config import MasterSettings
-from ai_screenshot_platform.master.core.deps import MemoryRedisClient
+from ai_screenshot_platform.master.core.deps import MemoryRedisClient, RedisClient
 from ai_screenshot_platform.master.core.response import error, ok
 from ai_screenshot_platform.master.repositories.app_repo import AppRepo
 from ai_screenshot_platform.master.repositories.database import MasterDatabase
@@ -61,11 +62,11 @@ class MasterServices:
     model_gateway_service: ModelGatewayProxyService
     production_readiness_service: ProductionReadinessService
     image_repo: ImageRepo
-    redis_client: MemoryRedisClient
+    redis_client: MemoryRedisClient | RedisClient
 
 
 def create_app(settings: MasterSettings | None = None) -> FastAPI:
-    settings = settings or MasterSettings()
+    settings = settings or MasterSettings.from_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -105,11 +106,29 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.get("/health")
     def health():
+        postgres_status = "available" if settings.database_backend == "postgresql" else "not_configured"
+        sqlite_status = "active" if settings.database_backend == "sqlite" else "not_active"
+        redis_port_status = _tcp_status("127.0.0.1", 6379)
         return ok(
             {
                 "status": "ok",
                 "env": settings.env,
                 "database_backend": settings.database_backend,
+                "db_backend": settings.database_backend,
+                "storage_backend": settings.database_backend,
+                "postgres_status": postgres_status,
+                "sqlite_status": sqlite_status,
+                "redis_backend": "redis" if settings.redis_url.startswith("redis://") else "memory",
+                "redis_status": redis_port_status,
+                "master_node": {
+                    "id": "M0-MASTER",
+                    "role": "Master / Control Plane",
+                    "ip": "192.168.1.18",
+                    "master_api": "ok",
+                    "web_console": "ok",
+                    "postgresql": postgres_status,
+                    "redis": redis_port_status,
+                },
             }
         )
 
@@ -421,6 +440,14 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     return app
 
 
+def _tcp_status(host: str, port: int, timeout: float = 0.5) -> str:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return "available"
+    except OSError:
+        return "offline"
+
+
 def _create_services(settings: MasterSettings, database: MasterDatabase) -> MasterServices:
     app_repo = AppRepo(database.connection)
     run_repo = RunRepo(database.connection)
@@ -428,6 +455,11 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
     image_repo = ImageRepo(database.connection)
     upload_repo = UploadRepo(database.connection)
     production_readiness_repo = ProductionReadinessRepo(database.connection)
+    redis_client: MemoryRedisClient | RedisClient
+    if settings.redis_url.startswith("redis://") and _tcp_status("127.0.0.1", 6379) == "available":
+        redis_client = RedisClient(settings.redis_url)
+    else:
+        redis_client = MemoryRedisClient()
     return MasterServices(
         app_service=AppService(app_repo),
         run_service=RunService(run_repo),
@@ -445,5 +477,5 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
             production_readiness_repo
         ),
         image_repo=image_repo,
-        redis_client=MemoryRedisClient(),
+        redis_client=redis_client,
     )

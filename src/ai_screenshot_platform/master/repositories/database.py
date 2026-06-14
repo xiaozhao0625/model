@@ -111,7 +111,32 @@ class MasterDatabase:
     def _initialize_postgres(self) -> None:
         for statement in _BASE_SCHEMA_POSTGRES + _READINESS_SCHEMA_POSTGRES:
             self.connection.execute(statement)
+        self._ensure_postgres_column("runs", "target_min", "INTEGER NOT NULL DEFAULT 1000")
+        self._ensure_postgres_column("runs", "target_max", "INTEGER NOT NULL DEFAULT 5000")
+        self._ensure_postgres_column("runs", "worker_id", "TEXT")
+        self._ensure_postgres_column("workers", "machine_name", "TEXT")
+        self._ensure_postgres_column("workers", "current_run_id", "TEXT")
         self.connection.commit()
+
+    def _ensure_postgres_column(self, table_name: str, column_name: str, definition: str) -> None:
+        row = self.connection.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+              AND column_name = ?
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        if row is not None:
+            return
+        try:
+            self.connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {definition}"
+            )
+        except Exception:
+            self.connection.rollback()
 
     def _initialize_production_readiness_sqlite(self) -> None:
         self.connection.executescript("\n".join(_READINESS_SCHEMA_SQLITE))
@@ -132,6 +157,9 @@ class PostgresConnectionAdapter:
 
     def commit(self) -> None:
         self.connection.commit()
+
+    def rollback(self) -> None:
+        self.connection.rollback()
 
     def close(self) -> None:
         self.connection.close()

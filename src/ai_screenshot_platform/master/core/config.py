@@ -8,7 +8,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class MasterSettings:
     database_url: str = "sqlite:///runs/master/master.db"
-    redis_url: str = "memory://"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     env: str = "development"
     data_root: str | Path = "runs/master"
     cors_origins: tuple[str, ...] = (
@@ -19,6 +19,7 @@ class MasterSettings:
 
     @classmethod
     def from_env(cls) -> MasterSettings:
+        _load_dotenv_without_override(Path.cwd() / ".env")
         cors_origins = tuple(
             origin.strip()
             for origin in os.environ.get("MASTER_CORS_ORIGINS", ",".join(cls.cors_origins)).split(",")
@@ -45,3 +46,18 @@ class MasterSettings:
         if self.database_backend != "sqlite":
             raise ValueError("sqlite_path is only available for sqlite database_url")
         return Path(self.database_url.removeprefix("sqlite:///")).resolve()
+
+
+def _load_dotenv_without_override(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip().strip('"').strip("'")
+        os.environ[key] = value
