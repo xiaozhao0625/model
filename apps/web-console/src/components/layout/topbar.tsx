@@ -18,8 +18,9 @@ export function Topbar() {
       const fallback = apiClient.isUsingMockFallback();
       const databaseBackend = typeof health.database_backend === "string" ? health.database_backend : "unknown";
       const status = typeof health.status === "string" ? health.status : "unknown";
+      const fallbackError = apiClient.getFallbackError();
       setApiFallback(fallback);
-      setApiLabel(fallback ? "API fallback active" : `Master API ${status}`);
+      setApiLabel(fallback ? `API fallback active: ${fallbackError?.failed_endpoint || "unknown"}` : `Master API ${status}`);
       setDbLabel(`Master DB: ${databaseBackend}`);
     });
 

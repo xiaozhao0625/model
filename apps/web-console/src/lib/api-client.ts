@@ -28,6 +28,14 @@ import {
 type Fetcher = typeof fetch;
 type RequestOptions = RequestInit & { fallbackLabel?: string };
 
+export interface ApiFallbackError {
+  api_base_url: string;
+  failed_endpoint: string;
+  status?: number;
+  error: string;
+  cors_error: boolean;
+}
+
 export interface ApiClient {
   getHealth(): Promise<Record<string, unknown>>;
   listApps(): Promise<AppRecord[]>;
@@ -58,20 +66,31 @@ export interface ApiClient {
   getToolHealth(): Promise<ToolHealthRecord>;
   isUsingMockFallback(): boolean;
   getBaseUrl(): string;
+  getFallbackError(): ApiFallbackError | null;
 }
 
-const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "http://localhost:8000";
+function getRuntimeBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || import.meta.env.VITE_API_BASE_URL || getRuntimeBaseUrl();
 
 export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fetch): ApiClient {
   let usingMockFallback = false;
+  let fallbackError: ApiFallbackError | null = null;
   const root = baseUrl.replace(/\/$/, "");
 
   async function request<T>(path: string, fallback: T, options: RequestOptions = {}): Promise<T> {
+    let status: number | undefined;
     try {
       const response = await fetcher(`${root}${path}`, {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
         ...options
       });
+      status = response.status;
       if (!response.ok) {
         throw new Error(`${options.fallbackLabel || path} failed with ${response.status}`);
       }
@@ -81,9 +100,17 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         throw new Error(envelope.error || envelope.message || `${options.fallbackLabel || path} returned an error`);
       }
       usingMockFallback = false;
+      fallbackError = null;
       return envelope.data;
-    } catch {
+    } catch (error) {
       usingMockFallback = true;
+      fallbackError = {
+        api_base_url: root,
+        failed_endpoint: path,
+        status,
+        error: error instanceof Error ? error.message : String(error),
+        cors_error: status === undefined
+      };
       // mock fallback keeps the console usable when the local Master API is offline.
       return fallback;
     }
@@ -208,7 +235,8 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     ),
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
     isUsingMockFallback: () => usingMockFallback,
-    getBaseUrl: () => root
+    getBaseUrl: () => root,
+    getFallbackError: () => fallbackError
   };
 }
 

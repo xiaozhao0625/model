@@ -11,14 +11,25 @@ class MasterSettings:
     redis_url: str = "memory://"
     env: str = "development"
     data_root: str | Path = "runs/master"
+    cors_origins: tuple[str, ...] = (
+        "http://127.0.0.1:6137",
+        "http://localhost:6137",
+        "http://192.168.1.18:6137",
+    )
 
     @classmethod
     def from_env(cls) -> MasterSettings:
+        cors_origins = tuple(
+            origin.strip()
+            for origin in os.environ.get("MASTER_CORS_ORIGINS", ",".join(cls.cors_origins)).split(",")
+            if origin.strip()
+        )
         return cls(
             database_url=os.environ.get("DATABASE_URL", cls.database_url),
             redis_url=os.environ.get("REDIS_URL", cls.redis_url),
             env=os.environ.get("APP_ENV", cls.env),
             data_root=os.environ.get("DATA_ROOT", str(cls.data_root)),
+            cors_origins=cors_origins,
         )
 
     @property

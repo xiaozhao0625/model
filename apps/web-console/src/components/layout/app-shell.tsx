@@ -1,6 +1,5 @@
 import { AlertTriangle, FileText, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { mockRunLogs } from "../../lib/mock-data";
 import { Card } from "../ui/card";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -15,31 +14,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="grid min-h-[calc(100dvh-65px)] grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0">{children}</main>
             <aside className="space-y-4">
-              <Card title="运行提示" eyebrow="右侧面板">
+              <Card title="Runtime Notes" eyebrow="side panel">
                 <div className="space-y-3 text-sm text-slate-400">
                   <div className="flex gap-3">
                     <ShieldCheck className="mt-0.5 text-emerald-300" size={17} />
-                    <p>AI 只返回动作建议，本控制台不执行真实鼠标、键盘、模型或采集工具。</p>
+                    <p>The console does not execute real mouse, keyboard, model, or capture actions by itself.</p>
                   </div>
                   <div className="flex gap-3">
                     <AlertTriangle className="mt-0.5 text-amber-300" size={17} />
-                    <p>上传清理必须先由用户确认已上传百度网盘，之后才允许本地清理。</p>
+                    <p>Upload cleanup still requires operator confirmation before local files are removed.</p>
                   </div>
                   <div className="flex gap-3">
                     <FileText className="mt-0.5 text-blue-300" size={17} />
-                    <p>当 Master API 不可用时，mock fallback 会保持控制台可浏览、可演示。</p>
+                    <p>Worker pages read live Master API data first. Demo fallback is shown only with an explicit API failure reason.</p>
                   </div>
                 </div>
               </Card>
-              <Card title="最近 run.log" eyebrow="jsonl">
-                <div className="space-y-3">
-                  {mockRunLogs.map((entry) => (
-                    <div key={`${entry.timestamp}-${entry.event}`} className="rounded-lg border border-slate-800 bg-slate-950 p-3">
-                      <p className="font-mono text-xs text-blue-300">{entry.event}</p>
-                      <p className="mt-1 text-xs text-slate-500">{entry.timestamp}</p>
-                      <pre className="mt-2 overflow-x-auto text-xs text-slate-400">{JSON.stringify(entry.details, null, 2)}</pre>
-                    </div>
-                  ))}
+              <Card title="Live API" eyebrow="runtime source">
+                <div className="space-y-3 text-sm text-slate-400">
+                  <p>Worker status is loaded from the Master API endpoint.</p>
+                  <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
+                    {JSON.stringify({ endpoint: "/api/workers", source: "live_master_api" }, null, 2)}
+                  </pre>
                 </div>
               </Card>
             </aside>

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from ai_screenshot_platform.common.model_gateway.contracts import (
     GroundRequest,
@@ -77,6 +78,13 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
             database.close()
 
     app = FastAPI(title="AI Screenshot Platform Master API", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
     app.state.settings = settings
     app.state.database = None
     app.state.services = None

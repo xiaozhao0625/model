@@ -9,6 +9,7 @@ export function WorkersRoute() {
   const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [usingFallback, setUsingFallback] = useState(false);
+  const [fallbackDetail, setFallbackDetail] = useState<string>("");
 
   useEffect(() => {
     let active = true;
@@ -21,6 +22,12 @@ export function WorkersRoute() {
         }
         setWorkers(records);
         setUsingFallback(apiClient.isUsingMockFallback());
+        const fallbackError = apiClient.getFallbackError();
+        setFallbackDetail(
+          fallbackError
+            ? `${fallbackError.api_base_url}${fallbackError.failed_endpoint}: ${fallbackError.status || "network"} ${fallbackError.error}`
+            : ""
+        );
       })
       .finally(() => {
         if (active) {
@@ -45,6 +52,7 @@ export function WorkersRoute() {
       {usingFallback ? (
         <div className="mb-4 rounded-[10px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
           Worker data is using local demo fallback because the live Master API request failed.
+          {fallbackDetail ? <span className="mt-1 block font-mono text-xs text-amber-200">{fallbackDetail}</span> : null}
         </div>
       ) : null}
       <Card title="Worker List" eyebrow="Live collection nodes">
