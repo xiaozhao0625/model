@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import subprocess
+import tempfile
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from typing import Any
@@ -90,25 +93,13 @@ class ArtifactInspectorService:
         if extension not in {".png", ".jpg", ".jpeg", ".webp"}:
             raise ValueError("unsupported thumbnail type")
         remote_path = RUN_ROOT / run_id / relative_path
-        payload = self._run_remote_json(
-            location,
-            rf"""
-$path = "{remote_path}"
-if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
-  @{{ status = "path_missing" }} | ConvertTo-Json -Compress
-  exit 0
-}}
-@{{ status = "ok"; content_base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) }} | ConvertTo-Json -Compress
-""",
-        )
-        if payload.get("status") != "ok":
-            raise FileNotFoundError(file_id)
+        content = self._copy_remote_file(location, remote_path)
         content_type = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
             ".webp": "image/webp",
         }.get(extension, "image/png")
-        return base64.b64decode(str(payload["content_base64"])), content_type
+        return content, content_type
 
     def open_folder(self, run_id: str, bucket: str | None = None, file_id: str | None = None) -> dict[str, Any]:
         location = self._resolve_run_location(run_id)
@@ -217,33 +208,36 @@ if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
         return base64.b64decode(str(payload["content_base64"])), str(payload.get("file_name", "sample_inspection.zip"))
 
     def _read_remote_artifacts(self, location: RunLocation) -> dict[str, Any]:
-        return self._run_remote_json(
+        payload = self._run_remote_json(
             location,
             rf"""
 $runRoot = "{location.artifact_root}"
-$summaryPath = Join-Path $runRoot "summary.json"
-$metaPath = Join-Path $runRoot "meta.jsonl"
-if (!(Test-Path -LiteralPath $runRoot -PathType Container)) {{
-  @{{ status = "path_missing"; summary = $null; meta = @(); has_summary_json = $false; has_meta_jsonl = $false }} | ConvertTo-Json -Depth 8 -Compress
+$summaryPath = "{PureWindowsPath(location.artifact_root) / "summary.json"}"
+$metaPath = "{PureWindowsPath(location.artifact_root) / "meta.jsonl"}"
+if (!([IO.Directory]::Exists($runRoot))) {{
+  @{{ status = "path_missing"; summary_base64 = $null; meta_base64 = $null; has_summary_json = $false; has_meta_jsonl = $false }} | ConvertTo-Json -Depth 8 -Compress
   exit 0
 }}
-$summary = $null
-if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {{
-  $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
-}}
-$meta = @()
-if (Test-Path -LiteralPath $metaPath -PathType Leaf) {{
-  $meta = Get-Content -LiteralPath $metaPath -Encoding UTF8 | Where-Object {{ $_.Trim() }} | ForEach-Object {{ $_ | ConvertFrom-Json }}
-}}
+$summaryExists = [IO.File]::Exists($summaryPath)
+$metaExists = [IO.File]::Exists($metaPath)
 @{{
   status = "ok"
-  summary = $summary
-  meta = @($meta)
-  has_summary_json = [bool](Test-Path -LiteralPath $summaryPath -PathType Leaf)
-  has_meta_jsonl = [bool](Test-Path -LiteralPath $metaPath -PathType Leaf)
+  summary_base64 = if ($summaryExists) {{ [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([IO.File]::ReadAllText($summaryPath, [Text.Encoding]::UTF8))) }} else {{ $null }}
+  meta_base64 = if ($metaExists) {{ [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([IO.File]::ReadAllText($metaPath, [Text.Encoding]::UTF8))) }} else {{ $null }}
+  has_summary_json = $summaryExists
+  has_meta_jsonl = $metaExists
 }} | ConvertTo-Json -Depth 12 -Compress
 """,
         )
+        summary_text = self._decode_optional_text(payload.get("summary_base64"))
+        meta_text = self._decode_optional_text(payload.get("meta_base64"))
+        return {
+            "status": payload.get("status"),
+            "summary": json.loads(summary_text) if summary_text else None,
+            "meta": [json.loads(line) for line in meta_text.splitlines() if line.strip()] if meta_text else [],
+            "has_summary_json": bool(payload.get("has_summary_json")),
+            "has_meta_jsonl": bool(payload.get("has_meta_jsonl")),
+        }
 
     def _resolve_run_location(self, run_id: str) -> RunLocation:
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", run_id):
@@ -320,6 +314,39 @@ if (Test-Path -LiteralPath $metaPath -PathType Leaf) {{
             output = output.splitlines()[-1]
         return json.loads(output)
 
+    def _copy_remote_file(self, location: RunLocation, remote_path: PureWindowsPath) -> bytes:
+        handle, temp_name = tempfile.mkstemp()
+        os.close(handle)
+        Path(temp_name).unlink(missing_ok=True)
+        try:
+            target = f"{location.ssh_user}@{location.worker_host}:{str(remote_path).replace(chr(92), '/')}"
+            result = subprocess.run(
+                [
+                    "scp",
+                    "-q",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=8",
+                    target,
+                    temp_name,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=45,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise FileNotFoundError(result.stderr.strip() or str(remote_path))
+            return Path(temp_name).read_bytes()
+        finally:
+            try:
+                Path(temp_name).unlink(missing_ok=True)
+            except OSError:
+                pass
+
     @staticmethod
     def _bucket_counts(summary: dict[str, Any], meta: list[dict[str, Any]]) -> dict[str, int]:
         return {
@@ -374,3 +401,9 @@ if (Test-Path -LiteralPath $metaPath -PathType Leaf) {{
         if path.suffix.lower() not in ALLOWED_EXTENSIONS:
             raise ValueError("unsupported file type")
         return path
+
+    @staticmethod
+    def _decode_optional_text(value: object) -> str:
+        if not value:
+            return ""
+        return base64.b64decode(str(value)).decode("utf-8")

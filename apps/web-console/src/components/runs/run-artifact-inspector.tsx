@@ -20,8 +20,10 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
   }, [runId]);
 
   useEffect(() => {
-    void loadSamples(bucket);
-  }, [bucket, runId]);
+    if (artifact) {
+      setSamples(samplesForBucket(artifact, bucket));
+    }
+  }, [artifact, bucket]);
 
   const thumbnailRoot = useMemo(() => apiClient.getBaseUrl(), []);
 
@@ -31,18 +33,11 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
     try {
       const record = await apiClient.getRunArtifacts(runId);
       setArtifact(record);
+      setSamples(samplesForBucket(record, bucket));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadSamples(nextBucket: string) {
-    try {
-      setSamples(await apiClient.getRunArtifactSamples(runId, nextBucket, 20));
-    } catch {
-      setSamples([]);
     }
   }
 
@@ -131,6 +126,10 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
       ) : null}
     </Card>
   );
+}
+
+function samplesForBucket(artifact: RunArtifactRecord, bucket: string): ArtifactSampleRecord[] {
+  return artifact.sample_files.filter((sample) => sample.bucket === bucket).slice(0, 20);
 }
 
 function Info({ label, value, mono = false, wide = false }: { label: string; value: string; mono?: boolean; wide?: boolean }) {
