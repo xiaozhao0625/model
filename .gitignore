@@ -5,6 +5,9 @@
 /runs/
 /logs/
 /deploy_output/
+/deploy/installers/*
+!/deploy/installers/README.md
+!/deploy/installers/manifest.example.json
 /models/
 *.db
 *.mp4

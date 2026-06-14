@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidateSet('M0','W1','W2','W3')][string]$Role,
     [ValidateSet('Plan','Execute')][string]$Mode = 'Plan',
-    [string[]]$AllowTools = @()
+    [string[]]$AllowTools = @(),
+    [ValidateSet('winget','staged','auto')][string]$InstallBackend = 'winget'
 )
 
 $ErrorActionPreference = 'Continue'
@@ -12,7 +13,7 @@ $RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $outDir = Join-Path $RepoRoot "logs/p13/$Role"
 $logPath = Join-Path $outDir 'install.log'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-Write-DeployLog -LogPath $logPath -Role $Role -Action 'install' -Message "Starting install in $Mode mode."
+Write-DeployLog -LogPath $logPath -Role $Role -Action 'install' -Message "Starting install in $Mode mode with $InstallBackend backend."
 
 if ($Mode -eq 'Execute' -and @($AllowTools).Count -eq 0) {
     $blocked = [ordered]@{
@@ -44,6 +45,7 @@ foreach ($item in $catalog) {
 $planPayload = [ordered]@{
     role = $Role
     mode = $Mode
+    install_backend = $InstallBackend
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
     execute_required_for_install = $true
     downloads_large_models = $false
@@ -64,7 +66,7 @@ foreach ($step in $plan) {
             next_action = 'No action.'
         }
     } else {
-        $result = Invoke-InstallStep -Step $step -Mode $Mode
+        $result = Invoke-InstallStep -Step $step -Mode $Mode -InstallBackend $InstallBackend -Role $Role -RepoRoot $RepoRoot
     }
     $results += $result
     Write-DeployLog -LogPath $logPath -Role $Role -Action 'install' -Message "Install step $($step.name): $($result.status)" -Data $result
@@ -72,6 +74,7 @@ foreach ($step in $plan) {
 $resultPayload = [ordered]@{
     role = $Role
     mode = $Mode
+    install_backend = $InstallBackend
     status = $(if (@($results | Where-Object { $_.status -eq 'failed' }).Count -gt 0) { 'needs_attention' } else { 'completed' })
     steps = $results
 }
