@@ -1,7 +1,7 @@
 role: W1
 name: PC Game Worker
 host: W1
-ip: 192.168.1.19
+ip: 192.168.1.34
 ssh_user: Administrator
 project_root: D:\work\model
 ssh_key_path: '%USERPROFILE%\.ssh\id_ed25519'
