@@ -4,8 +4,9 @@ import socket
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai_screenshot_platform.common.model_gateway.contracts import (
@@ -40,6 +41,9 @@ from ai_screenshot_platform.master.schemas.api import (
     WorkerRegisterRequest,
     WorkerResultReportRequest,
 )
+from ai_screenshot_platform.master.services.artifact_inspector_service import (
+    ArtifactInspectorService,
+)
 from ai_screenshot_platform.master.services.app_service import AppService
 from ai_screenshot_platform.master.services.model_gateway_service import (
     ModelGatewayProxyService,
@@ -63,6 +67,7 @@ class MasterServices:
     production_readiness_service: ProductionReadinessService
     image_repo: ImageRepo
     redis_client: MemoryRedisClient | RedisClient
+    artifact_inspector_service: ArtifactInspectorService
 
 
 def create_app(settings: MasterSettings | None = None) -> FastAPI:
@@ -182,6 +187,51 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     @app.get("/api/runs/{run_id}/summary")
     def get_run_summary(run_id: str):
         return ok(get_services().run_service.summary(run_id))
+
+    @app.get("/api/runs/{run_id}/artifacts")
+    def get_run_artifacts(run_id: str):
+        return ok(get_services().artifact_inspector_service.describe(run_id))
+
+    @app.get("/api/runs/{run_id}/artifacts/samples")
+    def get_run_artifact_samples(run_id: str, bucket: str = "low", limit: int = Query(default=20, ge=1, le=20)):
+        return ok(get_services().artifact_inspector_service.samples(run_id, bucket=bucket, limit=limit))
+
+    @app.get("/api/runs/{run_id}/artifacts/thumbnail")
+    def get_run_artifact_thumbnail(run_id: str, file_id: str):
+        content, content_type = get_services().artifact_inspector_service.thumbnail(run_id, file_id)
+        return Response(content=content, media_type=content_type)
+
+    @app.post("/api/runs/{run_id}/artifact-actions/open-folder")
+    def open_run_artifact_folder(run_id: str, payload: dict[str, object] | None = None):
+        payload = payload or {}
+        return ok(
+            get_services().artifact_inspector_service.open_folder(
+                run_id,
+                bucket=str(payload["bucket"]) if payload.get("bucket") else None,
+                file_id=str(payload["file_id"]) if payload.get("file_id") else None,
+            )
+        )
+
+    @app.post("/api/runs/{run_id}/artifact-actions/package-sample")
+    def package_run_artifact_sample(run_id: str, payload: dict[str, object] | None = None):
+        payload = payload or {}
+        buckets = payload.get("buckets")
+        return ok(
+            get_services().artifact_inspector_service.package_sample(
+                run_id,
+                buckets=[str(item) for item in buckets] if isinstance(buckets, list) else None,
+                limit_per_bucket=int(payload.get("limit_per_bucket", 20)),
+            )
+        )
+
+    @app.get("/api/runs/{run_id}/artifact-actions/download-sample")
+    def download_run_artifact_sample(run_id: str):
+        content, file_name = get_services().artifact_inspector_service.download_sample(run_id)
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+        )
 
     @app.post("/api/workers/register")
     def register_worker(payload: WorkerRegisterRequest):
@@ -478,4 +528,5 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
         ),
         image_repo=image_repo,
         redis_client=redis_client,
+        artifact_inspector_service=ArtifactInspectorService(run_repo),
     )

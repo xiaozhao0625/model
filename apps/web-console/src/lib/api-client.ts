@@ -2,10 +2,13 @@ import type {
   ActionProposal,
   ApiEnvelope,
   AppRecord,
+  ArtifactActionResult,
+  ArtifactSampleRecord,
   GroundResult,
   BehaviorCandidateRecord,
   OcrStatusRecord,
   QualityReportRecord,
+  RunArtifactRecord,
   RunRecord,
   RunSummary,
   SceneClassifyResult,
@@ -45,6 +48,10 @@ export interface ApiClient {
   getRun(runId: string): Promise<RunRecord>;
   startRun(runId: string): Promise<RunRecord>;
   getRunSummary(runId: string): Promise<RunSummary>;
+  getRunArtifacts(runId: string): Promise<RunArtifactRecord>;
+  getRunArtifactSamples(runId: string, bucket: string, limit?: number): Promise<ArtifactSampleRecord[]>;
+  openRunArtifactFolder(runId: string, payload?: { bucket?: string; file_id?: string }): Promise<ArtifactActionResult>;
+  packageRunArtifactSample(runId: string, payload?: { buckets?: string[]; limit_per_bucket?: number }): Promise<ArtifactActionResult>;
   listWorkers(): Promise<WorkerRecord[]>;
   registerWorker(worker: { worker_id: string; type: string; capabilities: string[] }): Promise<WorkerRecord>;
   heartbeatWorker(workerId: string): Promise<WorkerRecord>;
@@ -152,6 +159,36 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         ...mockSummary,
         ...(mockRuns.find((run) => run.run_id === runId) || {})
       }),
+    getRunArtifacts: (runId) =>
+      request(`/api/runs/${runId}/artifacts`, {
+        run_id: runId,
+        task_id: runId,
+        worker_id: "mock_worker",
+        worker_role: "Mock Worker",
+        worker_host: "mock",
+        artifact_root: "D:\\work\\runs\\<run_id>",
+        status: "mock",
+        summary: {},
+        bucket_counts: {},
+        sample_files: [],
+        has_meta_jsonl: false,
+        has_summary_json: false,
+        can_open_folder: false,
+        can_download_sample: false
+      }),
+    getRunArtifactSamples: (runId, bucket, limit = 20) => request(`/api/runs/${runId}/artifacts/samples?bucket=${encodeURIComponent(bucket)}&limit=${limit}`, []),
+    openRunArtifactFolder: (runId, payload = {}) =>
+      request(
+        `/api/runs/${runId}/artifact-actions/open-folder`,
+        { run_id: runId, worker_id: "mock_worker", status: "mock_unavailable", desktop_session_required: true },
+        { method: "POST", body: JSON.stringify(payload), fallbackLabel: "open artifact folder" }
+      ),
+    packageRunArtifactSample: (runId, payload = {}) =>
+      request(
+        `/api/runs/${runId}/artifact-actions/package-sample`,
+        { run_id: runId, worker_id: "mock_worker", status: "mock_unavailable", file_count: 0 },
+        { method: "POST", body: JSON.stringify(payload), fallbackLabel: "package artifact sample" }
+      ),
     listWorkers: () => request("/api/workers", mockWorkers),
     registerWorker: (worker) =>
       request(

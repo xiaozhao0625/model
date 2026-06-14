@@ -84,6 +84,46 @@ export interface MetaEntry {
   reject_reason?: string | null;
 }
 
+export interface ArtifactSampleRecord {
+  file_id: string;
+  file_name: string;
+  bucket: "fixed" | "low" | "high" | "rejected" | "duplicates" | string;
+  width: number;
+  height: number;
+  is_duplicate: boolean;
+  rejected_reason?: string | null;
+  thumbnail_url: string;
+  safe_display_path: string;
+  capture_method: string;
+}
+
+export interface RunArtifactRecord {
+  run_id: string;
+  task_id: string;
+  worker_id: string;
+  worker_role: string;
+  worker_host: string;
+  artifact_root: string;
+  status: string;
+  summary: Record<string, unknown>;
+  bucket_counts: Record<string, number>;
+  sample_files: ArtifactSampleRecord[];
+  has_meta_jsonl: boolean;
+  has_summary_json: boolean;
+  can_open_folder: boolean;
+  can_download_sample: boolean;
+}
+
+export interface ArtifactActionResult {
+  run_id: string;
+  worker_id: string;
+  status: string;
+  desktop_session_required?: boolean;
+  zip_path?: string | null;
+  file_count?: number;
+  download_id?: string | null;
+}
+
 export interface ModelProviderRecord {
   provider_name: string;
   provider_type: string;
