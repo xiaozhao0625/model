@@ -20,6 +20,7 @@
 *.jpeg
 *.webp
 __pycache__/
+*.egg-info/
 .venv/
 node_modules/
 apps/web-console/dist/
