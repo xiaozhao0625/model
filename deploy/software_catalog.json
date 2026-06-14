@@ -118,8 +118,14 @@
     "required": true,
     "detect_commands": ["msedge --version", "chrome --version"],
     "candidate_paths": [
+      "C:\\Program Files (x86)\\Microsoft\\EdgeCore*\\msedge.exe",
+      "C:\\Program Files\\Microsoft\\EdgeCore*\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\EdgeCore\\*\\msedge.exe",
+      "C:\\Program Files\\Microsoft\\EdgeCore\\*\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\EdgeCore\\149.0.4022.69\\msedge.exe",
       "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe"
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files\\Edge\\App\\msedge.exe"
     ],
     "registry_app_paths": [
       "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe",

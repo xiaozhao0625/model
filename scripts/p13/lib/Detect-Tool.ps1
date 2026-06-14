@@ -48,7 +48,14 @@ function Resolve-CandidatePath {
     param([string]$CandidatePath)
     if (-not $CandidatePath) { return $null }
     if ($CandidatePath -match '[\*\?]') {
-        $match = Get-ChildItem -Path $CandidatePath -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $match = Get-ChildItem -Path $CandidatePath -File -ErrorAction SilentlyContinue |
+            Sort-Object -Property @{
+                Expression = {
+                    try { [version]$_.VersionInfo.ProductVersion } catch { [version]'0.0.0.0' }
+                }
+                Descending = $true
+            }, FullName |
+            Select-Object -First 1
         if ($match) { return $match.FullName }
         return $null
     }
@@ -90,8 +97,17 @@ function Invoke-DetectCandidatePath {
         return [ordered]@{ ok = $false; output = 'candidate_path_not_found'; path = $Path }
     }
     try {
+        $item = Get-Item -LiteralPath $resolved
+        $fileVersion = $item.VersionInfo.ProductVersion
+        if ($item.Name -ieq 'msedge.exe' -and $fileVersion) {
+            return [ordered]@{ ok = $true; output = "file_version: $fileVersion"; path = $resolved }
+        }
         $output = & $resolved $VersionArgument 2>&1 | Select-Object -First 5
-        return [ordered]@{ ok = $true; output = (($output | Out-String).Trim()); path = $resolved }
+        $outputText = (($output | Out-String).Trim())
+        if ($fileVersion) {
+            $outputText = "file_version: $fileVersion`n$outputText".Trim()
+        }
+        return [ordered]@{ ok = $true; output = $outputText; path = $resolved }
     } catch {
         return [ordered]@{ ok = $false; output = $_.Exception.Message; path = $resolved }
     }
