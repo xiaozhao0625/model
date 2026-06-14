@@ -34,6 +34,20 @@ function Get-InstallStep {
             manual_install_note = $DetectionReport.message
         }
     }
+    if ($CatalogItem.install_policy -eq 'detect_only') {
+        return [pscustomobject]@{
+            name = $CatalogItem.name
+            role = $Role
+            required = [bool]$CatalogItem.required
+            current_status = $(if ($DetectionReport) { $DetectionReport.status } else { 'not_checked' })
+            detected_path = $(if ($DetectionReport) { $DetectionReport.path } else { $null })
+            detected_version = $(if ($DetectionReport) { $DetectionReport.version } else { $null })
+            winget_id = $CatalogItem.winget_id
+            action = 'blocked'
+            install_hint = 'Detect-only in this phase; do not install automatically.'
+            manual_install_note = 'Browser installation is blocked for P13.4.2 safe install.'
+        }
+    }
     $manual = [bool]$CatalogItem.manual_install_note -or -not $CatalogItem.winget_id
     [pscustomobject]@{
         name = $CatalogItem.name
@@ -88,6 +102,15 @@ function Invoke-InstallStep {
             status = 'manual_install_required'
             message = 'This item is not automatically installed by P13.3.'
             next_action = $Step.manual_install_note
+        }
+    }
+    if ($Step.action -eq 'blocked') {
+        return [pscustomobject]@{
+            name = $Step.name
+            action = $Step.action
+            status = 'blocked'
+            message = 'Installation blocked by policy.'
+            next_action = $Step.install_hint
         }
     }
     $winget = Get-Command winget -ErrorAction SilentlyContinue

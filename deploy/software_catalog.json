@@ -108,6 +108,15 @@
     "roles": ["W2"],
     "required": true,
     "detect_commands": ["msedge --version", "chrome --version"],
+    "candidate_paths": [
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe"
+    ],
+    "registry_app_paths": [
+      "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe",
+      "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe"
+    ],
+    "install_policy": "detect_only",
     "winget_id": "Microsoft.Edge",
     "install_hint": "Use Microsoft Edge or a managed Chromium installation."
   },
