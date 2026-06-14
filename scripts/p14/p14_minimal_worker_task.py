@@ -68,6 +68,8 @@ def parse_args() -> argparse.Namespace:
 def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) -> dict[str, Any]:
     run_id = str(task["run_id"])
     worker_id = args.worker_id
+    if worker_id == "worker_android_w3" and ("safe_variation" in run_id or "safe_ui" in run_id):
+        method = "adb_safe_ui_variation"
     run_dir = Path(args.output_root) / run_id
     low_dir = run_dir / "low"
     for folder in [run_dir / "fixed", low_dir, run_dir / "high", run_dir / "rejected"]:
@@ -82,6 +84,9 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         platform = "web"
     elif method == "adb_emulator_screencap":
         files = capture_adb_emulator(Path(args.adb_path), low_dir, args.target_total)
+        platform = "android"
+    elif method == "adb_safe_ui_variation":
+        files = capture_adb_safe_variation(Path(args.adb_path), low_dir, args.target_total)
         platform = "android"
     else:
         raise ValueError(f"unsupported method: {method}")
@@ -122,6 +127,23 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         summary.update({"content_only": True, "downloaded_browser": False, "ran_playwright_install": False, "real_web_capture": False})
     if method == "adb_emulator_screencap":
         summary.update({"apk_installed": False, "game_started": False, "real_app_capture": False})
+    if method == "adb_safe_ui_variation":
+        summary.update(
+            {
+                "apk_installed": False,
+                "game_started": False,
+                "account_login": False,
+                "system_settings_modified": False,
+                "safe_actions": [
+                    "home",
+                    "quick_settings",
+                    "notifications",
+                    "settings_home",
+                    "app_drawer_or_home",
+                    "home_return",
+                ],
+            }
+        )
 
     summary_path = run_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -219,6 +241,52 @@ def capture_adb_emulator(adb: Path, low_dir: Path, total: int) -> list[Path]:
         files.append(output)
         time.sleep(1)
     return files
+
+
+def capture_adb_safe_variation(adb: Path, low_dir: Path, total: int) -> list[Path]:
+    if not adb.exists():
+        raise FileNotFoundError(str(adb))
+    ensure_adb_ready(adb)
+    actions = [
+        ("home", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
+        ("quick_settings", [[str(adb), "shell", "cmd", "statusbar", "expand-settings"]]),
+        ("notifications", [[str(adb), "shell", "cmd", "statusbar", "expand-notifications"]]),
+        (
+            "settings_home",
+            [
+                [str(adb), "shell", "cmd", "statusbar", "collapse"],
+                [str(adb), "shell", "am", "start", "-a", "android.settings.SETTINGS"],
+            ],
+        ),
+        (
+            "app_drawer_or_home",
+            [
+                [str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"],
+                [str(adb), "shell", "input", "swipe", "540", "2100", "540", "600", "300"],
+            ],
+        ),
+        ("home_return", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
+    ]
+    files: list[Path] = []
+    for index, (name, commands) in enumerate(actions[: max(1, total)], start=1):
+        for command in commands:
+            subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.8)
+        output = low_dir / f"adb_safe_ui_{index:03d}_{name}.png"
+        with output.open("wb") as handle:
+            subprocess.run([str(adb), "exec-out", "screencap", "-p"], check=True, stdout=handle)
+        files.append(output)
+        time.sleep(1)
+    return files
+
+
+def ensure_adb_ready(adb: Path) -> None:
+    devices = subprocess.check_output([str(adb), "devices"], text=True, encoding="utf-8", errors="ignore")
+    if "emulator-" not in devices:
+        raise RuntimeError("no emulator device visible in adb devices")
+    boot_completed = subprocess.check_output([str(adb), "shell", "getprop", "sys.boot_completed"], text=True, encoding="utf-8", errors="ignore").strip()
+    if boot_completed != "1":
+        raise RuntimeError(f"emulator boot not completed: {boot_completed}")
 
 
 def build_records(
