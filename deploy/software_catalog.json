@@ -98,6 +98,10 @@
     "roles": ["W1"],
     "required": true,
     "detect_commands": ["ffmpeg -version"],
+    "candidate_paths": [
+      "D:\\work\\tools\\ffmpeg\\bin\\ffmpeg.exe",
+      "D:\\work\\tools\\ffmpeg\\*\\bin\\ffmpeg.exe"
+    ],
     "winget_id": "Gyan.FFmpeg",
     "install_hint": "Install FFmpeg and ensure it is on PATH."
   },
@@ -151,6 +155,10 @@
     "roles": ["W3"],
     "required": true,
     "detect_commands": ["adb version"],
+    "candidate_paths": [
+      "D:\\work\\tools\\platform-tools\\adb.exe",
+      "D:\\work\\tools\\platform-tools\\platform-tools\\adb.exe"
+    ],
     "winget_id": "Google.PlatformTools",
     "install_hint": "Install Android Platform Tools."
   },

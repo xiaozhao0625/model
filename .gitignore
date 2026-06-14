@@ -8,6 +8,7 @@
 /deploy/installers/*
 !/deploy/installers/README.md
 !/deploy/installers/manifest.example.json
+/deploy/manual_installers/
 /models/
 *.db
 *.mp4

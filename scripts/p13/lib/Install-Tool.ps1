@@ -2,6 +2,97 @@
 
 $AllowedStagedTools = @('git', 'python', 'ffmpeg', 'adb')
 
+function Add-DirectoryToMachinePath {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
+        return [pscustomobject]@{ status = 'skipped'; path = $Directory; message = 'Directory does not exist.' }
+    }
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $parts = @($machinePath -split ';' | Where-Object { $_ })
+    if ($parts -notcontains $Directory) {
+        $updatedPath = (@($parts + $Directory) -join ';')
+        [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine')
+    }
+    $sessionParts = @($env:Path -split ';' | Where-Object { $_ })
+    if ($sessionParts -notcontains $Directory) {
+        $env:Path = (@($sessionParts + $Directory) -join ';')
+    }
+    return [pscustomobject]@{ status = 'available'; path = $Directory; message = 'Directory is present in PATH.' }
+}
+
+function Get-StagedInstallType {
+    param($Entry, [string]$InstallerPath)
+    if ($Entry.PSObject.Properties.Name -contains 'install_type' -and $Entry.install_type) {
+        return [string]$Entry.install_type
+    }
+    if ($Entry.PSObject.Properties.Name -contains 'deploy_mode' -and $Entry.deploy_mode) {
+        return [string]$Entry.deploy_mode
+    }
+    if ($InstallerPath.ToLowerInvariant().EndsWith('.zip')) {
+        return 'zip_extract'
+    }
+    return 'exe'
+}
+
+function Get-PostCheckCommandName {
+    param($Entry, [string]$ToolName)
+    if ($Entry.PSObject.Properties.Name -contains 'post_check' -and @($Entry.post_check).Count -gt 0) {
+        return ([string]@($Entry.post_check)[0]).Trim()
+    }
+    return $ToolName
+}
+
+function Get-PostCheckCommand {
+    param($Entry, [string]$ToolName)
+    if ($Entry.PSObject.Properties.Name -contains 'post_check' -and @($Entry.post_check).Count -gt 0) {
+        return (@($Entry.post_check) -join ' ')
+    }
+    return "$ToolName --version"
+}
+
+function Invoke-StagedZipInstall {
+    param(
+        [Parameter(Mandatory = $true)]$Step,
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)][string]$InstallerPath,
+        [Parameter(Mandatory = $true)][string]$Role
+    )
+    $extractRoot = $Entry.extract_to
+    if (-not $extractRoot) {
+        $extractRoot = Join-Path 'D:\work\tools' $Step.name
+    }
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    Expand-Archive -LiteralPath $InstallerPath -DestinationPath $extractRoot -Force
+
+    $commandName = Get-PostCheckCommandName -Entry $Entry -ToolName $Step.name
+    $exeName = if ($commandName.EndsWith('.exe')) { $commandName } else { "$commandName.exe" }
+    $exe = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter $exeName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) {
+        return [pscustomobject]@{
+            name = $Step.name
+            action = 'staged_install'
+            status = 'failed'
+            message = "Extracted zip but could not find $exeName."
+            extract_to = $extractRoot
+            next_action = 'Verify staged installer archive contents.'
+        }
+    }
+    $pathUpdate = Add-DirectoryToMachinePath -Directory $exe.DirectoryName
+    $postCheck = Get-PostCheckCommand -Entry $Entry -ToolName $Step.name
+    $post = Test-Tool -CatalogItem @{ name = $Step.name; required = $true; detect_commands = @($postCheck) } -Role $Role
+    return [pscustomobject]@{
+        name = $Step.name
+        action = 'staged_install'
+        status = $(if ($post.status -eq 'available') { 'installed_or_already_present' } else { 'needs_attention' })
+        install_type = 'zip_extract'
+        extract_to = $extractRoot
+        executable_path = $exe.FullName
+        path_update = $pathUpdate
+        post_check = $post
+        next_action = 'Rerun inventory.'
+    }
+}
+
 function Resolve-Winget {
     $attempts = @()
     $cmd = Get-Command winget -ErrorAction SilentlyContinue
@@ -90,6 +181,10 @@ function Invoke-StagedInstallStep {
         return [pscustomobject]@{ name = $Step.name; action = 'staged_install'; status = 'sha256_mismatch'; message = 'Installer SHA256 did not match manifest.'; next_action = 'Replace installer or manifest hash.' }
     }
     try {
+        $installType = Get-StagedInstallType -Entry $entry -InstallerPath $installerPath
+        if ($installType -in @('zip_extract', 'extract_to_tools_dir')) {
+            return Invoke-StagedZipInstall -Step $Step -Entry $entry -InstallerPath $installerPath -Role $Role
+        }
         $args = @($entry.silent_args)
         $process = Start-Process -FilePath $installerPath -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
         $post = Test-Tool -CatalogItem @{ name = $Step.name; required = $true; detect_commands = @("$($entry.post_check -join ' ')") } -Role $Role

@@ -2,6 +2,7 @@
   "git": {
     "installer_filename": "Git-2.xx.x-64-bit.exe",
     "sha256": "fill_exact_sha256_after_manual_download",
+    "install_type": "exe",
     "silent_args": ["/VERYSILENT", "/NORESTART"],
     "post_check": ["git", "--version"],
     "allowed_roles": ["W1", "W2", "W3"]
@@ -9,21 +10,24 @@
   "python": {
     "installer_filename": "python-3.11.x-amd64.exe",
     "sha256": "fill_exact_sha256_after_manual_download",
+    "install_type": "exe",
     "silent_args": ["/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0"],
     "post_check": ["python", "--version"],
-    "allowed_roles": ["W1", "W2", "W3"]
+    "allowed_roles": ["W1"]
   },
   "ffmpeg": {
-    "installer_filename": "ffmpeg-release-full.7z",
+    "installer_filename": "ffmpeg-release-essentials.zip",
     "sha256": "fill_exact_sha256_after_manual_download",
-    "silent_args": [],
+    "install_type": "zip_extract",
+    "extract_to": "D:\\work\\tools\\ffmpeg",
     "post_check": ["ffmpeg", "-version"],
     "allowed_roles": ["W1"]
   },
   "adb": {
     "installer_filename": "platform-tools.zip",
     "sha256": "fill_exact_sha256_after_manual_download",
-    "silent_args": [],
+    "install_type": "zip_extract",
+    "extract_to": "D:\\work\\tools\\platform-tools",
     "post_check": ["adb", "version"],
     "allowed_roles": ["W3"]
   }
