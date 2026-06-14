@@ -62,4 +62,5 @@ class RunService:
             "high_count": record.high_count,
             "rejected_count": record.rejected_count,
             "retry_round": record.retry_round,
+            "worker_id": record.worker_id,
         }

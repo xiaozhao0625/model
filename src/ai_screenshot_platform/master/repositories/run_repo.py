@@ -16,8 +16,8 @@ class RunRepo:
             INSERT INTO runs (
                 run_id, app_id, status, target_min, target_max, valid_total,
                 fixed_count, low_count,
-                high_count, rejected_count, retry_round
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                high_count, rejected_count, retry_round, worker_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.run_id,
@@ -31,6 +31,7 @@ class RunRepo:
                 record.high_count,
                 record.rejected_count,
                 record.retry_round,
+                record.worker_id,
             ),
         )
         self.connection.commit()
@@ -40,7 +41,7 @@ class RunRepo:
         rows = self.connection.execute(
             """
             SELECT run_id, app_id, status, target_min, target_max, valid_total, fixed_count, low_count,
-                   high_count, rejected_count, retry_round
+                   high_count, rejected_count, retry_round, worker_id
             FROM runs ORDER BY run_id
             """
         ).fetchall()
@@ -50,7 +51,7 @@ class RunRepo:
         row = self.connection.execute(
             """
             SELECT run_id, app_id, status, target_min, target_max, valid_total, fixed_count, low_count,
-                   high_count, rejected_count, retry_round
+                   high_count, rejected_count, retry_round, worker_id
             FROM runs WHERE run_id = ?
             """,
             (run_id,),
@@ -77,6 +78,7 @@ class RunRepo:
         low_count: int,
         high_count: int,
         rejected_count: int,
+        worker_id: str | None = None,
     ) -> RunRecord:
         self.connection.execute(
             """
@@ -86,7 +88,8 @@ class RunRepo:
                 fixed_count = ?,
                 low_count = ?,
                 high_count = ?,
-                rejected_count = ?
+                rejected_count = ?,
+                worker_id = ?
             WHERE run_id = ?
             """,
             (
@@ -96,6 +99,7 @@ class RunRepo:
                 low_count,
                 high_count,
                 rejected_count,
+                worker_id,
                 run_id,
             ),
         )
@@ -118,4 +122,5 @@ class RunRepo:
             high_count=int(row["high_count"]),
             rejected_count=int(row["rejected_count"]),
             retry_round=int(row["retry_round"]),
+            worker_id=row["worker_id"],
         )

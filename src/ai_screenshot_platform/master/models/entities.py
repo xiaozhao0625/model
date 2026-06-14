@@ -26,6 +26,7 @@ class RunRecord:
     high_count: int = 0
     rejected_count: int = 0
     retry_round: int = 0
+    worker_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -49,7 +49,8 @@ class MasterDatabase:
                 low_count INTEGER NOT NULL,
                 high_count INTEGER NOT NULL,
                 rejected_count INTEGER NOT NULL,
-                retry_round INTEGER NOT NULL
+                retry_round INTEGER NOT NULL,
+                worker_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS workers (
@@ -80,6 +81,7 @@ class MasterDatabase:
         self._initialize_production_readiness_sqlite()
         self._ensure_column("runs", "target_min", "INTEGER NOT NULL DEFAULT 1000")
         self._ensure_column("runs", "target_max", "INTEGER NOT NULL DEFAULT 5000")
+        self._ensure_column("runs", "worker_id", "TEXT")
         self._ensure_column("workers", "machine_name", "TEXT")
         self._ensure_column("workers", "current_run_id", "TEXT")
         self.connection.commit()
@@ -154,9 +156,10 @@ _BASE_SCHEMA_POSTGRES = [
         valid_total INTEGER NOT NULL,
         fixed_count INTEGER NOT NULL,
         low_count INTEGER NOT NULL,
-        high_count INTEGER NOT NULL,
-        rejected_count INTEGER NOT NULL,
-        retry_round INTEGER NOT NULL
+                high_count INTEGER NOT NULL,
+                rejected_count INTEGER NOT NULL,
+                retry_round INTEGER NOT NULL,
+                worker_id TEXT
     )
     """,
     """

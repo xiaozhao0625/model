@@ -151,6 +151,7 @@ class WorkerService:
             low_count=result.low_count,
             high_count=result.high_count,
             rejected_count=result.rejected_count,
+            worker_id=worker_id,
         )
         updated_worker = self.worker_repo.upsert(
             WorkerRecord(
