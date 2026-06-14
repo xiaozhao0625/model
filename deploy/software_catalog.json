@@ -13,6 +13,11 @@
     "roles": ["M0", "W1", "W2", "W3"],
     "required": true,
     "detect_commands": ["git --version"],
+    "candidate_paths": [
+      "C:\\Program Files\\Git\\cmd\\git.exe",
+      "C:\\Program Files\\Git\\bin\\git.exe",
+      "C:\\Program Files (x86)\\Git\\cmd\\git.exe"
+    ],
     "min_version": "2.40.0",
     "winget_id": "Git.Git",
     "install_hint": "Install Git for Windows."

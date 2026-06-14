@@ -16,6 +16,8 @@ def test_p13_3_catalog_and_roles_are_complete():
     names = {item["name"] for item in catalog}
     assert {"python", "git", "nodejs", "postgresql", "redis", "nvidia_driver", "obs", "ffmpeg", "playwright", "adb"} <= names
     assert all(required_catalog_fields <= set(item) for item in catalog)
+    git = next(item for item in catalog if item["name"] == "git")
+    assert "C:\\Program Files\\Git\\cmd\\git.exe" in git["candidate_paths"]
     postgresql = next(item for item in catalog if item["name"] == "postgresql")
     assert postgresql["candidate_paths"][0] == "E:\\work\\pgsql\\bin\\psql.exe"
     browser = next(item for item in catalog if item["name"] == "browser_chromium_or_edge")
