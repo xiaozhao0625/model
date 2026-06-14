@@ -11,6 +11,10 @@ import type { AppRecord, RunRecord, RunStatus } from "../lib/api-types";
 import { formatNumber } from "../lib/format";
 import { actionLabels, bucketLabels, statusLabels } from "../lib/status";
 
+function workerLabel(run: RunRecord) {
+  return run.executed_by || run.assigned_worker_id || run.worker_id || "未分配";
+}
+
 export function RunsRoute() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [apps, setApps] = useState<AppRecord[]>([]);
@@ -22,24 +26,25 @@ export function RunsRoute() {
   const [runId, setRunId] = useState("new_run");
   const [appId, setAppId] = useState("");
 
+  async function loadData() {
+    const [runRecords, appRecords] = await Promise.all([apiClient.listRuns(), apiClient.listApps()]);
+    setRuns(runRecords);
+    setApps(appRecords);
+    setAppId((current) => current || appRecords[0]?.app_id || "");
+    setUsingFallback(apiClient.isUsingMockFallback());
+    const fallbackError = apiClient.getFallbackError();
+    setFallbackDetail(
+      fallbackError ? `${fallbackError.api_base_url}${fallbackError.failed_endpoint}: ${fallbackError.status || "network"} ${fallbackError.error}` : ""
+    );
+  }
+
   useEffect(() => {
     let active = true;
-
-    Promise.all([apiClient.listRuns(), apiClient.listApps()])
-      .then(([runRecords, appRecords]) => {
-        if (!active) {
-          return;
+    loadData()
+      .catch((err) => {
+        if (active) {
+          setFallbackDetail(err instanceof Error ? err.message : String(err));
         }
-        setRuns(runRecords);
-        setApps(appRecords);
-        setAppId((current) => current || appRecords[0]?.app_id || "");
-        setUsingFallback(apiClient.isUsingMockFallback());
-        const fallbackError = apiClient.getFallbackError();
-        setFallbackDetail(
-          fallbackError
-            ? `${fallbackError.api_base_url}${fallbackError.failed_endpoint}: ${fallbackError.status || "network"} ${fallbackError.error}`
-            : ""
-        );
       })
       .finally(() => {
         if (active) {
@@ -67,12 +72,13 @@ export function RunsRoute() {
       return;
     }
     const created = await apiClient.createRun({ run_id: runId, app_id: appId, target_min: 1000, target_max: 5000 });
+    await loadData();
     setRuns((current) => [created, ...current.filter((run) => run.run_id !== created.run_id)]);
   }
 
   async function startRun(id: string) {
-    const updated = await apiClient.startRun(id);
-    setRuns((current) => current.map((run) => (run.run_id === id ? updated : run)));
+    await apiClient.startRun(id);
+    await loadData();
   }
 
   return (
@@ -127,7 +133,7 @@ export function RunsRoute() {
                     {run.rejected_count}
                   </td>
                   <td className="text-slate-400">{run.retry_round}</td>
-                  <td className="font-mono text-xs text-slate-500">{run.worker_id || "未分配"}</td>
+                  <td className="font-mono text-xs text-slate-500">{workerLabel(run)}</td>
                   <td>
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={run.status !== "pending"} onClick={() => void startRun(run.run_id)}>

@@ -97,7 +97,7 @@ class WorkerService:
             status = self.lifecycle.transition(run.status, RunStatus.LAUNCHING)
             status = self.lifecycle.transition(status, RunStatus.PROFILING)
             status = self.lifecycle.transition(status, RunStatus.RUNNING)
-            self.run_repo.update_status(run.run_id, status)
+            self.run_repo.update_status(run.run_id, status, worker_id=worker.worker_id)
             self.worker_repo.upsert(
                 WorkerRecord(
                     worker_id=worker.worker_id,

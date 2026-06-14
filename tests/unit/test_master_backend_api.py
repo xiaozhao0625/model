@@ -130,8 +130,34 @@ def test_app_can_be_created_listed_and_fetched(tmp_path):
         fetched = data(client.get("/api/apps/demo_app"))
 
         assert created["app_id"] == "demo_app"
+        assert created["backend_source"] == "database"
+        assert created["created_at"]
         assert listed[0]["name"] == "Demo App"
         assert fetched["platform"] == "windows"
+
+
+def test_app_create_persists_across_master_restart(tmp_path):
+    with make_client(tmp_path) as client:
+        created = data(
+            client.post(
+                "/api/apps",
+                json={
+                    "app_id": "persistent_app",
+                    "name": "Persistent App",
+                    "type": "web",
+                    "platform": "browser",
+                },
+            )
+        )
+
+    with make_client(tmp_path) as restarted_client:
+        listed = data(restarted_client.get("/api/apps"))
+        fetched = data(restarted_client.get("/api/apps/persistent_app"))
+
+    assert created["app_id"] == "persistent_app"
+    assert fetched["app_id"] == "persistent_app"
+    assert fetched["backend_source"] == "database"
+    assert any(app["app_id"] == "persistent_app" for app in listed)
 
 
 def test_run_can_be_created_started_and_summarized(tmp_path):
@@ -194,6 +220,113 @@ def test_worker_can_register_heartbeat_and_list(tmp_path):
             "obs_capture",
             "ffmpeg_extract",
         ]
+
+
+def test_worker_claim_and_report_preserve_run_worker_identity(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post(
+            "/api/apps",
+            json={
+                "app_id": "demo_app",
+                "name": "Demo App",
+                "type": "pc_game",
+                "platform": "windows",
+            },
+        )
+        client.post("/api/runs", json={"run_id": "run_worker_identity", "app_id": "demo_app"})
+        client.post(
+            "/api/workers/register",
+            json={
+                "worker_id": "worker_pc_game_w1",
+                "type": "pc_game",
+                "capabilities": ["capture_high"],
+            },
+        )
+
+        claim = data(client.post("/api/workers/worker_pc_game_w1/claim"))
+        claimed_run = data(client.get("/api/runs/run_worker_identity"))
+        report = data(
+            client.post(
+                "/api/workers/worker_pc_game_w1/runs/run_worker_identity/report",
+                json={
+                    "app_id": "demo_app",
+                    "run_id": "run_worker_identity",
+                    "status": "capture_completed",
+                    "valid_total": 10,
+                    "fixed_count": 0,
+                    "low_count": 0,
+                    "high_count": 10,
+                    "rejected_count": 0,
+                    "run_dir": "runs/run_worker_identity",
+                    "summary_path": "runs/run_worker_identity/summary.json",
+                },
+            )
+        )
+        final_run = data(client.get("/api/runs/run_worker_identity"))
+
+        assert claim["status"] == "claimed"
+        assert claimed_run["worker_id"] == "worker_pc_game_w1"
+        assert report["run"]["worker_id"] == "worker_pc_game_w1"
+        assert final_run["worker_id"] == "worker_pc_game_w1"
+        assert final_run["assigned_worker_id"] == "worker_pc_game_w1"
+        assert final_run["executed_by"] == "worker_pc_game_w1"
+
+
+def test_capture_completed_run_can_be_marked_failed_low_yield_with_audit(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post(
+            "/api/apps",
+            json={
+                "app_id": "demo_app",
+                "name": "Demo App",
+                "type": "pc_game",
+                "platform": "windows",
+            },
+        )
+        client.post("/api/runs", json={"run_id": "run_low_yield_action", "app_id": "demo_app"})
+        client.post(
+            "/api/workers/register",
+            json={
+                "worker_id": "worker_pc_game_w1",
+                "type": "pc_game",
+                "capabilities": ["capture_high"],
+            },
+        )
+        client.post("/api/workers/worker_pc_game_w1/claim")
+        client.post(
+            "/api/workers/worker_pc_game_w1/runs/run_low_yield_action/report",
+            json={
+                "app_id": "demo_app",
+                "run_id": "run_low_yield_action",
+                "status": "capture_completed",
+                "valid_total": 3,
+                "fixed_count": 0,
+                "low_count": 0,
+                "high_count": 3,
+                "rejected_count": 0,
+                "run_dir": "runs/run_low_yield_action",
+                "summary_path": "runs/run_low_yield_action/summary.json",
+            },
+        )
+
+        updated = data(
+            client.post(
+                "/api/runs/run_low_yield_action/mark-failed-low-yield",
+                json={"operator_action": "mark_failed_low_yield"},
+            )
+        )
+        listed = data(client.get("/api/runs"))
+        fetched = data(client.get("/api/runs/run_low_yield_action"))
+        summary = data(client.get("/api/runs/run_low_yield_action/summary"))
+        events = data(client.get("/api/runs/run_low_yield_action/status-events"))
+
+        assert updated["status"] == RunStatus.FAILED_LOW_YIELD.value
+        assert next(run for run in listed if run["run_id"] == "run_low_yield_action")["status"] == RunStatus.FAILED_LOW_YIELD.value
+        assert fetched["status"] == RunStatus.FAILED_LOW_YIELD.value
+        assert summary["status"] == RunStatus.FAILED_LOW_YIELD.value
+        assert events[-1]["previous_status"] == RunStatus.CAPTURE_COMPLETED.value
+        assert events[-1]["new_status"] == RunStatus.FAILED_LOW_YIELD.value
+        assert events[-1]["operator_action"] == "mark_failed_low_yield"
 
 
 def test_mock_upload_flow_reaches_completed_without_local_file_cleanup(tmp_path):

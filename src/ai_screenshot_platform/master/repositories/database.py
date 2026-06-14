@@ -35,7 +35,8 @@ class MasterDatabase:
                 app_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 type TEXT NOT NULL,
-                platform TEXT NOT NULL
+                platform TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS runs (
@@ -76,9 +77,19 @@ class MasterDatabase:
                 run_id TEXT NOT NULL,
                 status TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS run_status_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                previous_status TEXT NOT NULL,
+                new_status TEXT NOT NULL,
+                operator_action TEXT NOT NULL,
+                changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
         self._initialize_production_readiness_sqlite()
+        self._ensure_column("apps", "created_at", "TEXT")
         self._ensure_column("runs", "target_min", "INTEGER NOT NULL DEFAULT 1000")
         self._ensure_column("runs", "target_max", "INTEGER NOT NULL DEFAULT 5000")
         self._ensure_column("runs", "worker_id", "TEXT")
@@ -116,6 +127,7 @@ class MasterDatabase:
         self._ensure_postgres_column("runs", "worker_id", "TEXT")
         self._ensure_postgres_column("workers", "machine_name", "TEXT")
         self._ensure_postgres_column("workers", "current_run_id", "TEXT")
+        self._ensure_postgres_column("apps", "created_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
         self.connection.commit()
 
     def _ensure_postgres_column(self, table_name: str, column_name: str, definition: str) -> None:
@@ -171,7 +183,8 @@ _BASE_SCHEMA_POSTGRES = [
         app_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         type TEXT NOT NULL,
-        platform TEXT NOT NULL
+        platform TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
     """
@@ -215,6 +228,16 @@ _BASE_SCHEMA_POSTGRES = [
         upload_id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,
         status TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS run_status_events (
+        id SERIAL PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        previous_status TEXT NOT NULL,
+        new_status TEXT NOT NULL,
+        operator_action TEXT NOT NULL,
+        changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
 ]

@@ -20,6 +20,8 @@ export interface AppRecord {
   name: string;
   type: AppType | string;
   platform: string;
+  created_at?: string | null;
+  backend_source?: string | null;
 }
 
 export interface RunRecord {
@@ -35,6 +37,8 @@ export interface RunRecord {
   target_min?: number;
   target_max?: number;
   worker_id?: string;
+  assigned_worker_id?: string;
+  executed_by?: string;
   updated_at?: string;
 }
 
@@ -66,6 +70,9 @@ export interface RunSummary {
   retry_round: number;
   target_min?: number;
   target_max?: number;
+  worker_id?: string | null;
+  assigned_worker_id?: string | null;
+  executed_by?: string | null;
 }
 
 export interface RunLogEntry {

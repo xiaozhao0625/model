@@ -29,7 +29,7 @@ import {
 } from "./mock-data";
 
 type Fetcher = typeof fetch;
-type RequestOptions = RequestInit & { fallbackLabel?: string };
+type RequestOptions = RequestInit & { disableFallback?: boolean; fallbackLabel?: string };
 
 export interface ApiFallbackError {
   api_base_url: string;
@@ -47,6 +47,7 @@ export interface ApiClient {
   createRun(payload: { run_id: string; app_id: string; target_min?: number; target_max?: number }): Promise<RunRecord>;
   getRun(runId: string): Promise<RunRecord>;
   startRun(runId: string): Promise<RunRecord>;
+  markRunFailedLowYield(runId: string): Promise<RunRecord>;
   getRunSummary(runId: string): Promise<RunSummary>;
   getRunArtifacts(runId: string): Promise<RunArtifactRecord>;
   getRunArtifactSamples(runId: string, bucket: string, limit?: number): Promise<ArtifactSampleRecord[]>;
@@ -118,6 +119,9 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         error: error instanceof Error ? error.message : String(error),
         cors_error: status === undefined
       };
+      if (options.disableFallback) {
+        throw error;
+      }
       // mock fallback keeps the console usable when the local Master API is offline.
       return fallback;
     }
@@ -130,6 +134,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
       request("/api/apps", app, {
         method: "POST",
         body: JSON.stringify(app),
+        disableFallback: true,
         fallbackLabel: "create app"
       }),
     listRuns: () => request("/api/runs", mockRuns),
@@ -149,11 +154,22 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           target_min: payload.target_min || 1000,
           target_max: payload.target_max || 5000
         } satisfies RunRecord,
-        { method: "POST", body: JSON.stringify(payload), fallbackLabel: "create run" }
+        { method: "POST", body: JSON.stringify(payload), disableFallback: true, fallbackLabel: "create run" }
       ),
     getRun: (runId) => request(`/api/runs/${runId}`, mockRuns.find((run) => run.run_id === runId) || mockRuns[0]),
     startRun: (runId) =>
       request(`/api/runs/${runId}/start`, { ...(mockRuns.find((run) => run.run_id === runId) || mockRuns[0]), status: "running" }),
+    markRunFailedLowYield: (runId) =>
+      request(
+        `/api/runs/${runId}/mark-failed-low-yield`,
+        { ...(mockRuns.find((run) => run.run_id === runId) || mockRuns[0]), status: "failed_low_yield" },
+        {
+          method: "POST",
+          body: JSON.stringify({ operator_action: "mark_failed_low_yield" }),
+          disableFallback: true,
+          fallbackLabel: "mark failed low yield"
+        }
+      ),
     getRunSummary: (runId) =>
       request(`/api/runs/${runId}/summary`, {
         ...mockSummary,

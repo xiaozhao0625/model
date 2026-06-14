@@ -46,6 +46,10 @@ class UploadRunRequest(BaseModel):
     run_id: str
 
 
+class RunManualStatusRequest(BaseModel):
+    operator_action: str = "mark_failed_low_yield"
+
+
 class SceneClassifyApiRequest(BaseModel):
     app_id: str
     run_id: str

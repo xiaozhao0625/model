@@ -7,6 +7,8 @@ interface RunActionsProps {
   onAction: (action: string) => void;
 }
 
+const lowYieldAllowed = new Set(["running", "capture_completed", "upload_pending", "uploaded_confirmed", "completed", "needs_manual_seed"]);
+
 export function RunActions({ run, onAction }: RunActionsProps) {
   const status = run.status;
   return (
@@ -17,7 +19,7 @@ export function RunActions({ run, onAction }: RunActionsProps) {
       <Button disabled={status !== "running"} onClick={() => onAction("manual_seed")}>
         {actionLabels.manual_seed}
       </Button>
-      <Button disabled={status !== "running"} variant="danger" onClick={() => onAction("mark_failed")}>
+      <Button disabled={!lowYieldAllowed.has(status)} variant="danger" onClick={() => onAction("mark_failed")}>
         {actionLabels.mark_failed}
       </Button>
       <Button disabled={status !== "capture_completed"} variant="primary" onClick={() => onAction("upload_manifest")}>

@@ -11,6 +11,8 @@ class AppRecord:
     name: str
     type: str
     platform: str
+    created_at: str | None = None
+    backend_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,15 @@ class RunRecord:
     rejected_count: int = 0
     retry_round: int = 0
     worker_id: str | None = None
+
+
+@dataclass(frozen=True)
+class RunStatusEvent:
+    run_id: str
+    previous_status: RunStatus
+    new_status: RunStatus
+    operator_action: str
+    changed_at: str | None = None
 
 
 @dataclass(frozen=True)

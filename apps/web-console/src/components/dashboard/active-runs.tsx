@@ -8,7 +8,7 @@ import { DataTable } from "../ui/table";
 export function ActiveRuns() {
   const active = mockRuns.filter((run) => run.status !== "completed").slice(0, 6);
   return (
-    <DataTable columns={["任务", "应用", "状态", "有效数", "分桶结构", "Worker"]}>
+    <DataTable columns={["任务", "应用", "状态", "有效数", "分档结构", "Worker"]}>
       {active.map((run) => (
         <tr key={run.run_id}>
           <td>
@@ -24,7 +24,7 @@ export function ActiveRuns() {
           <td className="text-slate-400">
             {bucketLabels.low} {formatPercent(run.low_count, run.valid_total)} / {bucketLabels.high} {formatPercent(run.high_count, run.valid_total)}
           </td>
-          <td className="font-mono text-xs text-slate-500">{run.worker_id || "未分配"}</td>
+          <td className="font-mono text-xs text-slate-500">{run.executed_by || run.assigned_worker_id || run.worker_id || "未分配"}</td>
         </tr>
       ))}
     </DataTable>

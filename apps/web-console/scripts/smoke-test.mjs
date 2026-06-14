@@ -52,6 +52,7 @@ for (const route of [
 
 const apiClient = read("src/lib/api-client.ts");
 for (const apiName of [
+  "createApp",
   "listQualityReports",
   "getOcrStatus",
   "listBehaviorCandidates",
@@ -59,18 +60,29 @@ for (const apiName of [
   "approveBehaviorCandidate",
   "rejectBehaviorCandidate",
   "rollbackBehaviorCandidate",
+  "markRunFailedLowYield",
   "getToolHealth"
 ]) {
   assert(apiClient.includes(apiName), `missing api client method ${apiName}`);
 }
 
 for (const path of [
+  "/api/runs/${runId}/mark-failed-low-yield",
   "/api/behavior-candidates",
   "/api/behavior-candidates/${candidatePackId}/approve",
   "/api/behavior-candidates/${candidatePackId}/reject",
   "/api/behavior-candidates/${candidatePackId}/rollback"
 ]) {
   assert(apiClient.includes(path), `missing behavior candidate api path ${path}`);
+}
+
+for (const phrase of ["disableFallback: true", "mark failed low yield"]) {
+  assert(apiClient.includes(phrase), `missing mutation safety phrase ${phrase}`);
+}
+
+const runsRoute = read("src/routes/runs.tsx");
+for (const phrase of ["executed_by", "assigned_worker_id", "未分配"]) {
+  assert(runsRoute.includes(phrase), `missing run worker display phrase ${phrase}`);
 }
 
 const mockData = read("src/lib/mock-data.ts");
@@ -92,12 +104,12 @@ for (const key of [
 }
 
 const sidebar = read("src/components/layout/sidebar.tsx");
-for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健康"]) {
+for (const label of ["质量报告", "OCR 状态", "行为候选", "工具健康"]) {
   assert(sidebar.includes(label), `missing sidebar label ${label}`);
 }
 
 const quality = read("src/routes/quality-reports.tsx");
-for (const phrase of ["quality_report.json", "browser_chrome_visible", "os_taskbar_visible", "dangerous_page / ocr_risk_detected", "clean 数量", "rejected 数量"]) {
+for (const phrase of ["quality_report.json", "browser_chrome_visible", "os_taskbar_visible", "dangerous_page / ocr_risk_detected", "通过数", "拒绝数"]) {
   assert(quality.includes(phrase), `missing quality phrase ${phrase}`);
 }
 

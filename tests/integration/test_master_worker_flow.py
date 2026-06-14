@@ -83,6 +83,9 @@ def test_master_worker_full_mock_flow_reaches_capture_completed(tmp_path):
         assert final_run["status"] == RunStatus.CAPTURE_COMPLETED.value
         assert final_run["valid_total"] == 3
         assert final_run["low_count"] == 3
+        assert final_run["worker_id"] == "worker_mock_1"
+        assert final_run["assigned_worker_id"] == "worker_mock_1"
+        assert final_run["executed_by"] == "worker_mock_1"
         assert workers[0]["state"] == "idle"
         assert workers[0]["current_run_id"] is None
         assert not (Path(runtime_result["run_dir"]) / "upload_manifest.json").exists()

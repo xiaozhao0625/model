@@ -35,6 +35,7 @@ from ai_screenshot_platform.master.schemas.api import (
     OcrReportIngestRequest,
     QualityReportIngestRequest,
     RunCreateRequest,
+    RunManualStatusRequest,
     SceneClassifyApiRequest,
     ToolHealthIngestRequest,
     UploadRunRequest,
@@ -174,15 +175,33 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
 
     @app.get("/api/runs")
     def list_runs():
-        return ok(to_api_data(get_services().run_service.list()))
+        return ok(to_api_data(get_services().run_service.list_api()))
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str):
-        return ok(to_api_data(get_services().run_service.get(run_id)))
+        return ok(to_api_data(get_services().run_service.get_api(run_id)))
 
     @app.post("/api/runs/{run_id}/start")
     def start_run(run_id: str):
         return ok(to_api_data(get_services().run_service.start_run(run_id)))
+
+    @app.post("/api/runs/{run_id}/mark-failed-low-yield")
+    def mark_run_failed_low_yield(
+        run_id: str, payload: RunManualStatusRequest | None = None
+    ):
+        payload = payload or RunManualStatusRequest()
+        return ok(
+            to_api_data(
+                get_services().run_service.mark_failed_low_yield(
+                    run_id,
+                    operator_action=payload.operator_action,
+                )
+            )
+        )
+
+    @app.get("/api/runs/{run_id}/status-events")
+    def get_run_status_events(run_id: str):
+        return ok(to_api_data(get_services().run_service.status_events(run_id)))
 
     @app.get("/api/runs/{run_id}/summary")
     def get_run_summary(run_id: str):
