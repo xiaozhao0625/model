@@ -3,6 +3,8 @@
 /temp_video/
 /captures/
 /runs/
+/logs/
+/deploy_output/
 /models/
 *.db
 *.mp4
