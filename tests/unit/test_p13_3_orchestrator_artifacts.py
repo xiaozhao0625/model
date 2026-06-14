@@ -18,6 +18,10 @@ def test_p13_3_catalog_and_roles_are_complete():
     assert all(required_catalog_fields <= set(item) for item in catalog)
     postgresql = next(item for item in catalog if item["name"] == "postgresql")
     assert postgresql["candidate_paths"][0] == "E:\\work\\pgsql\\bin\\psql.exe"
+    browser = next(item for item in catalog if item["name"] == "browser_chromium_or_edge")
+    assert browser["install_policy"] == "detect_only"
+    assert "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe" in browser["candidate_paths"]
+    assert any("App Paths\\msedge.exe" in path for path in browser["registry_app_paths"])
     assert {"M0", "W1", "W2", "W3"} == set(matrix["roles"])
 
     for role, config in matrix["roles"].items():
@@ -103,3 +107,28 @@ def test_p13_3_postgresql_partial_detection_is_explainable():
     assert "PostgreSQL port is reachable but psql client was not found" in detector
     assert "add PostgreSQL bin to PATH or configure known path" in detector
     assert "already_available" in installer
+
+
+def test_p13_4_2_execute_requires_allow_tools():
+    install_script = (REPO_ROOT / "scripts/p13/02_install_role.ps1").read_text(encoding="utf-8")
+    install_lib = (REPO_ROOT / "scripts/p13/lib/Install-Tool.ps1").read_text(encoding="utf-8")
+    assert "Execute mode requires -AllowTools whitelist." in install_script
+    assert "Skipped because tool is not in AllowTools whitelist." in install_script
+    assert "Installation blocked by policy." in install_lib
+
+
+def test_p13_4_2_1_installer_backend_hardening_artifacts():
+    install_script = (REPO_ROOT / "scripts/p13/02_install_role.ps1").read_text(encoding="utf-8")
+    install_lib = (REPO_ROOT / "scripts/p13/lib/Install-Tool.ps1").read_text(encoding="utf-8")
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    manifest = json.loads((REPO_ROOT / "deploy/installers/manifest.example.json").read_text(encoding="utf-8"))
+
+    assert "InstallBackend" in install_script
+    assert "Resolve-Winget" in install_lib
+    assert "Invoke-StagedInstallStep" in install_lib
+    assert "installer_missing" in install_lib
+    assert "sha256_mismatch" in install_lib
+    assert "/deploy/installers/*" in gitignore
+    assert "!/deploy/installers/manifest.example.json" in gitignore
+    assert set(manifest) >= {"git", "python", "ffmpeg", "adb"}
+    assert manifest["git"]["allowed_roles"] == ["W1", "W2", "W3"]

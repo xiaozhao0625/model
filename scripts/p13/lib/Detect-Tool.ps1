@@ -70,6 +70,16 @@ function Get-ToolCandidatePaths {
     return @($paths)
 }
 
+function Get-ToolRegistryAppPaths {
+    param($CatalogItem)
+    $paths = @()
+    if ($CatalogItem.PSObject.Properties.Name -contains 'registry_app_paths') {
+        $value = $CatalogItem.registry_app_paths
+        if ($value) { $paths += @($value) }
+    }
+    return @($paths)
+}
+
 function Invoke-DetectCandidatePath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -84,6 +94,23 @@ function Invoke-DetectCandidatePath {
         return [ordered]@{ ok = $true; output = (($output | Out-String).Trim()); path = $resolved }
     } catch {
         return [ordered]@{ ok = $false; output = $_.Exception.Message; path = $resolved }
+    }
+}
+
+function Invoke-DetectRegistryAppPath {
+    param([Parameter(Mandatory = $true)][string]$RegistryPath)
+    try {
+        $item = Get-ItemProperty -LiteralPath $RegistryPath -ErrorAction Stop
+        $resolved = $item.'(default)'
+        if (-not $resolved) { $resolved = $item.'(Default)' }
+        if (-not $resolved) { $resolved = $item.PSChildName }
+        if ($resolved -and (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+            $output = & $resolved --version 2>&1 | Select-Object -First 5
+            return [ordered]@{ ok = $true; output = (($output | Out-String).Trim()); path = $resolved }
+        }
+        return [ordered]@{ ok = $false; output = 'registry_app_path_target_not_found'; path = $resolved }
+    } catch {
+        return [ordered]@{ ok = $false; output = $_.Exception.Message; path = $RegistryPath }
     }
 }
 
@@ -142,6 +169,23 @@ function Test-Tool {
             }
         }
     }
+    if (-not $available) {
+        foreach ($registryPath in (Get-ToolRegistryAppPaths -CatalogItem $CatalogItem)) {
+            $result = Invoke-DetectRegistryAppPath -RegistryPath $registryPath
+            $attempts += [pscustomobject]@{
+                command = "registry:$registryPath"
+                ok = $result.ok
+                output = $result.output
+                path = $result.path
+            }
+            if ($result.ok) {
+                $available = $true
+                $path = $result.path
+                $version = Get-VersionFromText $result.output
+                break
+            }
+        }
+    }
     $versionOk = Compare-MinVersion -Actual $version -Minimum $CatalogItem.min_version
     $status = 'available'
     if (-not $available) { $status = 'missing' }
@@ -164,6 +208,7 @@ function Test-Tool {
         min_version = $CatalogItem.min_version
         path = $path
         candidate_paths = Get-ToolCandidatePaths -CatalogItem $CatalogItem
+        registry_app_paths = Get-ToolRegistryAppPaths -CatalogItem $CatalogItem
         winget_id = $CatalogItem.winget_id
         install_hint = $CatalogItem.install_hint
         manual_install_note = $CatalogItem.manual_install_note
