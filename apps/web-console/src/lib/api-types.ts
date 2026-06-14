@@ -95,6 +95,27 @@ export interface ArtifactSampleRecord {
   thumbnail_url: string;
   safe_display_path: string;
   capture_method: string;
+  source_method?: string;
+  test_source?: boolean;
+  production_capture?: boolean;
+  content_only?: boolean;
+  browser_chrome_included?: boolean;
+  taskbar_included?: boolean;
+  source_type?: string;
+  source_resolution?: string;
+  output_resolution?: string;
+  output_width?: number;
+  output_height?: number;
+  viewport_width?: number;
+  viewport_height?: number;
+  obs_canvas_width?: number;
+  obs_canvas_height?: number;
+  source_width?: number;
+  source_height?: number;
+  device_resolution?: string;
+  window_rect?: unknown;
+  client_rect?: unknown;
+  crop_rect?: unknown;
 }
 
 export interface RunArtifactRecord {

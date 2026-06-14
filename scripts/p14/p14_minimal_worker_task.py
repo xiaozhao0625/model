@@ -79,15 +79,19 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
     if method == "ffmpeg_testsrc":
         files = capture_ffmpeg_testsrc(Path(args.ffmpeg_path), low_dir, args.target_total)
         platform = "pc_obs"
+        capture_method = "ffmpeg_testsrc"
     elif method == "playwright_edge_local_html":
         files = capture_playwright_local_html(Path(args.edge_path), low_dir, run_dir, args.target_total)
         platform = "web"
+        capture_method = "playwright_edge_content_only"
     elif method == "adb_emulator_screencap":
         files = capture_adb_emulator(Path(args.adb_path), low_dir, args.target_total)
         platform = "android"
+        capture_method = "adb_screencap"
     elif method == "adb_safe_ui_variation":
         files = capture_adb_safe_variation(Path(args.adb_path), low_dir, args.target_total)
         platform = "android"
+        capture_method = "adb_screencap"
     else:
         raise ValueError(f"unsupported method: {method}")
 
@@ -97,7 +101,8 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         worker_id=worker_id,
         task_id=run_id,
         platform=platform,
-        capture_method=method,
+        capture_method=capture_method,
+        source_method=method,
     )
     finished_at = now_iso()
     meta_path = run_dir / "meta.jsonl"
@@ -121,12 +126,38 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         "finished_at": finished_at,
         "artifacts_root": str(run_dir),
         "meta_path": str(meta_path),
-        "capture_method": method,
+        "capture_method": capture_method,
+        "source_method": method,
     }
+    if method == "ffmpeg_testsrc":
+        summary.update(
+            {
+                "test_source": True,
+                "production_capture": False,
+                "source_type": "test_source",
+                "source_resolution": "1280x720",
+                "output_width": 1280,
+                "output_height": 720,
+            }
+        )
     if method == "playwright_edge_local_html":
-        summary.update({"content_only": True, "downloaded_browser": False, "ran_playwright_install": False, "real_web_capture": False})
+        summary.update(
+            {
+                "content_only": True,
+                "browser_chrome_included": False,
+                "taskbar_included": False,
+                "viewport_width": 900,
+                "viewport_height": 520,
+                "source_resolution": "900x520 content area",
+                "downloaded_browser": False,
+                "ran_playwright_install": False,
+                "real_web_capture": False,
+                "test_source": False,
+                "production_capture": True,
+            }
+        )
     if method == "adb_emulator_screencap":
-        summary.update({"apk_installed": False, "game_started": False, "real_app_capture": False})
+        summary.update({"apk_installed": False, "game_started": False, "real_app_capture": False, "test_source": False, "production_capture": True})
     if method == "adb_safe_ui_variation":
         summary.update(
             {
@@ -134,6 +165,8 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
                 "game_started": False,
                 "account_login": False,
                 "system_settings_modified": False,
+                "test_source": False,
+                "production_capture": True,
                 "safe_actions": [
                     "home",
                     "quick_settings",
@@ -165,7 +198,8 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         "run_dir": str(run_dir),
         "meta_path": str(meta_path),
         "summary_path": str(summary_path),
-        "capture_method": method,
+        "capture_method": capture_method,
+        "source_method": method,
     }
 
 
@@ -296,6 +330,7 @@ def build_records(
     task_id: str,
     platform: str,
     capture_method: str,
+    source_method: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     seen: set[str] = set()
     records: list[dict[str, Any]] = []
@@ -311,6 +346,12 @@ def build_records(
         else:
             valid_total += 1
         width, height = png_dimensions(file_path)
+        metadata = capture_metadata(
+            capture_method=capture_method,
+            source_method=source_method,
+            width=width,
+            height=height,
+        )
         records.append(
             {
                 "run_id": run_id,
@@ -322,8 +363,10 @@ def build_records(
                 "content_hash": digest,
                 "created_at": now_iso(),
                 "capture_method": capture_method,
+                "source_method": source_method,
                 "width": width,
                 "height": height,
+                **metadata,
                 "is_duplicate": is_duplicate,
                 "rejected_reason": "duplicate" if is_duplicate else None,
             }
@@ -333,6 +376,50 @@ def build_records(
         "low_count": valid_total,
         "rejected_count": rejected_count,
         "duplicate_count": duplicate_count,
+    }
+
+
+def capture_metadata(capture_method: str, source_method: str, width: int, height: int) -> dict[str, Any]:
+    if source_method == "ffmpeg_testsrc":
+        return {
+            "test_source": True,
+            "production_capture": False,
+            "source_type": "test_source",
+            "source_resolution": f"{width}x{height} test source",
+            "obs_canvas_width": width,
+            "obs_canvas_height": height,
+            "source_width": width,
+            "source_height": height,
+            "output_width": width,
+            "output_height": height,
+        }
+    if capture_method == "playwright_edge_content_only":
+        return {
+            "content_only": True,
+            "browser_chrome_included": False,
+            "taskbar_included": False,
+            "viewport_width": width,
+            "viewport_height": height,
+            "source_resolution": f"{width}x{height} page content area",
+            "output_width": width,
+            "output_height": height,
+            "test_source": False,
+            "production_capture": True,
+        }
+    if capture_method == "adb_screencap":
+        return {
+            "device_resolution": f"{width}x{height}",
+            "source_resolution": f"{width}x{height} device screen",
+            "output_width": width,
+            "output_height": height,
+            "test_source": False,
+            "production_capture": True,
+        }
+    return {
+        "output_width": width,
+        "output_height": height,
+        "test_source": False,
+        "production_capture": True,
     }
 
 

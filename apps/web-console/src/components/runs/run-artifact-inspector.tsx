@@ -165,13 +165,62 @@ function SampleCard({ sample, runId, thumbnailRoot }: { sample: ArtifactSampleRe
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <Badge className="border-slate-700 bg-slate-900 text-slate-200">{sample.bucket}</Badge>
-          <Badge className="border-slate-700 bg-slate-900 text-slate-200">{sample.width}x{sample.height}</Badge>
+          <Badge className="border-slate-700 bg-slate-900 text-slate-200">{captureLabel(sample)}</Badge>
+          <Badge className="border-slate-700 bg-slate-900 text-slate-200">output {sample.output_resolution || `${sample.width}x${sample.height}`}</Badge>
+          {sample.test_source ? <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-100">test source</Badge> : null}
+          {sample.content_only ? <Badge className="border-blue-500/40 bg-blue-500/10 text-blue-100">content-only</Badge> : null}
           {sample.is_duplicate ? <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-100">duplicate</Badge> : null}
           {sample.rejected_reason ? <Badge className="border-red-500/40 bg-red-500/10 text-red-100">{sample.rejected_reason}</Badge> : null}
         </div>
         <p className="break-all font-mono text-[11px] text-slate-500">{sample.safe_display_path}</p>
-        <p className="font-mono text-[11px] text-slate-500">{sample.capture_method}</p>
+        <dl className="grid gap-1 text-[11px] text-slate-500">
+          <MetaLine label="capture_method" value={sample.capture_method} />
+          <MetaLine label="source" value={sourceDescription(sample)} />
+          <MetaLine label="source_resolution" value={sample.source_resolution || "unknown"} />
+          <MetaLine label="production_capture" value={String(sample.production_capture ?? !sample.test_source)} />
+          {sample.content_only !== undefined ? <MetaLine label="content_only" value={String(sample.content_only)} /> : null}
+          {sample.browser_chrome_included !== undefined ? <MetaLine label="browser_chrome_included" value={String(sample.browser_chrome_included)} /> : null}
+          {sample.taskbar_included !== undefined ? <MetaLine label="taskbar_included" value={String(sample.taskbar_included)} /> : null}
+        </dl>
       </div>
     </article>
   );
+}
+
+function MetaLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+      <dt className="font-mono text-slate-600">{label}</dt>
+      <dd className="break-all font-mono text-slate-400">{value}</dd>
+    </div>
+  );
+}
+
+function captureLabel(sample: ArtifactSampleRecord): string {
+  if (sample.capture_method === "ffmpeg_testsrc") {
+    return "测试源";
+  }
+  if (sample.capture_method === "playwright_edge_content_only") {
+    return "网页内容区";
+  }
+  if (sample.capture_method === "obs_or_ffmpeg" || sample.source_type?.includes("game")) {
+    return "OBS/游戏源";
+  }
+  if (sample.capture_method === "adb_screencap") {
+    return "Android 设备屏幕";
+  }
+  return sample.capture_method;
+}
+
+function sourceDescription(sample: ArtifactSampleRecord): string {
+  if (sample.capture_method === "ffmpeg_testsrc") {
+    return "ffmpeg testsrc smoke only, not production game capture";
+  }
+  if (sample.capture_method === "playwright_edge_content_only") {
+    return "Playwright viewport/page content area; browser chrome and taskbar excluded";
+  }
+  if (sample.capture_method === "adb_screencap") {
+    return "ADB screencap device screen resolution";
+  }
+  return sample.source_type || "capture source";
 }

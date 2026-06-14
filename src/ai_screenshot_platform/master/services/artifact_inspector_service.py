@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -93,13 +94,24 @@ class ArtifactInspectorService:
         if extension not in {".png", ".jpg", ".jpeg", ".webp"}:
             raise ValueError("unsupported thumbnail type")
         remote_path = RUN_ROOT / run_id / relative_path
-        content = self._copy_remote_file(location, remote_path)
+        content = self._cached_remote_file(location, run_id, file_id, remote_path)
         content_type = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
             ".webp": "image/webp",
         }.get(extension, "image/png")
         return content, content_type
+
+    def _cached_remote_file(self, location: RunLocation, run_id: str, file_id: str, remote_path: PureWindowsPath) -> bytes:
+        cache_dir = Path("runs/master/artifact_thumbnail_cache").resolve()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = hashlib.sha256(f"{location.worker_id}:{run_id}:{file_id}".encode("utf-8")).hexdigest()
+        cache_path = cache_dir / f"{cache_key}{remote_path.suffix.lower()}"
+        if cache_path.exists():
+            return cache_path.read_bytes()
+        content = self._copy_remote_file(location, remote_path)
+        cache_path.write_bytes(content)
+        return content
 
     def open_folder(self, run_id: str, bucket: str | None = None, file_id: str | None = None) -> dict[str, Any]:
         location = self._resolve_run_location(run_id)
@@ -369,6 +381,9 @@ $metaExists = [IO.File]::Exists($metaPath)
             file_id = f"{item_bucket}/{path.name}"
             if path.suffix.lower() not in ALLOWED_EXTENSIONS:
                 continue
+            capture_method = self._normalized_capture_method(item)
+            test_source = self._is_test_source(item)
+            content_only = self._content_only(item, capture_method)
             samples.append(
                 {
                     "file_id": file_id,
@@ -380,12 +395,83 @@ $metaExists = [IO.File]::Exists($metaPath)
                     "rejected_reason": item.get("rejected_reason"),
                     "thumbnail_url": "",
                     "safe_display_path": f"D:\\work\\runs\\<run_id>\\{file_id}",
-                    "capture_method": item.get("capture_method", "unknown"),
+                    "capture_method": capture_method,
+                    "source_method": item.get("source_method"),
+                    "test_source": test_source,
+                    "production_capture": bool(item.get("production_capture", not test_source)),
+                    "content_only": content_only,
+                    "browser_chrome_included": item.get("browser_chrome_included", False if content_only else None),
+                    "taskbar_included": item.get("taskbar_included", False if content_only else None),
+                    "source_type": item.get("source_type"),
+                    "source_resolution": self._source_resolution(item),
+                    "output_resolution": self._output_resolution(item),
+                    "output_width": item.get("output_width", item.get("width")),
+                    "output_height": item.get("output_height", item.get("height")),
+                    "viewport_width": item.get("viewport_width"),
+                    "viewport_height": item.get("viewport_height"),
+                    "obs_canvas_width": item.get("obs_canvas_width"),
+                    "obs_canvas_height": item.get("obs_canvas_height"),
+                    "source_width": item.get("source_width"),
+                    "source_height": item.get("source_height"),
+                    "device_resolution": item.get("device_resolution"),
+                    "window_rect": item.get("window_rect"),
+                    "client_rect": item.get("client_rect"),
+                    "crop_rect": item.get("crop_rect"),
                 }
             )
             if len(samples) >= limit:
                 break
         return samples
+
+    @staticmethod
+    def _normalized_capture_method(item: dict[str, Any]) -> str:
+        method = str(item.get("capture_method", "unknown"))
+        if method == "playwright_edge_local_html":
+            return "playwright_edge_content_only"
+        return method
+
+    @staticmethod
+    def _is_test_source(item: dict[str, Any]) -> bool:
+        if "test_source" in item:
+            return bool(item["test_source"])
+        return str(item.get("capture_method", "")) == "ffmpeg_testsrc"
+
+    @staticmethod
+    def _content_only(item: dict[str, Any], capture_method: str) -> bool | None:
+        if "content_only" in item:
+            return bool(item["content_only"])
+        if capture_method == "playwright_edge_content_only":
+            return True
+        return None
+
+    @staticmethod
+    def _source_resolution(item: dict[str, Any]) -> str:
+        if item.get("source_resolution"):
+            return str(item["source_resolution"])
+        method = str(item.get("capture_method", "unknown"))
+        if method == "ffmpeg_testsrc":
+            width = int(item.get("width", 0) or 0)
+            height = int(item.get("height", 0) or 0)
+            return f"{width}x{height} test source"
+        if method in {"playwright_edge_local_html", "playwright_edge_content_only"}:
+            width = int(item.get("viewport_width", item.get("width", 0)) or 0)
+            height = int(item.get("viewport_height", item.get("height", 0)) or 0)
+            return f"{width}x{height} page content area"
+        if item.get("device_resolution"):
+            return f"{item['device_resolution']} device screen"
+        if item.get("viewport_width") and item.get("viewport_height"):
+            return f"{item['viewport_width']}x{item['viewport_height']} page content area"
+        if item.get("source_width") and item.get("source_height"):
+            return f"{item['source_width']}x{item['source_height']} source"
+        width = int(item.get("width", 0) or 0)
+        height = int(item.get("height", 0) or 0)
+        return f"{width}x{height}" if width and height else "unknown"
+
+    @staticmethod
+    def _output_resolution(item: dict[str, Any]) -> str:
+        width = int(item.get("output_width", item.get("width", 0)) or 0)
+        height = int(item.get("output_height", item.get("height", 0)) or 0)
+        return f"{width}x{height}" if width and height else "unknown"
 
     @staticmethod
     def _validate_file_id(file_id: str | None) -> PureWindowsPath:
