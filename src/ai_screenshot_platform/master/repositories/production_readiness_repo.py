@@ -182,7 +182,7 @@ class ProductionReadinessRepo:
                 "unavailable_reason": "no_ocr_report",
                 "paddleocr_optional_status": "unknown",
                 "easyocr_optional_status": "unknown",
-                "runtime_versions": {},
+                "runtime_versions": OCR_RUNTIME_VERSION_LOCK,
             }
         return self._ocr_from_row(row)
 
