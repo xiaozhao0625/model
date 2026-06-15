@@ -15,6 +15,7 @@ from apps.master_api.main import app as importable_app
 from ai_screenshot_platform.common.domain.run_status import RunStatus
 from ai_screenshot_platform.master.api.app import create_app, _redis_endpoint
 from ai_screenshot_platform.master.core.config import MasterSettings
+from ai_screenshot_platform.master.services.artifact_inspector_service import ArtifactInspectorService
 from ai_screenshot_platform.master.services.app_service import AppService
 from ai_screenshot_platform.master.services.run_service import RunService
 from ai_screenshot_platform.master.services.worker_service import WorkerService
@@ -34,6 +35,14 @@ def data(response):
     payload = response.json()
     assert payload["code"] == 0
     return payload["data"]
+
+
+def test_artifact_inspector_parses_json_before_powershell_noise():
+    payload = '{"status":"ok","has_summary_json":true}\n#< CLIXML\n<Objs></Objs>'
+
+    parsed = ArtifactInspectorService._parse_remote_json_output(payload)
+
+    assert parsed == {"status": "ok", "has_summary_json": True}
 
 
 def test_default_database_url_uses_runs_master_path():

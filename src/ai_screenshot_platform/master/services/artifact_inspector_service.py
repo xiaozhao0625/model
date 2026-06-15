@@ -284,16 +284,7 @@ $metaExists = [IO.File]::Exists($metaPath)
             try:
                 self._fetch_remote_artifacts(location)
             except Exception:
-                self._write_listing_cache(
-                    location,
-                    {
-                        "status": "refresh_failed",
-                        "summary": None,
-                        "meta": [],
-                        "has_summary_json": False,
-                        "has_meta_jsonl": False,
-                    },
-                )
+                pass
             finally:
                 with self._refresh_lock:
                     self._refreshing.discard(key)
@@ -315,6 +306,8 @@ $metaExists = [IO.File]::Exists($metaPath)
             if time.time() - cache_path.stat().st_mtime > self.cache_ttl_seconds:
                 return None
             payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if payload.get("status") == "refresh_failed":
+                return None
             payload["cache_hit"] = True
             return payload
         except (OSError, json.JSONDecodeError):
@@ -399,10 +392,24 @@ $metaExists = [IO.File]::Exists($metaPath)
             raise RuntimeError("worker action did not run")
         if result.returncode != 0:
             raise RuntimeError(f"worker action failed: {result.stderr.strip() or result.stdout.strip()}")
-        output = result.stdout.strip()
-        if "\n" in output:
-            output = output.splitlines()[-1]
-        return json.loads(output)
+        return self._parse_remote_json_output(result.stdout)
+
+    @staticmethod
+    def _parse_remote_json_output(output: str) -> dict[str, Any]:
+        decoder = json.JSONDecoder()
+        stripped = output.strip()
+        candidates = [line.strip() for line in stripped.splitlines() if line.strip()]
+        candidates.append(stripped)
+        for candidate in candidates:
+            if not candidate.startswith("{"):
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        raise json.JSONDecodeError("remote command did not return a JSON object", stripped, 0)
 
     def _copy_remote_file(self, location: RunLocation, remote_path: PureWindowsPath) -> bytes:
         handle, temp_name = tempfile.mkstemp()
