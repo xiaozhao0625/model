@@ -333,7 +333,15 @@ export const mockOcrStatus: OcrStatusRecord = {
   scene_hints: ["login", "captcha", "payment"],
   unavailable_reason: null,
   paddleocr_optional_status: "unavailable",
-  easyocr_optional_status: "unavailable"
+  easyocr_optional_status: "unavailable",
+  runtime_versions: {
+    paddleocr: "3.7.0",
+    paddlepaddle: "3.2.2",
+    numpy: "2.3.5",
+    ocr_model: "PP-OCRv4",
+    runtime_node: "W2",
+    runtime_venv: "D:\\work\\model_runtime\\venvs\\ocr-runtime"
+  }
 };
 
 export const mockBehaviorCandidates: BehaviorCandidateRecord[] = [

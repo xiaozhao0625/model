@@ -106,6 +106,7 @@ class OcrReportIngestRequest(BaseModel):
     unavailable_reason: str | None = None
     paddleocr_optional_status: str = "unknown"
     easyocr_optional_status: str = "unknown"
+    runtime_versions: dict[str, str] = Field(default_factory=dict)
     source_path: str | None = None
 
 

@@ -123,6 +123,16 @@ export interface ArtifactSampleRecord {
   window_rect?: unknown;
   client_rect?: unknown;
   crop_rect?: unknown;
+  showui_scene_type?: string;
+  showui_bucket_suggestion?: string;
+  showui_risk_level?: string;
+  showui_reason?: string;
+  showui_confidence?: number;
+  scene_type?: string;
+  bucket_suggestion?: string;
+  risk_level?: string;
+  reason?: string;
+  confidence?: number;
 }
 
 export interface RunArtifactRecord {
@@ -173,6 +183,7 @@ export interface ModelDeploymentNode {
   runtime_dir: string;
   capabilities: string[];
   planned_components: string[];
+  ocr_runtime_versions?: Record<string, string>;
   estimated_vram_gb: string;
   capture_impact: string;
   enabled: boolean;
@@ -191,6 +202,10 @@ export interface ModelDeploymentProvider {
   last_health_at?: string | null;
   model_dir: string;
   runtime_dir: string;
+  source?: string | null;
+  revision?: string | null;
+  file_count?: number | null;
+  dependencies?: Record<string, string>;
 }
 
 export interface ModelDeploymentMatrix {
@@ -265,6 +280,7 @@ export interface OcrStatusRecord {
   unavailable_reason?: string | null;
   paddleocr_optional_status: string;
   easyocr_optional_status: string;
+  runtime_versions?: Record<string, string>;
 }
 
 export interface BehaviorCandidateRecord {

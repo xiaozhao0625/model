@@ -11,7 +11,17 @@
       "runtime_dir_template": "{root}\\ocr\\engines\\paddleocr",
       "venv_template": "{root}\\model_runtime\\venvs\\ocr-runtime",
       "source": "official_or_pypi",
-      "version": "to_be_selected",
+      "version": "3.7.0",
+      "version_lock": {
+        "role": "W2",
+        "python": "D:\\work\\tools\\python312\\python.exe",
+        "venv": "D:\\work\\model_runtime\\venvs\\ocr-runtime",
+        "paddleocr": "3.7.0",
+        "paddlepaddle": "3.2.2",
+        "numpy": "2.3.5",
+        "ocr_model": "PP-OCRv4",
+        "reason": "paddlepaddle 3.3.1 triggered a Windows CPU oneDNN/PIR runtime error during P13.5.1; keep W2 OCR runtime pinned unless a new smoke proves a replacement."
+      },
       "hash_recorded": false,
       "install_now": false,
       "idle_only": true,

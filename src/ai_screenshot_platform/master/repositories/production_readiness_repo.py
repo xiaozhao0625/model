@@ -4,6 +4,16 @@ import json
 from typing import Any
 
 
+OCR_RUNTIME_VERSION_LOCK = {
+    "paddleocr": "3.7.0",
+    "paddlepaddle": "3.2.2",
+    "numpy": "2.3.5",
+    "ocr_model": "PP-OCRv4",
+    "runtime_node": "W2",
+    "runtime_venv": r"D:\work\model_runtime\venvs\ocr-runtime",
+}
+
+
 def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, sort_keys=True)
 
@@ -172,6 +182,7 @@ class ProductionReadinessRepo:
                 "unavailable_reason": "no_ocr_report",
                 "paddleocr_optional_status": "unknown",
                 "easyocr_optional_status": "unknown",
+                "runtime_versions": {},
             }
         return self._ocr_from_row(row)
 
@@ -400,6 +411,7 @@ class ProductionReadinessRepo:
             "unavailable_reason": row["unavailable_reason"],
             "paddleocr_optional_status": row["paddleocr_status"],
             "easyocr_optional_status": row["easyocr_status"],
+            "runtime_versions": OCR_RUNTIME_VERSION_LOCK if row["provider"] == "paddleocr" else {},
             "source_path": row["source_path"],
         }
 

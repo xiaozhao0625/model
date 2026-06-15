@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ai_screenshot_platform.master.repositories.production_readiness_repo import (
     ProductionReadinessRepo,
 )
@@ -30,12 +33,42 @@ class ProductionReadinessService:
     def latest_ocr_status(self):
         return self.repo.latest_ocr_status()
 
+    def _showui_runtime_status(self) -> dict:
+        report_path = Path(r"E:\work\model_runtime\reports\showui\p13_5_5_showui_health_report.json")
+        if not report_path.exists():
+            return {}
+        try:
+            return json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
     def model_deployment_matrix(self):
+        showui_report = self._showui_runtime_status()
+        showui_health = showui_report.get("health", {}) if showui_report else {}
+        showui_download = showui_report.get("download", {}) if showui_report else {}
+        showui_provider = {
+            "provider": "showui",
+            "target_node": "M0",
+            "candidate_nodes": ["W2", "W3"],
+            "download_status": showui_download.get("status", "planned"),
+            "hash_verification": "verified" if showui_health.get("hash_verified") else "not_available",
+            "health_status": showui_health.get("status", "missing_weights"),
+            "enabled": False,
+            "online_inference_enabled": False,
+            "estimated_vram_gb": "4-6",
+            "last_health_at": showui_health.get("checked_at"),
+            "model_dir": r"E:\work\models\showui",
+            "runtime_dir": r"E:\work\model_runtime\venvs\vision-runtime",
+            "source": showui_download.get("source"),
+            "revision": showui_download.get("revision"),
+            "file_count": showui_download.get("file_count"),
+            "dependencies": showui_health.get("dependencies", {}),
+        }
         return {
             "schema_version": "p13.5.0",
             "status": "planned_only",
             "online_inference_enabled": False,
-            "model_downloaded": False,
+            "model_downloaded": bool(showui_download.get("downloaded", False)),
             "ocr_installed": False,
             "scheduler_rules": {
                 "local_first": True,
@@ -45,20 +78,7 @@ class ProductionReadinessService:
                 "production_capture_assist_enabled": False,
             },
             "providers": [
-                {
-                    "provider": "showui",
-                    "target_node": "M0",
-                    "candidate_nodes": ["W2", "W3"],
-                    "download_status": "planned",
-                    "hash_verification": "not_available",
-                    "health_status": "missing_weights",
-                    "enabled": False,
-                    "online_inference_enabled": False,
-                    "estimated_vram_gb": "4-6",
-                    "last_health_at": None,
-                    "model_dir": r"E:\work\models\showui",
-                    "runtime_dir": r"E:\work\model_runtime\venvs\vision-runtime",
-                },
+                showui_provider,
                 {
                     "provider": "omniparser",
                     "target_node": "M0",
@@ -113,6 +133,13 @@ class ProductionReadinessService:
                     "runtime_dir": r"D:\work\model_runtime",
                     "capabilities": ["local_ocr", "ui_parser", "web_pc_app_analysis", "light_model"],
                     "planned_components": ["local OCR", "UI parser", "light model"],
+                    "ocr_runtime_versions": {
+                        "paddleocr": "3.7.0",
+                        "paddlepaddle": "3.2.2",
+                        "numpy": "2.3.5",
+                        "ocr_model": "PP-OCRv4",
+                        "runtime_venv": r"D:\work\model_runtime\venvs\ocr-runtime",
+                    },
                     "estimated_vram_gb": "2-6 idle-aware",
                     "capture_impact": "local analysis only when capture is idle or safe",
                     "enabled": False,

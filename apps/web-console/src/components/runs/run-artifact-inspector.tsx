@@ -190,6 +190,11 @@ function SampleCard({ sample, runId, thumbnailRoot }: { sample: ArtifactSampleRe
           {sample.content_only !== undefined ? <MetaLine label="content_only" value={String(sample.content_only)} /> : null}
           {sample.browser_chrome_included !== undefined ? <MetaLine label="browser_chrome_included" value={String(sample.browser_chrome_included)} /> : null}
           {sample.taskbar_included !== undefined ? <MetaLine label="taskbar_included" value={String(sample.taskbar_included)} /> : null}
+          <MetaLine label="showui_scene_type" value={sample.showui_scene_type || sample.scene_type || "-"} />
+          <MetaLine label="showui_bucket" value={sample.showui_bucket_suggestion || sample.bucket_suggestion || "-"} />
+          <MetaLine label="showui_risk_level" value={sample.showui_risk_level || sample.risk_level || "-"} />
+          <MetaLine label="showui_confidence" value={String(sample.showui_confidence ?? sample.confidence ?? "-")} />
+          <MetaLine label="showui_reason" value={sample.showui_reason || sample.reason || "-"} />
         </dl>
       </div>
     </article>

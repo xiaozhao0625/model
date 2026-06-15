@@ -31,6 +31,13 @@ export function OcrStatusRoute() {
             <ProviderStatus name="paddleocr optional" status={status.paddleocr_optional_status} />
             <ProviderStatus name="easyocr optional" status={status.easyocr_optional_status} />
           </div>
+          <div className="mt-4 grid gap-2">
+            <Field label="paddleocr" value={status.runtime_versions?.paddleocr || "pinned: 3.7.0"} />
+            <Field label="paddlepaddle" value={status.runtime_versions?.paddlepaddle || "pinned: 3.2.2"} />
+            <Field label="numpy" value={status.runtime_versions?.numpy || "pinned: 2.3.5"} />
+            <Field label="ocr_model" value={status.runtime_versions?.ocr_model || "PP-OCRv4"} />
+            <Field label="runtime_node" value={status.runtime_versions?.runtime_node || "W2"} />
+          </div>
           <p className="mt-4 text-sm text-slate-500">缺少真实 OCR 依赖时保持 unavailable/skipped，不影响控制台和测试。</p>
         </Card>
       </div>

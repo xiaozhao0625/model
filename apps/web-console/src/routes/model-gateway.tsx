@@ -70,6 +70,8 @@ export function ModelGatewayRoute() {
               <td>
                 <div className="font-mono text-blue-300">{provider.provider}</div>
                 <div className="mt-1 font-mono text-xs text-slate-500">{provider.model_dir}</div>
+                {provider.revision ? <div className="mt-1 font-mono text-xs text-slate-500">rev {provider.revision.slice(0, 12)}</div> : null}
+                {provider.file_count ? <div className="mt-1 font-mono text-xs text-slate-500">{provider.file_count} files</div> : null}
               </td>
               <td className="text-slate-300">
                 <div className="font-mono">{provider.target_node}</div>
@@ -111,6 +113,11 @@ export function ModelGatewayRoute() {
               <td className="text-xs text-slate-300">
                 <div>{node.capabilities.join(", ")}</div>
                 <div className="mt-1 text-slate-500">{node.planned_components.join(", ")}</div>
+                {node.ocr_runtime_versions ? (
+                  <div className="mt-1 font-mono text-slate-500">
+                    OCR {node.ocr_runtime_versions.paddleocr} / Paddle {node.ocr_runtime_versions.paddlepaddle} / NumPy {node.ocr_runtime_versions.numpy}
+                  </div>
+                ) : null}
               </td>
               <td className="font-mono text-xs text-slate-400">{node.estimated_vram_gb}</td>
               <td className="text-xs text-slate-400">{node.capture_impact}</td>
