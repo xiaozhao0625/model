@@ -53,6 +53,14 @@ def test_database_url_can_be_overridden_by_environment(monkeypatch):
     assert settings.database_backend == "postgresql"
 
 
+def test_default_cors_origins_include_vite_lan_port():
+    settings = MasterSettings()
+
+    assert "http://127.0.0.1:5173" in settings.cors_origins
+    assert "http://localhost:5173" in settings.cors_origins
+    assert "http://192.168.1.18:5173" in settings.cors_origins
+
+
 def test_importable_app_does_not_create_root_master_db():
     root_db = Path("master.db")
     if root_db.exists():

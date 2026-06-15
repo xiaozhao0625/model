@@ -15,6 +15,9 @@ class MasterSettings:
         "http://127.0.0.1:6137",
         "http://localhost:6137",
         "http://192.168.1.18:6137",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://192.168.1.18:5173",
     )
 
     @classmethod
