@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ class ArtifactInspectorService:
         self.run_repo = run_repo
         self.cache_dir = Path("runs/master/artifact_listing_cache").resolve()
         self.cache_ttl_seconds = 600
+        self._refreshing: set[str] = set()
+        self._refresh_lock = threading.Lock()
 
     def describe(self, run_id: str) -> dict[str, Any]:
         location = self._resolve_run_location(run_id)
@@ -71,6 +74,8 @@ class ArtifactInspectorService:
             "worker_host": location.worker_host,
             "artifact_root": location.artifact_root,
             "status": summary.get("status", "unknown"),
+            "artifact_status": payload.get("status", "unknown"),
+            "cache_hit": bool(payload.get("cache_hit")),
             "summary": summary,
             "bucket_counts": bucket_counts,
             "sample_files": self._samples_from_meta(meta, limit=20),
@@ -225,6 +230,17 @@ if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
         cached = self._read_listing_cache(location)
         if cached is not None:
             return cached
+        self._schedule_listing_refresh(location)
+        return {
+            "status": "refresh_pending",
+            "summary": None,
+            "meta": [],
+            "has_summary_json": False,
+            "has_meta_jsonl": False,
+            "cache_hit": False,
+        }
+
+    def _fetch_remote_artifacts(self, location: RunLocation) -> dict[str, Any]:
         payload = self._run_remote_json(
             location,
             rf"""
@@ -256,6 +272,34 @@ $metaExists = [IO.File]::Exists($metaPath)
             "has_meta_jsonl": bool(payload.get("has_meta_jsonl")),
         }
         return self._write_listing_cache(location, parsed_payload)
+
+    def _schedule_listing_refresh(self, location: RunLocation) -> None:
+        key = self._cache_path(location).stem
+        with self._refresh_lock:
+            if key in self._refreshing:
+                return
+            self._refreshing.add(key)
+
+        def refresh() -> None:
+            try:
+                self._fetch_remote_artifacts(location)
+            except Exception:
+                self._write_listing_cache(
+                    location,
+                    {
+                        "status": "refresh_failed",
+                        "summary": None,
+                        "meta": [],
+                        "has_summary_json": False,
+                        "has_meta_jsonl": False,
+                    },
+                )
+            finally:
+                with self._refresh_lock:
+                    self._refreshing.discard(key)
+
+        thread = threading.Thread(target=refresh, name=f"artifact-refresh-{location.run_id}", daemon=True)
+        thread.start()
 
     def _cache_path(self, location: RunLocation) -> Path:
         cache_key = hashlib.sha256(
