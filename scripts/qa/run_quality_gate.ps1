@@ -34,6 +34,7 @@ Invoke-GateStep "frontend_build" { cmd /c npm run build --prefix apps\web-consol
 Invoke-GateStep "api_smoke" { & $Python scripts\qa\check_api_smoke.py --base-url $ApiUrl --run-id $RunId }
 Invoke-GateStep "run_consistency" { & $Python scripts\qa\check_run_consistency.py --base-url $ApiUrl --run-id $RunId }
 Invoke-GateStep "artifact_index" { & $Python scripts\qa\check_artifact_index.py --base-url $ApiUrl --run-id $RunId }
+Invoke-GateStep "p14_5_flow" { & $Python scripts\qa\check_p14_5_flow.py --base-url $ApiUrl --run-id $RunId }
 Invoke-GateStep "frontend_smoke" { powershell -ExecutionPolicy Bypass -File scripts\qa\check_frontend_smoke.ps1 -WebUrl $WebUrl -ApiUrl $ApiUrl -RunId $RunId }
 
 $failed = @($results | Where-Object { $_.status -ne "passed" })

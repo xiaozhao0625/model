@@ -34,6 +34,9 @@ from ai_screenshot_platform.master.schemas.api import (
     DiagnosticIngestRequest,
     GroundApiRequest,
     OcrReportIngestRequest,
+    P145BatchTaskRequest,
+    P145ClaimGuardRequest,
+    P145RunActionRequest,
     QualityReportIngestRequest,
     RunCreateRequest,
     RunManualStatusRequest,
@@ -53,6 +56,9 @@ from ai_screenshot_platform.master.services.model_gateway_service import (
 from ai_screenshot_platform.master.services.production_readiness_service import (
     ProductionReadinessService,
 )
+from ai_screenshot_platform.master.services.production_flow_service import (
+    ProductionFlowService,
+)
 from ai_screenshot_platform.master.services.run_service import RunService
 from ai_screenshot_platform.master.services.serialization import to_api_data
 from ai_screenshot_platform.master.services.upload_service import UploadService
@@ -67,6 +73,7 @@ class MasterServices:
     upload_service: UploadService
     model_gateway_service: ModelGatewayProxyService
     production_readiness_service: ProductionReadinessService
+    production_flow_service: ProductionFlowService
     image_repo: ImageRepo
     redis_client: MemoryRedisClient | RedisClient
     artifact_inspector_service: ArtifactInspectorService
@@ -399,6 +406,78 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     def run_finalize(run_id: str):
         return ok(to_api_data(get_services().upload_service.finalize(run_id)))
 
+    @app.post("/api/p14-5/batch-tasks/validate")
+    def p145_validate_batch_tasks(payload: P145BatchTaskRequest):
+        return ok(to_api_data(get_services().production_flow_service.validate_batch_tasks(payload.model_dump())))
+
+    @app.post("/api/p14-5/batch-tasks/import")
+    def p145_import_batch_tasks(payload: P145BatchTaskRequest):
+        return ok(to_api_data(get_services().production_flow_service.import_batch_tasks(payload.model_dump())))
+
+    @app.post("/api/p14-5/claim-guard")
+    def p145_claim_guard(payload: P145ClaimGuardRequest):
+        return ok(
+            to_api_data(
+                get_services().production_flow_service.claim_guard(
+                    worker_id=payload.worker_id,
+                    run_id=payload.run_id,
+                )
+            )
+        )
+
+    @app.get("/api/p14-5/manual-required")
+    def p145_manual_required():
+        return ok(to_api_data(get_services().production_flow_service.manual_required_queue()))
+
+    @app.post("/api/p14-5/runs/{run_id}/retry-plan")
+    def p145_retry_plan(run_id: str):
+        return ok(to_api_data(get_services().production_flow_service.retry_plan(run_id)))
+
+    @app.post("/api/p14-5/runs/{run_id}/upload-preview")
+    def p145_upload_preview(run_id: str):
+        return ok(to_api_data(get_services().production_flow_service.upload_preview(run_id)))
+
+    @app.post("/api/p14-5/runs/{run_id}/cleanup-preview")
+    def p145_cleanup_preview(run_id: str):
+        return ok(to_api_data(get_services().production_flow_service.cleanup_preview(run_id)))
+
+    @app.post("/api/p14-5/runs/{run_id}/cleanup-execute")
+    def p145_cleanup_execute(run_id: str, payload: P145RunActionRequest | None = None):
+        payload = payload or P145RunActionRequest()
+        return ok(
+            to_api_data(
+                get_services().production_flow_service.cleanup_execute(
+                    run_id,
+                    operator_confirm=payload.operator_confirm,
+                )
+            )
+        )
+
+    @app.get("/api/p14-5/disk-status")
+    def p145_disk_status():
+        return ok(to_api_data(get_services().production_flow_service.disk_status()))
+
+    @app.post("/api/p14-5/runs/{run_id}/diagnostic-bundle")
+    def p145_diagnostic_bundle(run_id: str, payload: P145RunActionRequest | None = None):
+        payload = payload or P145RunActionRequest()
+        return ok(
+            to_api_data(
+                get_services().production_flow_service.diagnostic_bundle(
+                    run_id,
+                    include_samples=payload.include_samples,
+                )
+            )
+        )
+
+    @app.post("/api/p14-5/recovery/stuck-tasks")
+    def p145_stuck_task_recovery(payload: P145RunActionRequest | None = None):
+        payload = payload or P145RunActionRequest()
+        return ok(to_api_data(get_services().production_flow_service.stuck_task_recovery(dry_run=payload.dry_run)))
+
+    @app.get("/api/p14-5/operator-dashboard")
+    def p145_operator_dashboard():
+        return ok(to_api_data(get_services().production_flow_service.operator_dashboard()))
+
     @app.post("/api/model/scene_classify")
     def scene_classify(payload: SceneClassifyApiRequest):
         result = get_services().model_gateway_service.scene_classify(
@@ -639,6 +718,11 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
         ),
         production_readiness_service=ProductionReadinessService(
             production_readiness_repo
+        ),
+        production_flow_service=ProductionFlowService(
+            run_repo,
+            worker_repo,
+            data_root=settings.data_root,
         ),
         image_repo=image_repo,
         redis_client=redis_client,

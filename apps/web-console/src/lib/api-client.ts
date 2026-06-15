@@ -8,6 +8,10 @@ import type {
   BehaviorCandidateRecord,
   ModelDeploymentMatrix,
   OcrStatusRecord,
+  P145BatchValidation,
+  P145DashboardRecord,
+  P145ManualRequiredQueue,
+  P145StuckRecovery,
   QualityReportRecord,
   RunArtifactRecord,
   RunListResponse,
@@ -76,6 +80,10 @@ export interface ApiClient {
   rejectBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   rollbackBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   getToolHealth(): Promise<ToolHealthRecord>;
+  getP145OperatorDashboard(): Promise<P145DashboardRecord>;
+  validateP145BatchTasks(payload: { tasks: Array<Record<string, unknown>>; dry_run?: boolean }): Promise<P145BatchValidation>;
+  getP145ManualRequired(): Promise<P145ManualRequiredQueue>;
+  recoverP145StuckTasks(): Promise<P145StuckRecovery>;
   isUsingMockFallback(): boolean;
   getBaseUrl(): string;
   getFallbackError(): ApiFallbackError | null;
@@ -311,6 +319,44 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         { method: "POST", body: JSON.stringify({}) }
     ),
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
+    getP145OperatorDashboard: () =>
+      request("/api/p14-5/operator-dashboard", {
+        status: "mock",
+        run_count: mockRuns.length,
+        status_counts: {},
+        manual_required: 0,
+        disk: { status: "mock", nodes: [], production_scale_capture: false },
+        guards: {
+          production_scale_capture: false,
+          online_inference: false,
+          model_action_control: false,
+          automatic_upload: false,
+          unconfirmed_cleanup: false
+        }
+      }),
+    validateP145BatchTasks: (payload) =>
+      request(
+        "/api/p14-5/batch-tasks/validate",
+        {
+          status: "mock",
+          dry_run: true,
+          production_scale_capture: false,
+          online_inference: false,
+          model_action_control: false,
+          task_count: payload.tasks.length,
+          valid_count: 0,
+          blocked_count: payload.tasks.length,
+          tasks: []
+        },
+        { method: "POST", body: JSON.stringify({ ...payload, dry_run: payload.dry_run ?? true }) }
+      ),
+    getP145ManualRequired: () => request("/api/p14-5/manual-required", { status: "mock", count: 0, items: [] }),
+    recoverP145StuckTasks: () =>
+      request(
+        "/api/p14-5/recovery/stuck-tasks",
+        { status: "mock", dry_run: true, candidate_count: 0, candidates: [], mutated: false },
+        { method: "POST", body: JSON.stringify({ dry_run: true }) }
+      ),
     isUsingMockFallback: () => usingMockFallback,
     getBaseUrl: () => root,
     getFallbackError: () => fallbackError

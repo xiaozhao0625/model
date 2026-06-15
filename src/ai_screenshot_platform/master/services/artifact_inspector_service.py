@@ -298,18 +298,15 @@ if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
         cached = self._read_listing_cache(location)
         if cached is not None:
             return cached
-        try:
-            return self._fetch_remote_artifacts(location)
-        except Exception:
-            self._schedule_listing_refresh(location)
-            return {
-                "status": "refresh_pending",
-                "summary": None,
-                "meta": [],
-                "has_summary_json": False,
-                "has_meta_jsonl": False,
-                "cache_hit": False,
-            }
+        self._schedule_listing_refresh(location)
+        return {
+            "status": "refresh_pending",
+            "summary": None,
+            "meta": [],
+            "has_summary_json": False,
+            "has_meta_jsonl": False,
+            "cache_hit": False,
+        }
 
     def _fetch_remote_artifacts(self, location: RunLocation) -> dict[str, Any]:
         payload = self._run_remote_json(

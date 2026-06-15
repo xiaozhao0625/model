@@ -1,16 +1,27 @@
 export type RunStatus =
   | "pending"
+  | "dispatching"
   | "launching"
   | "waiting_manual"
   | "profiling"
   | "running"
   | "capture_completed"
+  | "post_analysis_pending"
+  | "quality_report_ready"
   | "upload_pending"
   | "uploaded_confirmed"
+  | "local_delete_pending"
   | "local_deleted"
   | "completed"
   | "needs_manual_seed"
+  | "manual_required"
+  | "blocked"
   | "failed_low_yield"
+  | "failed_tool_error"
+  | "failed_worker_lost"
+  | "failed_timeout"
+  | "stuck_recovered"
+  | "cancelled"
   | "skipped_risk";
 
 export type AppType = "pc_game" | "pc_app" | "web" | "android_app" | "android_game" | "other";
@@ -342,4 +353,60 @@ export interface ToolHealthRecord {
     ocr_fallback_status: string;
     input_status: string;
   };
+}
+
+export interface P145DashboardRecord {
+  status: string;
+  run_count: number;
+  status_counts: Record<string, number>;
+  manual_required: number;
+  disk: P145DiskStatus;
+  guards: Record<string, boolean>;
+}
+
+export interface P145DiskStatus {
+  status: string;
+  nodes: Array<{
+    role: string;
+    root: string;
+    status: string;
+    free_gb?: number | null;
+    total_gb?: number | null;
+  }>;
+  production_scale_capture: boolean;
+}
+
+export interface P145ManualRequiredQueue {
+  status: string;
+  count: number;
+  items: Array<{
+    run_id: string;
+    app_id: string;
+    status: string;
+    valid_total: number;
+    target_min: number;
+    worker_id?: string | null;
+    reason: string;
+    operator_action: string;
+  }>;
+}
+
+export interface P145BatchValidation {
+  status: string;
+  dry_run: boolean;
+  production_scale_capture: boolean;
+  online_inference: boolean;
+  model_action_control: boolean;
+  task_count: number;
+  valid_count: number;
+  blocked_count: number;
+  tasks: Array<Record<string, unknown>>;
+}
+
+export interface P145StuckRecovery {
+  status: string;
+  dry_run: boolean;
+  candidate_count: number;
+  candidates: Array<Record<string, unknown>>;
+  mutated: boolean;
 }

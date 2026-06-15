@@ -6,6 +6,7 @@ import { BehaviorCandidatesRoute } from "./routes/behavior-candidates";
 import { DashboardRoute } from "./routes/dashboard";
 import { ModelGatewayRoute } from "./routes/model-gateway";
 import { OcrStatusRoute } from "./routes/ocr-status";
+import { ProductionFlowRoute } from "./routes/production-flow";
 import { QualityReportsRoute } from "./routes/quality-reports";
 import { RunDetailRoute } from "./routes/run-detail";
 import { RunsRoute } from "./routes/runs";
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route path="/model-gateway" element={route(<ModelGatewayRoute />)} />
         <Route path="/quality-reports" element={route(<QualityReportsRoute />)} />
         <Route path="/ocr-status" element={route(<OcrStatusRoute />)} />
+        <Route path="/production-flow" element={route(<ProductionFlowRoute />)} />
         <Route path="/behavior-candidates" element={route(<BehaviorCandidatesRoute />)} />
         <Route path="/tool-health" element={route(<ToolHealthRoute />)} />
         <Route path="/settings" element={route(<SettingsRoute />)} />

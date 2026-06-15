@@ -46,6 +46,22 @@ class UploadRunRequest(BaseModel):
     run_id: str
 
 
+class P145BatchTaskRequest(BaseModel):
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    dry_run: bool = True
+
+
+class P145RunActionRequest(BaseModel):
+    dry_run: bool = True
+    operator_confirm: bool = False
+    include_samples: bool = False
+
+
+class P145ClaimGuardRequest(BaseModel):
+    worker_id: str
+    run_id: str
+
+
 class RunManualStatusRequest(BaseModel):
     operator_action: str = "mark_failed_low_yield"
 

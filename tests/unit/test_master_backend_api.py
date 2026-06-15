@@ -148,6 +148,8 @@ def test_openapi_contains_stable_master_routes(tmp_path):
         assert "/api/runs/{run_id}/confirm-upload" in paths
         assert "/api/runs/{run_id}/cleanup" in paths
         assert "/api/runs/{run_id}/finalize" in paths
+        assert "/api/p14-5/batch-tasks/validate" in paths
+        assert "/api/p14-5/operator-dashboard" in paths
         assert "/api/model/deployment-matrix" in paths
 
 
@@ -478,6 +480,102 @@ def test_run_scoped_upload_routes_reuse_upload_flow(tmp_path):
         assert confirmed["status"] == RunStatus.UPLOADED_CONFIRMED.value
         assert cleaned["status"] == RunStatus.LOCAL_DELETED.value
         assert finalized["status"] == RunStatus.COMPLETED.value
+
+
+def test_p14_5_batch_task_validation_is_dry_run_and_blocks_testsrc(tmp_path):
+    with make_client(tmp_path) as client:
+        result = data(
+            client.post(
+                "/api/p14-5/batch-tasks/validate",
+                json={
+                    "dry_run": True,
+                    "tasks": [
+                        {
+                            "run_id": "p14_5_w2_web_content_001",
+                            "app_id": "web_safe",
+                            "role": "W2",
+                            "capture_method": "playwright_edge_content_only",
+                            "target_total": 30,
+                        },
+                        {
+                            "run_id": "p14_5_w1_testsrc_001",
+                            "app_id": "game_fake",
+                            "role": "W1",
+                            "capture_method": "ffmpeg_testsrc",
+                            "target_total": 30,
+                        },
+                    ],
+                },
+            )
+        )
+
+        assert result["dry_run"] is True
+        assert result["production_scale_capture"] is False
+        assert result["online_inference"] is False
+        assert result["valid_count"] == 1
+        assert result["blocked_count"] == 1
+        assert "test_source_not_allowed_for_production_flow" in result["tasks"][1]["blocked"]
+
+
+def test_p14_5_claim_guard_blocks_worker_mismatch(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post("/api/apps", json={"app_id": "demo_app", "name": "Demo", "type": "web", "platform": "browser"})
+        client.post("/api/runs", json={"run_id": "p14_5_w2_web_content_001", "app_id": "demo_app", "target_min": 30, "target_max": 30})
+        client.post("/api/workers/register", json={"worker_id": "worker_pc_game_w1", "type": "pc_game", "capabilities": ["capture_high"]})
+
+        guard = data(
+            client.post(
+                "/api/p14-5/claim-guard",
+                json={"worker_id": "worker_pc_game_w1", "run_id": "p14_5_w2_web_content_001"},
+            )
+        )
+
+        assert guard["allowed"] is False
+        assert "worker_mismatch" in guard["reasons"]
+        assert guard["no_worker_direct_postgresql"] is True
+
+
+def test_p14_5_manual_queue_retry_upload_cleanup_and_diagnostic_are_guarded(tmp_path):
+    with make_client(tmp_path) as client:
+        run_id = "p14_5_cleanup_test_run"
+        run_dir = tmp_path / run_id
+        run_dir.mkdir()
+        (run_dir / "summary.json").write_text("{}", encoding="utf-8")
+        (run_dir / "meta.jsonl").write_text("", encoding="utf-8")
+        (run_dir / "upload_manifest.json").write_text("{}", encoding="utf-8")
+        (run_dir / "upload_record.json").write_text('{"delete_allowed": true}', encoding="utf-8")
+        client.post("/api/apps", json={"app_id": "demo_app", "name": "Demo", "type": "web", "platform": "browser"})
+        client.post("/api/runs", json={"run_id": run_id, "app_id": "demo_app", "target_min": 30, "target_max": 30})
+        client.post(f"/api/runs/{run_id}/start")
+        client.post(f"/api/runs/{run_id}/upload-manifest")
+        client.post(f"/api/runs/{run_id}/confirm-upload")
+
+        manual_queue = data(client.get("/api/p14-5/manual-required"))
+        upload = data(client.post(f"/api/p14-5/runs/{run_id}/upload-preview"))
+        cleanup_preview = data(client.post(f"/api/p14-5/runs/{run_id}/cleanup-preview"))
+        diagnostic = data(client.post(f"/api/p14-5/runs/{run_id}/diagnostic-bundle", json={"include_samples": False}))
+        cleanup_blocked = data(client.post(f"/api/p14-5/runs/{run_id}/cleanup-execute", json={"operator_confirm": False}))
+        cleanup_done = data(client.post(f"/api/p14-5/runs/{run_id}/cleanup-execute", json={"operator_confirm": True}))
+
+        assert manual_queue["status"] == "ok"
+        assert upload["automatic_upload"] is False
+        assert cleanup_preview["status"] == "ready"
+        assert diagnostic["screenshots_included"] is False
+        assert diagnostic["secrets_included"] is False
+        assert cleanup_blocked["execute_result"] == "not_executed"
+        assert cleanup_done["status"] == "executed"
+
+
+def test_p14_5_dashboard_disk_and_stuck_recovery_are_preview_only(tmp_path):
+    with make_client(tmp_path) as client:
+        dashboard = data(client.get("/api/p14-5/operator-dashboard"))
+        disk = data(client.get("/api/p14-5/disk-status"))
+        recovery = data(client.post("/api/p14-5/recovery/stuck-tasks", json={"dry_run": True}))
+
+        assert dashboard["guards"]["production_scale_capture"] is False
+        assert disk["nodes"][0]["role"] == "M0"
+        assert recovery["dry_run"] is True
+        assert recovery["mutated"] is False
 
 
 def test_model_gateway_mock_act_allows_safe_and_blocks_risky_instruction(tmp_path):

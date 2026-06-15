@@ -2,44 +2,70 @@ import type { RunStatus } from "./api-types";
 
 export const statusLabels: Record<RunStatus, string> = {
   pending: "待处理",
+  dispatching: "分发中",
   launching: "启动中",
   waiting_manual: "等待人工",
   profiling: "识别中",
   running: "运行中",
   capture_completed: "采集完成",
-  upload_pending: "待上传",
+  post_analysis_pending: "待离线分析",
+  quality_report_ready: "质量报告就绪",
+  upload_pending: "待上传确认",
   uploaded_confirmed: "已确认上传",
+  local_delete_pending: "待本地清理",
   local_deleted: "本地已清理",
   completed: "已完成",
   needs_manual_seed: "需要人工补种",
+  manual_required: "需要人工处理",
+  blocked: "已阻塞",
   failed_low_yield: "低产失败",
+  failed_tool_error: "工具失败",
+  failed_worker_lost: "Worker 丢失",
+  failed_timeout: "超时失败",
+  stuck_recovered: "已恢复卡住任务",
+  cancelled: "已取消",
   skipped_risk: "风险跳过"
 };
 
 export const statusTone: Record<RunStatus, string> = {
   pending: "border-slate-500/40 bg-slate-500/10 text-slate-300",
+  dispatching: "border-blue-500/40 bg-blue-500/10 text-blue-300",
   launching: "border-blue-500/40 bg-blue-500/10 text-blue-300",
   waiting_manual: "border-amber-500/40 bg-amber-500/10 text-amber-300",
   profiling: "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
   running: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
   capture_completed: "border-emerald-400/50 bg-emerald-400/10 text-emerald-200",
+  post_analysis_pending: "border-cyan-400/50 bg-cyan-400/10 text-cyan-200",
+  quality_report_ready: "border-sky-400/50 bg-sky-400/10 text-sky-200",
   upload_pending: "border-amber-400/50 bg-amber-400/10 text-amber-200",
   uploaded_confirmed: "border-blue-400/50 bg-blue-400/10 text-blue-200",
+  local_delete_pending: "border-purple-400/50 bg-purple-400/10 text-purple-200",
   local_deleted: "border-purple-400/50 bg-purple-400/10 text-purple-200",
   completed: "border-slate-400/50 bg-slate-400/10 text-slate-200",
   needs_manual_seed: "border-orange-400/50 bg-orange-400/10 text-orange-200",
+  manual_required: "border-orange-400/50 bg-orange-400/10 text-orange-200",
+  blocked: "border-red-400/50 bg-red-400/10 text-red-200",
   failed_low_yield: "border-red-400/50 bg-red-400/10 text-red-200",
+  failed_tool_error: "border-red-400/50 bg-red-400/10 text-red-200",
+  failed_worker_lost: "border-red-400/50 bg-red-400/10 text-red-200",
+  failed_timeout: "border-red-400/50 bg-red-400/10 text-red-200",
+  stuck_recovered: "border-teal-400/50 bg-teal-400/10 text-teal-200",
+  cancelled: "border-slate-500/50 bg-slate-500/10 text-slate-300",
   skipped_risk: "border-red-400/50 bg-red-400/10 text-red-200"
 };
 
 export const lifecycleSteps: RunStatus[] = [
   "pending",
+  "dispatching",
   "launching",
   "profiling",
   "running",
   "capture_completed",
+  "post_analysis_pending",
+  "quality_report_ready",
   "upload_pending",
   "uploaded_confirmed",
+  "local_delete_pending",
   "local_deleted",
   "completed"
 ];
@@ -111,5 +137,5 @@ export const actionLabels: Record<string, string> = {
 };
 
 export function isTerminalStatus(status: RunStatus): boolean {
-  return status === "completed" || status === "failed_low_yield" || status === "skipped_risk";
+  return ["completed", "failed_low_yield", "skipped_risk", "cancelled"].includes(status);
 }
