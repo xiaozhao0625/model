@@ -32,7 +32,10 @@ def main() -> None:
     if not method:
         raise ValueError(f"unsupported P14 worker_id: {args.worker_id}")
 
-    result = execute_task(args, task, method)
+    try:
+        result = execute_task(args, task, method)
+    except Exception as exc:  # Always close the claimed run and leave inspectable artifacts.
+        result = write_failure_result(args, task, method, exc)
     payload = {
         "app_id": str(task["app_id"]),
         "run_id": str(task["run_id"]),
@@ -94,9 +97,9 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         platform = "android"
         capture_method = "adb_screencap"
     elif method == "adb_safe_ui_variation":
-        files = capture_adb_safe_variation(Path(args.adb_path), low_dir, args.target_total)
+        files, extra_metadata = capture_adb_safe_variation(Path(args.adb_path), low_dir, args.target_total)
         platform = "android"
-        capture_method = "adb_screencap"
+        capture_method = "adb_safe_ui_variation"
     else:
         raise ValueError(f"unsupported method: {method}")
 
@@ -116,11 +119,17 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    status = "capture_completed"
+    error: str | None = None
+    if method == "adb_safe_ui_variation" and counts["valid_total"] < min(args.target_total, 15):
+        status = "failed_low_yield"
+        error = "w3_low_variation_blocked"
+
     summary = {
         "run_id": run_id,
         "task_id": run_id,
         "worker_id": worker_id,
-        "status": "capture_completed",
+        "status": status,
         "valid_total": counts["valid_total"],
         "fixed_count": 0,
         "low_count": counts["low_count"],
@@ -201,19 +210,27 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
                     "settings_device_info",
                     "settings_home_scrolled",
                 ],
+                "variation_actions": sorted(
+                    {
+                        str(item.get("action_name"))
+                        for item in extra_metadata.values()
+                        if item.get("action_name")
+                    }
+                ),
+                "low_variation": counts["valid_total"] < min(args.target_total, 15),
             }
         )
 
     summary_path = run_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     (run_dir / "run.log").write_text(
-        json.dumps({"event": "capture_completed", "run_id": run_id, "worker_id": worker_id, "count": len(files)}, ensure_ascii=False) + "\n",
+        json.dumps({"event": status, "run_id": run_id, "worker_id": worker_id, "count": len(files), "error": error}, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     return {
         "worker_id": worker_id,
         "run_id": run_id,
-        "status": "capture_completed",
+        "status": status,
         "valid_total": counts["valid_total"],
         "fixed_count": 0,
         "low_count": counts["low_count"],
@@ -226,6 +243,81 @@ def execute_task(args: argparse.Namespace, task: dict[str, Any], method: str) ->
         "summary_path": str(summary_path),
         "capture_method": capture_method,
         "source_method": method,
+        "error": error,
+    }
+
+
+def write_failure_result(args: argparse.Namespace, task: dict[str, Any], method: str, exc: Exception) -> dict[str, Any]:
+    run_id = str(task["run_id"])
+    worker_id = args.worker_id
+    run_dir = Path(args.output_root) / run_id
+    for folder in [run_dir / "fixed", run_dir / "low", run_dir / "high", run_dir / "rejected"]:
+        folder.mkdir(parents=True, exist_ok=True)
+    started_at = now_iso()
+    message = f"{type(exc).__name__}: {exc}"
+    lower_message = message.lower()
+    desktop_session_required = "desktop" in lower_message or "window handle" in lower_message or "session" in lower_message
+    status = "failed_low_yield"
+    capture_method = {
+        "windows_safe_window": "windows_safe_window_capture",
+        "playwright_edge_local_html": "playwright_edge_content_only",
+        "adb_emulator_screencap": "adb_screencap",
+        "adb_safe_ui_variation": "adb_safe_ui_variation",
+        "ffmpeg_testsrc": "ffmpeg_testsrc",
+    }.get(method, method)
+    meta_path = run_dir / "meta.jsonl"
+    meta_path.write_text("", encoding="utf-8")
+    summary = {
+        "run_id": run_id,
+        "task_id": run_id,
+        "worker_id": worker_id,
+        "status": status,
+        "valid_total": 0,
+        "fixed_count": 0,
+        "low_count": 0,
+        "high_count": 0,
+        "rejected_count": 0,
+        "duplicate_count": 0,
+        "target_total": args.target_total,
+        "started_at": started_at,
+        "finished_at": now_iso(),
+        "artifacts_root": str(run_dir),
+        "meta_path": str(meta_path),
+        "capture_method": capture_method,
+        "source_method": method,
+        "error": message,
+        "desktop_session_required": desktop_session_required,
+        "failure_reason": "desktop_session_required" if desktop_session_required else "capture_failed",
+        "test_source": False,
+        "production_capture": True,
+    }
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (run_dir / "run.log").write_text(
+        json.dumps(
+            {"event": status, "run_id": run_id, "worker_id": worker_id, "error": message},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "worker_id": worker_id,
+        "run_id": run_id,
+        "status": status,
+        "valid_total": 0,
+        "fixed_count": 0,
+        "low_count": 0,
+        "high_count": 0,
+        "rejected_count": 0,
+        "duplicate_count": 0,
+        "screenshot_count": 0,
+        "run_dir": str(run_dir),
+        "meta_path": str(meta_path),
+        "summary_path": str(summary_path),
+        "capture_method": capture_method,
+        "source_method": method,
+        "error": message,
     }
 
 
@@ -247,7 +339,17 @@ def capture_ffmpeg_testsrc(ffmpeg: Path, low_dir: Path, total: int) -> list[Path
         str(total),
         str(output_pattern),
     ]
-    subprocess.run(command, check=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "ffmpeg_testsrc failed").strip()
+        raise RuntimeError(details)
     return sorted(low_dir.glob("ffmpeg_testsrc_*.png"))
 
 
@@ -412,7 +514,17 @@ $records | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ManifestPath
         "-SafeFilesManifestPath",
         str(safe_files_manifest_path),
     ]
-    subprocess.run(command, check=True)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "windows_safe_window_capture failed").strip()
+        raise RuntimeError(details)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     if isinstance(manifest, dict):
         manifest = [manifest]
@@ -440,39 +552,65 @@ def capture_adb_emulator(adb: Path, low_dir: Path, total: int) -> list[Path]:
     return files
 
 
-def capture_adb_safe_variation(adb: Path, low_dir: Path, total: int) -> list[Path]:
+def capture_adb_safe_variation(adb: Path, low_dir: Path, total: int) -> tuple[list[Path], dict[str, dict[str, Any]]]:
     if not adb.exists():
         raise FileNotFoundError(str(adb))
     ensure_adb_ready(adb)
-    settings_actions = [
-        ("settings_home", "android.settings.SETTINGS", []),
-        ("settings_wifi", "android.settings.WIFI_SETTINGS", []),
-        ("settings_bluetooth", "android.settings.BLUETOOTH_SETTINGS", []),
-        ("settings_display", "android.settings.DISPLAY_SETTINGS", []),
-        ("settings_sound", "android.settings.SOUND_SETTINGS", []),
-        ("settings_apps", "android.settings.APPLICATION_SETTINGS", []),
-        ("settings_storage", "android.settings.INTERNAL_STORAGE_SETTINGS", []),
-        ("settings_accessibility", "android.settings.ACCESSIBILITY_SETTINGS", []),
-        ("settings_date", "android.settings.DATE_SETTINGS", []),
-        ("settings_locale", "android.settings.LOCALE_SETTINGS", []),
-        ("settings_device_info", "android.settings.DEVICE_INFO_SETTINGS", []),
-        ("settings_home_scrolled", "android.settings.SETTINGS", [[str(adb), "shell", "input", "swipe", "540", "2050", "540", "700", "450"]]),
+    safe_actions = [
+        ("home", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
+        ("notifications", [[str(adb), "shell", "cmd", "statusbar", "expand-notifications"]]),
+        ("quick_settings", [[str(adb), "shell", "cmd", "statusbar", "expand-settings"]]),
+        ("settings_home", [[str(adb), "shell", "am", "start", "-a", "android.settings.SETTINGS"]]),
+        ("settings_display", [[str(adb), "shell", "am", "start", "-a", "android.settings.DISPLAY_SETTINGS"]]),
+        ("settings_sound", [[str(adb), "shell", "am", "start", "-a", "android.settings.SOUND_SETTINGS"]]),
+        ("settings_apps", [[str(adb), "shell", "am", "start", "-a", "android.settings.APPLICATION_SETTINGS"]]),
+        ("settings_storage", [[str(adb), "shell", "am", "start", "-a", "android.settings.INTERNAL_STORAGE_SETTINGS"]]),
+        ("settings_date", [[str(adb), "shell", "am", "start", "-a", "android.settings.DATE_SETTINGS"]]),
+        ("settings_locale", [[str(adb), "shell", "am", "start", "-a", "android.settings.LOCALE_SETTINGS"]]),
+        ("settings_device_info", [[str(adb), "shell", "am", "start", "-a", "android.settings.DEVICE_INFO_SETTINGS"]]),
+        (
+            "settings_home_scroll_down",
+            [
+                [str(adb), "shell", "am", "start", "-a", "android.settings.SETTINGS"],
+                [str(adb), "shell", "input", "swipe", "540", "2050", "540", "700", "450"],
+            ],
+        ),
+        (
+            "settings_home_scroll_up",
+            [
+                [str(adb), "shell", "am", "start", "-a", "android.settings.SETTINGS"],
+                [str(adb), "shell", "input", "swipe", "540", "700", "540", "2050", "450"],
+            ],
+        ),
+        ("recent_apps", [[str(adb), "shell", "input", "keyevent", "KEYCODE_APP_SWITCH"]]),
+        ("back_to_home", [[str(adb), "shell", "input", "keyevent", "KEYCODE_HOME"]]),
     ]
     files: list[Path] = []
-    selected_actions = [settings_actions[(index - 1) % len(settings_actions)] for index in range(1, max(1, total) + 1)]
-    for index, (name, intent, post_commands) in enumerate(selected_actions, start=1):
+    metadata: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    selected_actions = [safe_actions[(index - 1) % len(safe_actions)] for index in range(1, max(1, total) + 1)]
+    for index, (name, commands) in enumerate(selected_actions, start=1):
         subprocess.run([str(adb), "shell", "cmd", "statusbar", "collapse"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run([str(adb), "shell", "am", "start", "-a", intent], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1.4)
-        for command in post_commands:
+        time.sleep(0.25)
+        for command in commands:
             subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.8)
+            time.sleep(1.0)
         output = low_dir / f"adb_settings_safe_{index:03d}_{name}.png"
         with output.open("wb") as handle:
             subprocess.run([str(adb), "exec-out", "screencap", "-p"], check=True, stdout=handle)
+        digest = sha256(output)
+        is_duplicate = digest in seen
+        seen.add(digest)
+        metadata[str(output.resolve())] = {
+            "action_name": name,
+            "screen_state": name,
+            "dedup_status": "duplicate" if is_duplicate else "new",
+            "capture_method": "adb_safe_ui_variation",
+            "source_method": "adb_safe_ui_variation",
+        }
         files.append(output)
-        time.sleep(1)
-    return files
+        time.sleep(0.6)
+    return files, metadata
 
 
 def ensure_adb_ready(adb: Path) -> None:
@@ -570,7 +708,7 @@ def capture_metadata(capture_method: str, source_method: str, width: int, height
             "test_source": False,
             "production_capture": True,
         }
-    if capture_method == "adb_screencap":
+    if capture_method in {"adb_screencap", "adb_safe_ui_variation"}:
         return {
             "device_resolution": f"{width}x{height}",
             "source_resolution": f"{width}x{height} device screen",

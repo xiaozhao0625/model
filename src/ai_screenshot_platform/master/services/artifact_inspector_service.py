@@ -54,6 +54,8 @@ class RunLocation:
 class ArtifactInspectorService:
     def __init__(self, run_repo: Any | None = None) -> None:
         self.run_repo = run_repo
+        self.cache_dir = Path("runs/master/artifact_listing_cache").resolve()
+        self.cache_ttl_seconds = 600
 
     def describe(self, run_id: str) -> dict[str, Any]:
         location = self._resolve_run_location(run_id)
@@ -220,6 +222,9 @@ if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
         return base64.b64decode(str(payload["content_base64"])), str(payload.get("file_name", "sample_inspection.zip"))
 
     def _read_remote_artifacts(self, location: RunLocation) -> dict[str, Any]:
+        cached = self._read_listing_cache(location)
+        if cached is not None:
+            return cached
         payload = self._run_remote_json(
             location,
             rf"""
@@ -243,13 +248,42 @@ $metaExists = [IO.File]::Exists($metaPath)
         )
         summary_text = self._decode_optional_text(payload.get("summary_base64"))
         meta_text = self._decode_optional_text(payload.get("meta_base64"))
-        return {
+        parsed_payload = {
             "status": payload.get("status"),
             "summary": json.loads(summary_text) if summary_text else None,
             "meta": [json.loads(line) for line in meta_text.splitlines() if line.strip()] if meta_text else [],
             "has_summary_json": bool(payload.get("has_summary_json")),
             "has_meta_jsonl": bool(payload.get("has_meta_jsonl")),
         }
+        return self._write_listing_cache(location, parsed_payload)
+
+    def _cache_path(self, location: RunLocation) -> Path:
+        cache_key = hashlib.sha256(
+            f"{location.worker_id}:{location.worker_host}:{location.run_id}:{location.artifact_root}".encode("utf-8")
+        ).hexdigest()
+        return self.cache_dir / f"{cache_key}.json"
+
+    def _read_listing_cache(self, location: RunLocation) -> dict[str, Any] | None:
+        cache_path = self._cache_path(location)
+        try:
+            if not cache_path.is_file():
+                return None
+            if time.time() - cache_path.stat().st_mtime > self.cache_ttl_seconds:
+                return None
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            payload["cache_hit"] = True
+            return payload
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _write_listing_cache(self, location: RunLocation, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_payload = {**payload, "cache_hit": False, "cached_at": time.time()}
+            self._cache_path(location).write_text(json.dumps(cache_payload, ensure_ascii=False), encoding="utf-8")
+            return cache_payload
+        except OSError:
+            return {**payload, "cache_hit": False}
 
     def _resolve_run_location(self, run_id: str) -> RunLocation:
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", run_id):
