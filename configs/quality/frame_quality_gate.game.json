@@ -1,0 +1,17 @@
+{
+  "schema_version": "p14.5-game-frame-quality-gate",
+  "min_width": 320,
+  "min_height": 240,
+  "duplicate_dhash_max_distance": 4,
+  "black_ratio_threshold": 0.96,
+  "black_brightness_max": 12.0,
+  "white_ratio_threshold": 0.96,
+  "white_brightness_min": 242.0,
+  "low_detail_laplacian_var_max": 4.0,
+  "low_entropy_max": 1.2,
+  "stuck_frame_diff_max": 0.6,
+  "fixed_bucket_max": 10,
+  "default_bucket": "high",
+  "testsrc_allowed_for_dry_run": true,
+  "production_capture_requires_user_ready": true
+}
