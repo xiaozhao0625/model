@@ -53,6 +53,19 @@ def test_database_url_can_be_overridden_by_environment(monkeypatch):
     assert settings.database_backend == "postgresql"
 
 
+def test_dotenv_loader_accepts_utf8_bom(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    (tmp_path / ".env").write_text(
+        "\ufeffDATABASE_URL=postgresql://user:pass@127.0.0.1:5432/app\n",
+        encoding="utf-8",
+    )
+
+    settings = MasterSettings.from_env()
+
+    assert settings.database_backend == "postgresql"
+
+
 def test_default_cors_origins_include_vite_lan_port():
     settings = MasterSettings()
 

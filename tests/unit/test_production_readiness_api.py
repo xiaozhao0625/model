@@ -78,6 +78,39 @@ def test_ocr_report_ingest_status_list_and_detail(tmp_path):
         assert detail["scene_hints"] == ["login", "captcha"]
 
 
+def test_paddleocr_status_includes_runtime_pins_and_disabled_controls(tmp_path):
+    with make_client(tmp_path) as client:
+        data(
+            client.post(
+                "/api/ocr/reports/ingest",
+                json={
+                    "app_id": "p13_5_w2_ocr_runtime",
+                    "run_id": "p13_5_1_3_w2_paddleocr_runtime",
+                    "provider": "paddleocr",
+                    "available": True,
+                    "status": "available",
+                    "paddleocr_optional_status": "health_passed",
+                    "easyocr_optional_status": "not_installed",
+                },
+            )
+        )
+
+        status = data(client.get("/api/ocr/status"))
+
+        assert status["provider"] == "paddleocr"
+        assert status["node"] == "W2"
+        assert status["available"] is True
+        assert status["health"] == "passed"
+        assert status["paddleocr_version"] == "3.7.0"
+        assert status["paddlepaddle_version"] == "3.2.2"
+        assert status["numpy_version"] == "2.3.5"
+        assert status["easyocr"] == "not_installed"
+        assert status["model"] == "PP-OCRv4 mobile"
+        assert status["enabled"] is False
+        assert status["online_inference"] is False
+        assert status["ocr_action_control"] is False
+
+
 def test_tool_health_and_diagnostics_ingest(tmp_path):
     with make_client(tmp_path) as client:
         health = data(

@@ -130,7 +130,7 @@ def _read_env_file_value(name: str) -> str | None:
     env_path = Path(".env")
     if not env_path.exists():
         return None
-    for line in env_path.read_text(encoding="utf-8").splitlines():
+    for line in env_path.read_text(encoding="utf-8-sig").splitlines():
         clean = line.strip()
         if not clean or clean.startswith("#") or "=" not in clean:
             continue

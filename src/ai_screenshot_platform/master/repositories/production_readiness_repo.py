@@ -9,8 +9,15 @@ OCR_RUNTIME_VERSION_LOCK = {
     "paddlepaddle": "3.2.2",
     "numpy": "2.3.5",
     "ocr_model": "PP-OCRv4",
+    "ocr_model_display": "PP-OCRv4 mobile",
     "runtime_node": "W2",
     "runtime_venv": r"D:\work\model_runtime\venvs\ocr-runtime",
+}
+
+OCR_RUNTIME_DISABLED_FLAGS = {
+    "enabled": False,
+    "online_inference": False,
+    "ocr_action_control": False,
 }
 
 
@@ -183,6 +190,14 @@ class ProductionReadinessRepo:
                 "paddleocr_optional_status": "unknown",
                 "easyocr_optional_status": "unknown",
                 "runtime_versions": OCR_RUNTIME_VERSION_LOCK,
+                "node": OCR_RUNTIME_VERSION_LOCK["runtime_node"],
+                "health": "unknown",
+                "paddleocr_version": OCR_RUNTIME_VERSION_LOCK["paddleocr"],
+                "paddlepaddle_version": OCR_RUNTIME_VERSION_LOCK["paddlepaddle"],
+                "numpy_version": OCR_RUNTIME_VERSION_LOCK["numpy"],
+                "easyocr": "not_installed",
+                "model": OCR_RUNTIME_VERSION_LOCK["ocr_model_display"],
+                **OCR_RUNTIME_DISABLED_FLAGS,
             }
         return self._ocr_from_row(row)
 
@@ -400,6 +415,8 @@ class ProductionReadinessRepo:
         }
 
     def _ocr_from_row(self, row) -> dict[str, Any]:
+        is_paddleocr = row["provider"] == "paddleocr"
+        runtime_versions = OCR_RUNTIME_VERSION_LOCK if is_paddleocr else {}
         return {
             "app_id": row["app_id"],
             "run_id": row["run_id"],
@@ -411,7 +428,15 @@ class ProductionReadinessRepo:
             "unavailable_reason": row["unavailable_reason"],
             "paddleocr_optional_status": row["paddleocr_status"],
             "easyocr_optional_status": row["easyocr_status"],
-            "runtime_versions": OCR_RUNTIME_VERSION_LOCK if row["provider"] == "paddleocr" else {},
+            "runtime_versions": runtime_versions,
+            "node": runtime_versions.get("runtime_node"),
+            "health": "passed" if is_paddleocr and bool(row["available"]) else row["status"],
+            "paddleocr_version": runtime_versions.get("paddleocr"),
+            "paddlepaddle_version": runtime_versions.get("paddlepaddle"),
+            "numpy_version": runtime_versions.get("numpy"),
+            "easyocr": row["easyocr_status"],
+            "model": runtime_versions.get("ocr_model_display") or runtime_versions.get("ocr_model"),
+            **OCR_RUNTIME_DISABLED_FLAGS,
             "source_path": row["source_path"],
         }
 
