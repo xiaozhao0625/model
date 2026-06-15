@@ -175,8 +175,64 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         )
 
     @app.get("/api/runs")
-    def list_runs():
-        return ok(to_api_data(get_services().run_service.list_api()))
+    def list_runs(
+        status: str | None = None,
+        worker_id: str | None = None,
+        app_id: str | None = None,
+        batch: str | None = None,
+        q: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        sort: str = "created_at_desc",
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ):
+        return ok(
+            to_api_data(
+                get_services().run_service.query_api(
+                    status=status,
+                    worker_id=worker_id,
+                    app_id=app_id,
+                    batch=batch,
+                    q=q,
+                    created_from=created_from,
+                    created_to=created_to,
+                    sort=sort,
+                    limit=limit,
+                    offset=offset,
+                )
+            )
+        )
+
+    @app.get("/api/tasks")
+    def list_tasks(
+        status: str | None = None,
+        worker_id: str | None = None,
+        app_id: str | None = None,
+        batch: str | None = None,
+        q: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        sort: str = "created_at_desc",
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ):
+        return ok(
+            to_api_data(
+                get_services().run_service.query_api(
+                    status=status,
+                    worker_id=worker_id,
+                    app_id=app_id,
+                    batch=batch,
+                    q=q,
+                    created_from=created_from,
+                    created_to=created_to,
+                    sort=sort,
+                    limit=limit,
+                    offset=offset,
+                )
+            )
+        )
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str):
@@ -212,6 +268,10 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     def get_run_artifacts(run_id: str):
         return ok(get_services().artifact_inspector_service.describe(run_id))
 
+    @app.get("/api/runs/{run_id}/artifacts/summary")
+    def get_run_artifacts_summary(run_id: str):
+        return ok(get_services().artifact_inspector_service.summary(run_id))
+
     @app.get("/api/runs/{run_id}/artifacts/samples")
     def get_run_artifact_samples(run_id: str, bucket: str = "low", limit: int = Query(default=20, ge=1, le=20)):
         return ok(get_services().artifact_inspector_service.samples(run_id, bucket=bucket, limit=limit))
@@ -220,6 +280,21 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     def get_run_artifact_thumbnail(run_id: str, file_id: str):
         content, content_type = get_services().artifact_inspector_service.thumbnail(run_id, file_id)
         return Response(content=content, media_type=content_type)
+
+    @app.get("/api/runs/{run_id}/artifacts/image")
+    def get_run_artifact_image(run_id: str, file_id: str):
+        content, content_type = get_services().artifact_inspector_service.image(run_id, file_id)
+        return Response(content=content, media_type=content_type)
+
+    @app.get("/api/runs/{run_id}/analysis/ocr-jsonl")
+    def get_run_ocr_jsonl(run_id: str):
+        content = get_services().artifact_inspector_service.analysis_jsonl(run_id, "ocr")
+        return Response(content=content, media_type="application/jsonl")
+
+    @app.get("/api/runs/{run_id}/analysis/showui-jsonl")
+    def get_run_showui_jsonl(run_id: str):
+        content = get_services().artifact_inspector_service.analysis_jsonl(run_id, "showui")
+        return Response(content=content, media_type="application/jsonl")
 
     @app.post("/api/runs/{run_id}/artifact-actions/open-folder")
     def open_run_artifact_folder(run_id: str, payload: dict[str, object] | None = None):

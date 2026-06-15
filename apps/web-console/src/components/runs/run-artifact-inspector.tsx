@@ -2,17 +2,11 @@ import { Copy, Download, ExternalLink, FolderOpen, ImageOff, RefreshCw } from "l
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../../lib/api-client";
 import type { ArtifactSampleRecord, RunArtifactRecord } from "../../lib/api-types";
+import { bucketLabels } from "../../lib/status";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
 
 const buckets = ["fixed", "low", "high", "rejected", "duplicates"];
-const bucketText: Record<string, string> = {
-  fixed: "修复",
-  low: "低质",
-  high: "高质",
-  rejected: "拒绝",
-  duplicates: "重复"
-};
 
 export function RunArtifactInspector({ runId }: { runId: string }) {
   const [artifact, setArtifact] = useState<RunArtifactRecord | null>(null);
@@ -32,7 +26,7 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
     }
   }, [artifact, bucket]);
 
-  const thumbnailRoot = useMemo(() => apiClient.getBaseUrl(), []);
+  const apiRoot = useMemo(() => apiClient.getBaseUrl(), []);
 
   async function loadArtifacts() {
     setLoading(true);
@@ -41,6 +35,9 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
       const record = await apiClient.getRunArtifacts(runId);
       setArtifact(record);
       setSamples(samplesForBucket(record, bucket));
+      if (record.artifact_status === "refresh_pending") {
+        setMessage("采集物索引正在刷新，请稍后重试。");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -53,7 +50,7 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
       return;
     }
     await navigator.clipboard.writeText(artifact.artifact_root);
-    setMessage("产物路径已复制。");
+    setMessage("已复制脱敏后的 Worker 产物路径。");
   }
 
   async function openFolder() {
@@ -63,12 +60,12 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
 
   async function packageSample() {
     const result = await apiClient.packageRunArtifactSample(runId, { buckets: ["fixed", "low", "high", "rejected"], limit_per_bucket: 20 });
-    setMessage(`样本打包：${result.status}${result.file_count ? `（${result.file_count} 个文件）` : ""}`);
+    setMessage(`样本打包：${result.status}${result.file_count ? `，${result.file_count} 个文件` : ""}`);
   }
 
   return (
-    <Card title="截图产物检查器" eyebrow="受控 Worker 产物">
-      {loading ? <p className="text-sm text-slate-400">正在加载产物元数据...</p> : null}
+    <Card title="采集物验证器" eyebrow="Artifact Inspector">
+      {loading ? <p className="text-sm text-slate-400">正在加载采集物索引...</p> : null}
       {error ? (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
           <p>{error}</p>
@@ -91,7 +88,7 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
             <Info label="summary/meta" value={`${artifact.has_summary_json ? "有 summary" : "无 summary"} / ${artifact.has_meta_jsonl ? "有 meta" : "无 meta"}`} />
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" onClick={() => void copyPath()} title="复制 Worker 产物路径">
+            <button className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" onClick={() => void copyPath()} title="复制脱敏路径">
               <Copy size={16} />
               复制路径
             </button>
@@ -103,10 +100,26 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
               <Download size={16} />
               打包样本
             </button>
-            <a className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" href={`${thumbnailRoot}/api/runs/${encodeURIComponent(runId)}/artifact-actions/download-sample`} title="下载受限样本包">
+            <a className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" href={`${apiRoot}/api/runs/${encodeURIComponent(runId)}/artifact-actions/download-sample`} title="下载受限样本包">
               <Download size={16} />
               下载样本
             </a>
+            {artifact.analysis?.ocr_jsonl_url ? (
+              <a className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" href={`${apiRoot}${artifact.analysis.ocr_jsonl_url}`}>
+                <Download size={16} />
+                下载 OCR JSONL
+              </a>
+            ) : null}
+            {artifact.analysis?.showui_jsonl_url ? (
+              <a className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" href={`${apiRoot}${artifact.analysis.showui_jsonl_url}`}>
+                <Download size={16} />
+                下载 ShowUI JSONL
+              </a>
+            ) : null}
+            <button className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 hover:border-slate-500" onClick={() => void loadArtifacts()} title="刷新采集物索引">
+              <RefreshCw size={16} />
+              刷新索引
+            </button>
           </div>
           {message ? <p className="text-xs text-slate-400">{message}</p> : null}
           <div className="flex flex-wrap gap-2">
@@ -116,16 +129,16 @@ export function RunArtifactInspector({ runId }: { runId: string }) {
                 className={`min-h-9 rounded-lg border px-3 py-2 text-sm ${bucket === item ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-slate-800 bg-slate-950 text-slate-300"}`}
                 onClick={() => setBucket(item)}
               >
-                {bucketText[item] || item} <span className="font-mono text-xs text-slate-500">{artifact.bucket_counts[item] ?? 0}</span>
+                {bucketLabels[item] || item} <span className="font-mono text-xs text-slate-500">{artifact.bucket_counts[item] ?? 0}</span>
               </button>
             ))}
           </div>
           {samples.length === 0 ? (
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">当前分桶没有样本。</div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">当前分档没有样本。</div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {samples.map((sample) => (
-                <SampleCard key={sample.file_id} sample={sample} runId={runId} thumbnailRoot={thumbnailRoot} />
+                <SampleCard key={sample.file_id} sample={sample} apiRoot={apiRoot} />
               ))}
             </div>
           )}
@@ -148,9 +161,10 @@ function Info({ label, value, mono = false, wide = false }: { label: string; val
   );
 }
 
-function SampleCard({ sample, runId, thumbnailRoot }: { sample: ArtifactSampleRecord; runId: string; thumbnailRoot: string }) {
+function SampleCard({ sample, apiRoot }: { sample: ArtifactSampleRecord; apiRoot: string }) {
   const [failed, setFailed] = useState(false);
-  const thumbnailUrl = `${thumbnailRoot}/api/runs/${encodeURIComponent(runId)}/artifacts/thumbnail?file_id=${encodeURIComponent(sample.file_id)}`;
+  const thumbnailUrl = sample.thumbnail_url?.startsWith("http") ? sample.thumbnail_url : `${apiRoot}${sample.thumbnail_url}`;
+  const imageUrl = sample.image_url ? (sample.image_url.startsWith("http") ? sample.image_url : `${apiRoot}${sample.image_url}`) : thumbnailUrl;
   return (
     <article className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
       <div className="flex aspect-video items-center justify-center bg-slate-900">
@@ -166,12 +180,12 @@ function SampleCard({ sample, runId, thumbnailRoot }: { sample: ArtifactSampleRe
       <div className="space-y-2 p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="break-all font-mono text-xs text-blue-200">{sample.file_name}</p>
-          <a href={thumbnailUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-100" title="打开缩略图">
+          <a href={imageUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-100" title="打开原图">
             <ExternalLink size={15} />
           </a>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          <Badge className="border-slate-700 bg-slate-900 text-slate-200">{bucketText[sample.bucket] || sample.bucket}</Badge>
+          <Badge className="border-slate-700 bg-slate-900 text-slate-200">{bucketLabels[sample.bucket] || sample.bucket}</Badge>
           <Badge className="border-slate-700 bg-slate-900 text-slate-200">{captureLabel(sample)}</Badge>
           <Badge className="border-slate-700 bg-slate-900 text-slate-200">输出 {sample.output_resolution || `${sample.width}x${sample.height}`}</Badge>
           {sample.test_source ? <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-100">测试源</Badge> : null}
@@ -190,15 +204,32 @@ function SampleCard({ sample, runId, thumbnailRoot }: { sample: ArtifactSampleRe
           {sample.content_only !== undefined ? <MetaLine label="content_only" value={String(sample.content_only)} /> : null}
           {sample.browser_chrome_included !== undefined ? <MetaLine label="browser_chrome_included" value={String(sample.browser_chrome_included)} /> : null}
           {sample.taskbar_included !== undefined ? <MetaLine label="taskbar_included" value={String(sample.taskbar_included)} /> : null}
-          <MetaLine label="showui_scene_type" value={sample.showui_scene_type || sample.scene_type || "-"} />
-          <MetaLine label="showui_bucket" value={sample.showui_bucket_suggestion || sample.bucket_suggestion || "-"} />
-          <MetaLine label="showui_risk_level" value={sample.showui_risk_level || sample.risk_level || "-"} />
-          <MetaLine label="showui_confidence" value={String(sample.showui_confidence ?? sample.confidence ?? "-")} />
-          <MetaLine label="showui_reason" value={sample.showui_reason || sample.reason || "-"} />
+          <SectionTitle title="OCR" />
+          <MetaLine label="status" value={sample.ocr_status || "暂无离线分析结果"} />
+          <MetaLine label="detected_text" value={sample.detected_text || "-"} />
+          <MetaLine label="text_block_count" value={String(sample.text_block_count ?? "-")} />
+          <MetaLine label="avg_confidence" value={String(sample.avg_confidence ?? "-")} />
+          <MetaLine label="risk_level" value={sample.ocr_risk_level || "-"} />
+          <MetaLine label="risk_reasons" value={Array.isArray(sample.risk_reasons) ? sample.risk_reasons.join(", ") : sample.risk_reasons || "-"} />
+          <MetaLine label="latency_ms" value={String(sample.ocr_latency_ms ?? "-")} />
+          <MetaLine label="engine/node" value={`${sample.ocr_engine || "-"} / ${sample.ocr_node || "-"}`} />
+          <SectionTitle title="ShowUI" />
+          <MetaLine label="status" value={sample.showui_status || "暂无离线分析结果"} />
+          <MetaLine label="scene_type" value={sample.showui_scene_type || sample.scene_type || "-"} />
+          <MetaLine label="bucket_suggestion" value={sample.showui_bucket_suggestion || sample.bucket_suggestion || "-"} />
+          <MetaLine label="risk_level" value={sample.showui_risk_level || sample.risk_level || "-"} />
+          <MetaLine label="confidence" value={String(sample.showui_confidence ?? sample.confidence ?? "-")} />
+          <MetaLine label="latency_ms" value={String(sample.showui_latency_ms ?? "-")} />
+          <MetaLine label="provider" value={sample.showui_provider || "-"} />
+          <MetaLine label="reason" value={sample.showui_reason || sample.reason || "-"} />
         </dl>
       </div>
     </article>
   );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return <dt className="mt-2 border-t border-slate-800 pt-2 font-semibold text-slate-300">{title}</dt>;
 }
 
 function MetaLine({ label, value }: { label: string; value: string }) {
@@ -223,7 +254,7 @@ function captureLabel(sample: ArtifactSampleRecord): string {
   if (sample.capture_method === "windows_safe_window_capture") {
     return "安全窗口";
   }
-  if (sample.capture_method === "adb_screencap") {
+  if (sample.capture_method === "adb_screencap" || sample.capture_method === "adb_safe_ui_variation") {
     return "Android 设备屏幕";
   }
   return sample.capture_method;
@@ -234,15 +265,15 @@ function sourceDescription(sample: ArtifactSampleRecord): string {
     return "ffmpeg testsrc 链路 smoke，不代表正式游戏采集尺寸";
   }
   if (sample.capture_method === "playwright_edge_content_only") {
-    return "Playwright 视口/页面内容区；不包含浏览器外壳和任务栏";
+    return "Playwright viewport / 页面内容区，不包含浏览器外壳和 Windows 任务栏";
   }
   if (sample.capture_method === "obs_or_ffmpeg" || sample.source_type?.includes("game")) {
     return "OBS canvas、source 或游戏窗口有效画面";
   }
   if (sample.capture_method === "windows_safe_window_capture") {
-    return "记事本/计算器/资源管理器等本地安全测试窗口；不包含任务栏";
+    return "记事本、计算器、资源管理器等本地安全测试窗口，不包含任务栏";
   }
-  if (sample.capture_method === "adb_screencap") {
+  if (sample.capture_method === "adb_screencap" || sample.capture_method === "adb_safe_ui_variation") {
     return "ADB screencap 设备屏幕分辨率";
   }
   return sample.source_type || "采集来源";

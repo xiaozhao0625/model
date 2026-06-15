@@ -39,7 +39,18 @@ export interface RunRecord {
   worker_id?: string;
   assigned_worker_id?: string;
   executed_by?: string;
+  created_at?: string | null;
   updated_at?: string;
+  batch?: string | null;
+}
+
+export interface RunListResponse {
+  items: RunRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  sort: string;
+  filters: Record<string, string | null>;
 }
 
 export interface WorkerRecord {
@@ -94,12 +105,14 @@ export interface MetaEntry {
 export interface ArtifactSampleRecord {
   file_id: string;
   file_name: string;
+  artifact_id?: string;
   bucket: "fixed" | "low" | "high" | "rejected" | "duplicates" | string;
   width: number;
   height: number;
   is_duplicate: boolean;
   rejected_reason?: string | null;
   thumbnail_url: string;
+  image_url?: string;
   safe_display_path: string;
   capture_method: string;
   source_method?: string;
@@ -128,6 +141,18 @@ export interface ArtifactSampleRecord {
   showui_risk_level?: string;
   showui_reason?: string;
   showui_confidence?: number;
+  showui_status?: string;
+  showui_latency_ms?: number;
+  showui_provider?: string;
+  ocr_status?: string;
+  detected_text?: string;
+  text_block_count?: number;
+  avg_confidence?: number;
+  ocr_risk_level?: string;
+  risk_reasons?: string[] | string;
+  ocr_latency_ms?: number;
+  ocr_engine?: string;
+  ocr_node?: string;
   scene_type?: string;
   bucket_suggestion?: string;
   risk_level?: string;
@@ -143,9 +168,16 @@ export interface RunArtifactRecord {
   worker_host: string;
   artifact_root: string;
   status: string;
+  artifact_status?: string;
   summary: Record<string, unknown>;
   bucket_counts: Record<string, number>;
   sample_files: ArtifactSampleRecord[];
+  analysis?: {
+    ocr_available: boolean;
+    showui_available: boolean;
+    ocr_jsonl_url?: string | null;
+    showui_jsonl_url?: string | null;
+  };
   has_meta_jsonl: boolean;
   has_summary_json: boolean;
   can_open_folder: boolean;

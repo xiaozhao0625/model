@@ -16,6 +16,9 @@ from typing import Any
 
 
 RUN_ROOT = PureWindowsPath(r"D:\work\runs")
+SHOWUI_RESULTS_PATH = Path(r"E:\work\model_runtime\smoke_outputs\showui\showui_sample_results.jsonl")
+W2_OCR_RESULTS_PATH = PureWindowsPath(r"D:\work\model_runtime\reports\ocr_sample_smoke\ocr_results.jsonl")
+OCR_RESULTS_CACHE_PATH = Path("runs/master/analysis_cache/ocr_results.jsonl").resolve()
 ALLOWED_BUCKETS = {"fixed", "low", "high", "rejected", "duplicates"}
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".json", ".jsonl", ".txt", ".log"}
 KNOWN_RUN_WORKERS = {
@@ -42,6 +45,18 @@ WORKERS = {
 }
 
 
+def location_for_worker(worker_id: str) -> RunLocation:
+    worker = WORKERS[worker_id]
+    return RunLocation(
+        run_id="_analysis",
+        worker_id=worker_id,
+        worker_role=str(worker["role"]),
+        worker_host=str(worker["host"]),
+        ssh_user=str(worker["ssh_user"]),
+        artifact_root=str(RUN_ROOT / "_analysis"),
+    )
+
+
 @dataclass(frozen=True)
 class RunLocation:
     run_id: str
@@ -66,6 +81,7 @@ class ArtifactInspectorService:
         summary = payload.get("summary") or {}
         meta = payload.get("meta") or []
         bucket_counts = self._bucket_counts(summary, meta)
+        analysis = self._analysis_lookup(location)
         return {
             "run_id": run_id,
             "task_id": summary.get("task_id", run_id),
@@ -78,11 +94,29 @@ class ArtifactInspectorService:
             "cache_hit": bool(payload.get("cache_hit")),
             "summary": summary,
             "bucket_counts": bucket_counts,
-            "sample_files": self._samples_from_meta(meta, limit=20),
+            "sample_files": self._samples_from_meta(meta, location=location, analysis=analysis, limit=20),
             "has_meta_jsonl": bool(payload.get("has_meta_jsonl")),
             "has_summary_json": bool(payload.get("has_summary_json")),
+            "analysis": {
+                "ocr_available": bool(analysis["ocr"]),
+                "showui_available": bool(analysis["showui"]),
+                "ocr_jsonl_url": f"/api/runs/{run_id}/analysis/ocr-jsonl" if analysis["ocr"] else None,
+                "showui_jsonl_url": f"/api/runs/{run_id}/analysis/showui-jsonl" if analysis["showui"] else None,
+            },
             "can_open_folder": True,
             "can_download_sample": True,
+        }
+
+    def summary(self, run_id: str) -> dict[str, Any]:
+        described = self.describe(run_id)
+        return {
+            "run_id": run_id,
+            "artifact_status": described["artifact_status"],
+            "summary": described["summary"],
+            "bucket_counts": described["bucket_counts"],
+            "has_meta_jsonl": described["has_meta_jsonl"],
+            "has_summary_json": described["has_summary_json"],
+            "analysis": described["analysis"],
         }
 
     def samples(self, run_id: str, bucket: str = "low", limit: int = 20) -> list[dict[str, Any]]:
@@ -91,15 +125,24 @@ class ArtifactInspectorService:
         location = self._resolve_run_location(run_id)
         payload = self._read_remote_artifacts(location)
         meta = payload.get("meta") or []
-        selected = self._samples_from_meta(meta, bucket=bucket, limit=max(1, min(limit, 20)))
+        selected = self._samples_from_meta(
+            meta,
+            location=location,
+            analysis=self._analysis_lookup(location),
+            bucket=bucket,
+            limit=max(1, min(limit, 20)),
+        )
         return selected
 
     def thumbnail(self, run_id: str, file_id: str) -> tuple[bytes, str]:
+        return self.image(run_id, file_id)
+
+    def image(self, run_id: str, file_id: str) -> tuple[bytes, str]:
         location = self._resolve_run_location(run_id)
         relative_path = self._validate_file_id(file_id)
         extension = relative_path.suffix.lower()
         if extension not in {".png", ".jpg", ".jpeg", ".webp"}:
-            raise ValueError("unsupported thumbnail type")
+            raise ValueError("unsupported image type")
         remote_path = RUN_ROOT / run_id / relative_path
         content = self._cached_remote_file(location, run_id, file_id, remote_path)
         content_type = {
@@ -108,6 +151,31 @@ class ArtifactInspectorService:
             ".webp": "image/webp",
         }.get(extension, "image/png")
         return content, content_type
+
+    def analysis_jsonl(self, run_id: str, analysis_type: str) -> bytes:
+        location = self._resolve_run_location(run_id)
+        if analysis_type == "showui":
+            if not SHOWUI_RESULTS_PATH.is_file():
+                return b""
+            lines = [
+                line
+                for line in SHOWUI_RESULTS_PATH.read_text(encoding="utf-8").splitlines()
+                if self._analysis_line_matches_run(line, run_id)
+            ]
+            return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+        if analysis_type == "ocr":
+            try:
+                content = self._copy_remote_file(location_for_worker("worker_pc_app_web_w2"), W2_OCR_RESULTS_PATH).decode("utf-8")
+                OCR_RESULTS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                OCR_RESULTS_CACHE_PATH.write_text(content, encoding="utf-8")
+            except Exception:
+                if OCR_RESULTS_CACHE_PATH.is_file():
+                    content = OCR_RESULTS_CACHE_PATH.read_text(encoding="utf-8")
+                else:
+                    return b""
+            lines = [line for line in content.splitlines() if self._analysis_line_matches_run(line, run_id)]
+            return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+        raise ValueError("unsupported analysis type")
 
     def _cached_remote_file(self, location: RunLocation, run_id: str, file_id: str, remote_path: PureWindowsPath) -> bytes:
         cache_dir = Path("runs/master/artifact_thumbnail_cache").resolve()
@@ -230,15 +298,18 @@ if (!(Test-Path -LiteralPath $path -PathType Leaf)) {{
         cached = self._read_listing_cache(location)
         if cached is not None:
             return cached
-        self._schedule_listing_refresh(location)
-        return {
-            "status": "refresh_pending",
-            "summary": None,
-            "meta": [],
-            "has_summary_json": False,
-            "has_meta_jsonl": False,
-            "cache_hit": False,
-        }
+        try:
+            return self._fetch_remote_artifacts(location)
+        except Exception:
+            self._schedule_listing_refresh(location)
+            return {
+                "status": "refresh_pending",
+                "summary": None,
+                "meta": [],
+                "has_summary_json": False,
+                "has_meta_jsonl": False,
+                "cache_hit": False,
+            }
 
     def _fetch_remote_artifacts(self, location: RunLocation) -> dict[str, Any]:
         payload = self._run_remote_json(
@@ -454,7 +525,14 @@ $metaExists = [IO.File]::Exists($metaPath)
             "duplicates": int(summary.get("duplicate_count", 0) or sum(1 for item in meta if item.get("is_duplicate"))),
         }
 
-    def _samples_from_meta(self, meta: list[dict[str, Any]], bucket: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    def _samples_from_meta(
+        self,
+        meta: list[dict[str, Any]],
+        location: RunLocation,
+        analysis: dict[str, dict[str, dict[str, Any]]],
+        bucket: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
         samples: list[dict[str, Any]] = []
         for item in meta:
             item_bucket = str(item.get("bucket", "low"))
@@ -469,16 +547,20 @@ $metaExists = [IO.File]::Exists($metaPath)
             capture_method = self._normalized_capture_method(item)
             test_source = self._is_test_source(item)
             content_only = self._content_only(item, capture_method)
+            ocr = analysis["ocr"].get(path.name, {})
+            showui = analysis["showui"].get(path.name, {})
             samples.append(
                 {
                     "file_id": file_id,
                     "file_name": path.name,
+                    "artifact_id": file_id,
                     "bucket": display_bucket,
                     "width": int(item.get("width", 0) or 0),
                     "height": int(item.get("height", 0) or 0),
                     "is_duplicate": is_duplicate,
                     "rejected_reason": item.get("rejected_reason"),
-                    "thumbnail_url": "",
+                    "thumbnail_url": f"/api/runs/{location.run_id}/artifacts/thumbnail?file_id={file_id}",
+                    "image_url": f"/api/runs/{location.run_id}/artifacts/image?file_id={file_id}",
                     "safe_display_path": f"D:\\work\\runs\\<run_id>\\{file_id}",
                     "capture_method": capture_method,
                     "source_method": item.get("source_method"),
@@ -502,6 +584,23 @@ $metaExists = [IO.File]::Exists($metaPath)
                     "window_rect": item.get("window_rect"),
                     "client_rect": item.get("client_rect"),
                     "crop_rect": item.get("crop_rect"),
+                    "ocr_status": "available" if ocr else "missing",
+                    "detected_text": ocr.get("detected_text"),
+                    "text_block_count": ocr.get("text_block_count"),
+                    "avg_confidence": ocr.get("avg_confidence"),
+                    "ocr_risk_level": ocr.get("risk_level"),
+                    "risk_reasons": ocr.get("risk_reasons") or ocr.get("risk_hits"),
+                    "ocr_latency_ms": ocr.get("latency_ms"),
+                    "ocr_engine": ocr.get("ocr_engine"),
+                    "ocr_node": ocr.get("ocr_node"),
+                    "showui_status": "available" if showui else "missing",
+                    "showui_scene_type": showui.get("scene_type"),
+                    "showui_bucket_suggestion": showui.get("bucket_suggestion"),
+                    "showui_risk_level": showui.get("risk_level"),
+                    "showui_reason": showui.get("reason"),
+                    "showui_confidence": showui.get("confidence"),
+                    "showui_latency_ms": showui.get("latency_ms"),
+                    "showui_provider": showui.get("provider"),
                 }
             )
             if len(samples) >= limit:
@@ -514,6 +613,46 @@ $metaExists = [IO.File]::Exists($metaPath)
         if method == "playwright_edge_local_html":
             return "playwright_edge_content_only"
         return method
+
+    def _analysis_lookup(self, location: RunLocation) -> dict[str, dict[str, dict[str, Any]]]:
+        return {
+            "ocr": self._ocr_lookup(location.run_id),
+            "showui": self._showui_lookup(location.run_id),
+        }
+
+    def _showui_lookup(self, run_id: str) -> dict[str, dict[str, Any]]:
+        if not SHOWUI_RESULTS_PATH.is_file():
+            return {}
+        return self._jsonl_lookup_by_filename(SHOWUI_RESULTS_PATH.read_text(encoding="utf-8"), run_id)
+
+    def _ocr_lookup(self, run_id: str) -> dict[str, dict[str, Any]]:
+        if not OCR_RESULTS_CACHE_PATH.is_file():
+            return {}
+        content = OCR_RESULTS_CACHE_PATH.read_text(encoding="utf-8")
+        return self._jsonl_lookup_by_filename(content, run_id)
+
+    @staticmethod
+    def _jsonl_lookup_by_filename(content: str, run_id: str) -> dict[str, dict[str, Any]]:
+        records: dict[str, dict[str, Any]] = {}
+        for line in content.splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if str(item.get("run_id") or "") != run_id:
+                continue
+            image_path = str(item.get("image_path") or item.get("file_path") or "")
+            name = PureWindowsPath(image_path).name
+            if name:
+                records[name] = item
+        return records
+
+    @staticmethod
+    def _analysis_line_matches_run(line: str, run_id: str) -> bool:
+        try:
+            return str(json.loads(line).get("run_id") or "") == run_id
+        except json.JSONDecodeError:
+            return False
 
     @staticmethod
     def _is_test_source(item: dict[str, Any]) -> bool:

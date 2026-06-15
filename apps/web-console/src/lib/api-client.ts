@@ -10,6 +10,7 @@ import type {
   OcrStatusRecord,
   QualityReportRecord,
   RunArtifactRecord,
+  RunListResponse,
   RunRecord,
   RunSummary,
   SceneClassifyResult,
@@ -45,7 +46,7 @@ export interface ApiClient {
   getHealth(): Promise<Record<string, unknown>>;
   listApps(): Promise<AppRecord[]>;
   createApp(app: AppRecord): Promise<AppRecord>;
-  listRuns(): Promise<RunRecord[]>;
+  listRuns(params?: Record<string, string | number | undefined>): Promise<RunListResponse>;
   createRun(payload: { run_id: string; app_id: string; target_min?: number; target_max?: number }): Promise<RunRecord>;
   getRun(runId: string): Promise<RunRecord>;
   startRun(runId: string): Promise<RunRecord>;
@@ -140,7 +141,26 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         disableFallback: true,
         fallbackLabel: "create app"
       }),
-    listRuns: () => request("/api/runs", mockRuns),
+    listRuns: async (params = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== "" && value !== "all") {
+          query.set(key, String(value));
+        }
+      }
+      const fallback = {
+        items: mockRuns,
+        total: mockRuns.length,
+        limit: Number(params.limit || 50),
+        offset: Number(params.offset || 0),
+        sort: String(params.sort || "created_at_desc"),
+        filters: {}
+      } satisfies RunListResponse;
+      const data = await request<RunListResponse | RunRecord[]>(`/api/runs${query.toString() ? `?${query.toString()}` : ""}`, fallback);
+      return Array.isArray(data)
+        ? { items: data, total: data.length, limit: Number(params.limit || 50), offset: Number(params.offset || 0), sort: String(params.sort || "created_at_desc"), filters: {} }
+        : data;
+    },
     createRun: (payload) =>
       request(
         "/api/runs",

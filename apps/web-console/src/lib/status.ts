@@ -3,7 +3,7 @@ import type { RunStatus } from "./api-types";
 export const statusLabels: Record<RunStatus, string> = {
   pending: "待处理",
   launching: "启动中",
-  waiting_manual: "等待人工处理",
+  waiting_manual: "等待人工",
   profiling: "识别中",
   running: "运行中",
   capture_completed: "采集完成",
@@ -11,7 +11,7 @@ export const statusLabels: Record<RunStatus, string> = {
   uploaded_confirmed: "已确认上传",
   local_deleted: "本地已清理",
   completed: "已完成",
-  needs_manual_seed: "需要人工补种子",
+  needs_manual_seed: "需要人工补种",
   failed_low_yield: "低产失败",
   skipped_risk: "风险跳过"
 };
@@ -45,10 +45,11 @@ export const lifecycleSteps: RunStatus[] = [
 ];
 
 export const bucketLabels: Record<string, string> = {
-  fixed: "修复",
-  low: "低质",
-  high: "高质",
-  rejected: "拒绝"
+  fixed: "固定",
+  low: "低频",
+  high: "高频",
+  rejected: "拒绝",
+  duplicates: "重复"
 };
 
 export const workerTypeLabels: Record<string, string> = {
@@ -74,11 +75,14 @@ export const capabilityLabels: Record<string, string> = {
   capture_low: "低频采集",
   capture_high: "高频采集",
   behavior_pack: "行为包",
-  obs_capture: "OBS 录制",
+  obs_capture: "OBS 采集",
   ffmpeg_extract: "FFmpeg 抽帧",
   pywinauto: "pywinauto 自动化",
   playwright: "Playwright 自动化",
-  adb: "ADB 入口",
+  adb: "ADB",
+  android_emulator: "Android 模拟器",
+  mss: "mss 截图",
+  dxcam: "dxcam 截图",
   "content_area_only=true": "仅内容区",
   "app-screenshot-agent-reuse": "复用 app-screenshot-agent"
 };
@@ -86,7 +90,7 @@ export const capabilityLabels: Record<string, string> = {
 export const providerTypeLabels: Record<string, string> = {
   mock: "Mock Provider",
   ui_tars: "UI-TARS 骨架",
-  showui: "ShowUI 骨架",
+  showui: "ShowUI",
   qwen_vl: "Qwen-VL 骨架",
   omniparser: "OmniParser 骨架",
   gui_actor: "GUI Actor 骨架",
@@ -97,7 +101,7 @@ export const actionLabels: Record<string, string> = {
   start: "启动",
   stop: "停止",
   retry: "补采",
-  manual_seed: "人工补种子",
+  manual_seed: "人工补种",
   mark_failed: "标记低产失败",
   upload_manifest: "生成上传清单",
   confirm_upload: "确认已上传",

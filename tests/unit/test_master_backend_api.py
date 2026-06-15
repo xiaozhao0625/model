@@ -142,6 +142,7 @@ def test_openapi_contains_stable_master_routes(tmp_path):
 
         assert "/api/apps" in paths
         assert "/api/runs" in paths
+        assert "/api/tasks" in paths
         assert "/api/workers/register" in paths
         assert "/api/runs/{run_id}/upload-manifest" in paths
         assert "/api/runs/{run_id}/confirm-upload" in paths
@@ -363,7 +364,7 @@ def test_capture_completed_run_can_be_marked_failed_low_yield_with_audit(tmp_pat
                 json={"operator_action": "mark_failed_low_yield"},
             )
         )
-        listed = data(client.get("/api/runs"))
+        listed = data(client.get("/api/runs"))["items"]
         fetched = data(client.get("/api/runs/run_low_yield_action"))
         summary = data(client.get("/api/runs/run_low_yield_action/summary"))
         events = data(client.get("/api/runs/run_low_yield_action/status-events"))
@@ -375,6 +376,45 @@ def test_capture_completed_run_can_be_marked_failed_low_yield_with_audit(tmp_pat
         assert events[-1]["previous_status"] == RunStatus.CAPTURE_COMPLETED.value
         assert events[-1]["new_status"] == RunStatus.FAILED_LOW_YIELD.value
         assert events[-1]["operator_action"] == "mark_failed_low_yield"
+
+
+def test_run_list_supports_filters_sort_and_pagination(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post(
+            "/api/apps",
+            json={"app_id": "demo_app", "name": "Demo App", "type": "pc_app", "platform": "windows"},
+        )
+        client.post("/api/runs", json={"run_id": "p14_4_batch2_w2_web_content_01_20260615_175326_run", "app_id": "demo_app"})
+        client.post("/api/runs", json={"run_id": "p14_4_batch3_w1_safe_window_01_20260615_182924_run", "app_id": "demo_app"})
+        client.post(
+            "/api/workers/register",
+            json={"worker_id": "worker_pc_app_web_w2", "type": "web", "capabilities": ["capture_low"]},
+        )
+        client.post(
+            "/api/workers/worker_pc_app_web_w2/runs/p14_4_batch2_w2_web_content_01_20260615_175326_run/report",
+            json={
+                "app_id": "demo_app",
+                "run_id": "p14_4_batch2_w2_web_content_01_20260615_175326_run",
+                "status": "capture_completed",
+                "valid_total": 30,
+                "fixed_count": 0,
+                "low_count": 30,
+                "high_count": 0,
+                "rejected_count": 0,
+                "run_dir": "runs/p14_4_batch2_w2_web_content_01_20260615_175326_run",
+                "summary_path": "runs/p14_4_batch2_w2_web_content_01_20260615_175326_run/summary.json",
+            },
+        )
+
+        listed = data(client.get("/api/runs?sort=created_at_desc&limit=1"))
+        filtered = data(client.get("/api/runs?worker_id=worker_pc_app_web_w2&status=capture_completed&batch=p14_4_batch2"))
+        searched = data(client.get("/api/tasks?q=web_content&limit=5"))
+
+        assert listed["total"] == 2
+        assert listed["items"][0]["run_id"] == "p14_4_batch3_w1_safe_window_01_20260615_182924_run"
+        assert filtered["total"] == 1
+        assert filtered["items"][0]["worker_id"] == "worker_pc_app_web_w2"
+        assert searched["items"][0]["batch"] == "p14_4_batch2"
 
 
 def test_model_deployment_matrix_is_plan_only_and_distributed(tmp_path):
