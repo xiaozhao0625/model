@@ -42,7 +42,7 @@ export function ModelGatewayRoute() {
             ))}
           </DataTable>
         </Card>
-        <Card title="安全边界" eyebrow="P13.5.0">
+        <Card title="安全边界" eyebrow="P13.5">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
               <ShieldX className="text-red-300" size={22} />
@@ -62,6 +62,35 @@ export function ModelGatewayRoute() {
           </div>
         </Card>
       </div>
+
+      <Card title="ShowUI Provider 计划" eyebrow="P13.5.4 - P13.5.6" className="mt-4">
+        <DataTable columns={["Provider", "目标节点", "下载", "Hash", "Health", "Enabled", "Online", "显存", "最新检查"]}>
+          {(matrix.providers || []).map((provider) => (
+            <tr key={provider.provider}>
+              <td>
+                <div className="font-mono text-blue-300">{provider.provider}</div>
+                <div className="mt-1 font-mono text-xs text-slate-500">{provider.model_dir}</div>
+              </td>
+              <td className="text-slate-300">
+                <div className="font-mono">{provider.target_node}</div>
+                <div className="mt-1 text-xs text-slate-500">{provider.candidate_nodes.join(", ") || "-"}</div>
+              </td>
+              <td className="text-slate-400">{provider.download_status}</td>
+              <td className="text-slate-400">{provider.hash_verification}</td>
+              <td>
+                <Badge className={provider.health_status === "inference_ok" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100" : "border-amber-500/30 bg-amber-500/10 text-amber-100"}>
+                  {provider.health_status}
+                </Badge>
+              </td>
+              <td className="font-mono text-xs text-slate-400">{String(provider.enabled)}</td>
+              <td className="font-mono text-xs text-slate-400">{String(provider.online_inference_enabled)}</td>
+              <td className="font-mono text-xs text-slate-400">{provider.estimated_vram_gb}</td>
+              <td className="font-mono text-xs text-slate-500">{provider.last_health_at || "-"}</td>
+            </tr>
+          ))}
+        </DataTable>
+      </Card>
+
       <Card title="分布式 OCR / 模型部署矩阵" eyebrow="M0 / W1 / W2 / W3" className="mt-4">
         <DataTable columns={["节点", "GPU/显存", "目录", "计划能力", "预计显存", "采集影响", "启用"]}>
           {matrix.nodes.map((node) => (

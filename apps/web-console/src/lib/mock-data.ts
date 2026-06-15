@@ -400,6 +400,36 @@ export const mockModelDeploymentMatrix: ModelDeploymentMatrix = {
     worker_direct_postgresql: false,
     production_capture_assist_enabled: false
   },
+  providers: [
+    {
+      provider: "showui",
+      target_node: "M0",
+      candidate_nodes: ["W2", "W3"],
+      download_status: "planned",
+      hash_verification: "not_available",
+      health_status: "missing_weights",
+      enabled: false,
+      online_inference_enabled: false,
+      estimated_vram_gb: "4-6",
+      last_health_at: null,
+      model_dir: "E:\\work\\models\\showui",
+      runtime_dir: "E:\\work\\model_runtime\\venvs\\vision-runtime"
+    },
+    {
+      provider: "omniparser",
+      target_node: "M0",
+      candidate_nodes: ["W2"],
+      download_status: "planned_fallback",
+      hash_verification: "not_available",
+      health_status: "not_configured",
+      enabled: false,
+      online_inference_enabled: false,
+      estimated_vram_gb: "6-8",
+      last_health_at: null,
+      model_dir: "E:\\work\\models\\omniparser",
+      runtime_dir: "E:\\work\\model_runtime\\venvs\\vision-runtime"
+    }
+  ],
   nodes: [
     {
       role: "M0",

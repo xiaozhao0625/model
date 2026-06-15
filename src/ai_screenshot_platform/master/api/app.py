@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
@@ -114,7 +115,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     def health():
         postgres_status = "available" if settings.database_backend == "postgresql" else "not_configured"
         sqlite_status = "active" if settings.database_backend == "sqlite" else "not_active"
-        redis_port_status = _tcp_status("127.0.0.1", 6379)
+        redis_port_status = _redis_tcp_status(settings.redis_url)
         return ok(
             {
                 "status": "ok",
@@ -521,6 +522,21 @@ def _tcp_status(host: str, port: int, timeout: float = 0.5) -> str:
         return "offline"
 
 
+def _redis_endpoint(redis_url: str) -> tuple[str, int] | None:
+    if not redis_url.startswith("redis://"):
+        return None
+    parsed = urlparse(redis_url)
+    return parsed.hostname or "127.0.0.1", parsed.port or 6379
+
+
+def _redis_tcp_status(redis_url: str) -> str:
+    endpoint = _redis_endpoint(redis_url)
+    if endpoint is None:
+        return "not_configured"
+    host, port = endpoint
+    return _tcp_status(host, port)
+
+
 def _create_services(settings: MasterSettings, database: MasterDatabase) -> MasterServices:
     app_repo = AppRepo(database.connection)
     run_repo = RunRepo(database.connection)
@@ -529,7 +545,7 @@ def _create_services(settings: MasterSettings, database: MasterDatabase) -> Mast
     upload_repo = UploadRepo(database.connection)
     production_readiness_repo = ProductionReadinessRepo(database.connection)
     redis_client: MemoryRedisClient | RedisClient
-    if settings.redis_url.startswith("redis://") and _tcp_status("127.0.0.1", 6379) == "available":
+    if settings.redis_url.startswith("redis://") and _redis_tcp_status(settings.redis_url) == "available":
         redis_client = RedisClient(settings.redis_url)
     else:
         redis_client = MemoryRedisClient()

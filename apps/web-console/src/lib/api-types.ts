@@ -178,6 +178,21 @@ export interface ModelDeploymentNode {
   enabled: boolean;
 }
 
+export interface ModelDeploymentProvider {
+  provider: string;
+  target_node: string;
+  candidate_nodes: string[];
+  download_status: string;
+  hash_verification: string;
+  health_status: string;
+  enabled: boolean;
+  online_inference_enabled: boolean;
+  estimated_vram_gb: string;
+  last_health_at?: string | null;
+  model_dir: string;
+  runtime_dir: string;
+}
+
 export interface ModelDeploymentMatrix {
   schema_version: string;
   status: string;
@@ -185,6 +200,7 @@ export interface ModelDeploymentMatrix {
   model_downloaded: boolean;
   ocr_installed: boolean;
   scheduler_rules: Record<string, boolean>;
+  providers?: ModelDeploymentProvider[];
   nodes: ModelDeploymentNode[];
 }
 

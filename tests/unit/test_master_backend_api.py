@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from apps.master_api.main import app as importable_app
 from ai_screenshot_platform.common.domain.run_status import RunStatus
-from ai_screenshot_platform.master.api.app import create_app
+from ai_screenshot_platform.master.api.app import create_app, _redis_endpoint
 from ai_screenshot_platform.master.core.config import MasterSettings
 from ai_screenshot_platform.master.services.app_service import AppService
 from ai_screenshot_platform.master.services.run_service import RunService
@@ -84,6 +84,12 @@ def test_health_and_openapi_are_available(tmp_path):
         assert openapi.status_code == 200
 
 
+def test_redis_endpoint_uses_configured_port():
+    assert _redis_endpoint("redis://127.0.0.1:6479/0") == ("127.0.0.1", 6479)
+    assert _redis_endpoint("redis://redis.local/0") == ("redis.local", 6379)
+    assert _redis_endpoint("memory://") is None
+
+
 def test_testclient_startup_creates_configured_sqlite_database(tmp_path):
     db_path = tmp_path / "custom" / "master.db"
     settings = MasterSettings(
@@ -112,6 +118,17 @@ def test_openapi_contains_stable_master_routes(tmp_path):
         assert "/api/runs/{run_id}/cleanup" in paths
         assert "/api/runs/{run_id}/finalize" in paths
         assert "/api/model/deployment-matrix" in paths
+
+
+def test_model_deployment_matrix_includes_showui_provider_plan(tmp_path):
+    with make_client(tmp_path) as client:
+        matrix = data(client.get("/api/model/deployment-matrix"))
+
+        showui = next(provider for provider in matrix["providers"] if provider["provider"] == "showui")
+        assert showui["target_node"] == "M0"
+        assert showui["health_status"] == "missing_weights"
+        assert showui["enabled"] is False
+        assert showui["online_inference_enabled"] is False
 
 
 def test_app_can_be_created_listed_and_fetched(tmp_path):
