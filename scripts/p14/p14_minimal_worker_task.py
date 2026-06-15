@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,12 @@ WORKER_METHODS = {
     "worker_pc_app_web_w2": "playwright_edge_local_html",
     "worker_android_w3": "adb_emulator_screencap",
 }
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:
+    pass
 
 
 def main() -> None:
