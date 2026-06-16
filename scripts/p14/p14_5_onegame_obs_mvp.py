@@ -7,6 +7,7 @@ import json
 import math
 import os
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -55,16 +56,17 @@ class OneGameQualityGate:
 
     def evaluate(self, image_id: str, path: Path) -> FrameQuality:
         pixels = read_png_pixels(path)
-        gray = pixels.gray
+        metrics_pixels = downsample_pixels(pixels, max_width=int(self.policy.get("metrics_max_width", 320)))
+        gray = metrics_pixels.gray
         content_hash = sha256(path)
-        dhash = difference_hash(gray, pixels.width, pixels.height)
-        phash = average_hash(gray, pixels.width, pixels.height)
+        dhash = difference_hash(gray, metrics_pixels.width, metrics_pixels.height)
+        phash = average_hash(gray, metrics_pixels.width, metrics_pixels.height)
         brightness_mean = sum(gray) / max(len(gray), 1)
         brightness_std = stddev(gray, brightness_mean)
         black_ratio = sum(1 for value in gray if value <= 10) / max(len(gray), 1)
         white_ratio = sum(1 for value in gray if value >= 245) / max(len(gray), 1)
-        edge_density = mean_adjacent_diff(gray, pixels.width, pixels.height)
-        laplacian_var = laplacian_variance(gray, pixels.width, pixels.height)
+        edge_density = mean_adjacent_diff(gray, metrics_pixels.width, metrics_pixels.height)
+        laplacian_var = laplacian_variance(gray, metrics_pixels.width, metrics_pixels.height)
         entropy = grayscale_entropy(gray)
         frame_diff = 999.0 if self._previous_gray is None else mean_abs_diff(gray, self._previous_gray)
 
@@ -133,6 +135,7 @@ class PngPixels:
 def main() -> int:
     args = parse_args()
     profile = read_json(args.profile)
+    apply_profile_overrides(profile, args)
     quality_policy = read_json(args.quality_policy)
     behavior_pack = read_json(args.behavior_pack)
     target_total = int(args.target_total or profile.get("target_total", 100))
@@ -226,10 +229,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", default="")
     parser.add_argument("--target-total", type=int, default=0)
     parser.add_argument("--ffmpeg-path", default="")
+    parser.add_argument("--obs-host", default="")
+    parser.add_argument("--obs-port", type=int, default=0)
+    parser.add_argument("--obs-scene", default="")
+    parser.add_argument("--obs-source", default="")
+    parser.add_argument("--game-id", default="")
+    parser.add_argument("--game-name", default="")
     parser.add_argument("--user-ready", action="store_true")
     parser.add_argument("--execute-behavior", action="store_true")
     parser.add_argument("--inject-quality-fixtures", action="store_true")
     return parser.parse_args()
+
+
+def apply_profile_overrides(profile: dict[str, Any], args: argparse.Namespace) -> None:
+    overrides = {
+        "obs_host": args.obs_host,
+        "obs_port": args.obs_port,
+        "obs_scene": args.obs_scene,
+        "obs_source": args.obs_source,
+        "game_id": args.game_id,
+        "game_name": args.game_name,
+    }
+    for key, value in overrides.items():
+        if value:
+            profile[key] = value
 
 
 def blocked_result(args: argparse.Namespace, profile: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -254,40 +277,53 @@ def verify_obs(profile: dict[str, Any], dry_run: bool) -> dict[str, Any]:
             "test_source": True,
             "production_capture": False,
         }
-    try:
-        from obsws_python import ReqClient  # type: ignore
-    except Exception as exc:
-        raise RuntimeError(f"blocked_by_obs_websocket_client_missing: {exc}") from exc
     password = os.environ.get(str(profile.get("obs_password_env") or "OBS_WEBSOCKET_PASSWORD")) or None
-    client = ReqClient(
+    client = ObsWebSocketClient(
         host=str(profile.get("obs_host") or "127.0.0.1"),
         port=int(profile.get("obs_port") or 4455),
         password=password,
         timeout=5,
     )
-    scenes = client.get_scene_list()
-    inputs = client.get_input_list()
-    scene_names = [getattr(scene, "scene_name", None) or scene.get("sceneName") for scene in getattr(scenes, "scenes", [])]
-    input_names = [getattr(item, "input_name", None) or item.get("inputName") for item in getattr(inputs, "inputs", [])]
-    expected_scene = str(profile.get("obs_scene") or "")
-    expected_source = str(profile.get("obs_source") or "")
-    if expected_scene and expected_scene not in scene_names:
-        raise RuntimeError("blocked_by_obs_scene_missing")
-    if expected_source and expected_source not in input_names:
-        raise RuntimeError("blocked_by_obs_source_missing")
-    return {
-        "status": "connected",
-        "websocket_connected": True,
-        "scene_detected": bool(expected_scene),
-        "source_detected": bool(expected_source),
-        "active_scene": getattr(client.get_current_program_scene(), "current_program_scene_name", None),
-        "scene_count": len(scene_names),
-        "source_count": len(input_names),
-        "scene_names": scene_names,
-        "source_names": input_names,
-        "test_source": False,
-        "production_capture": True,
-    }
+    with client:
+        scenes = client.request("GetSceneList")
+        inputs = client.request("GetInputList")
+        current_scene = client.request("GetCurrentProgramScene")
+        scene_names = [str(scene.get("sceneName")) for scene in scenes.get("scenes", []) if scene.get("sceneName")]
+        input_names = [str(item.get("inputName")) for item in inputs.get("inputs", []) if item.get("inputName")]
+        expected_scene = str(profile.get("obs_scene") or "") or str(current_scene.get("currentProgramSceneName") or "")
+        expected_source = str(profile.get("obs_source") or "")
+        scene_item_names: list[str] = []
+        if expected_scene:
+            if expected_scene not in scene_names:
+                raise RuntimeError("blocked_by_obs_scene_missing")
+            scene_items = client.request("GetSceneItemList", {"sceneName": expected_scene})
+            scene_item_names = [
+                str(item.get("sourceName")) for item in scene_items.get("sceneItems", []) if item.get("sourceName")
+            ]
+            if not expected_source and scene_item_names:
+                expected_source = scene_item_names[0]
+        if expected_source and expected_source not in input_names and expected_source not in scene_item_names:
+            raise RuntimeError("blocked_by_obs_source_missing")
+        if not expected_source:
+            raise RuntimeError("blocked_by_obs_source_not_configured")
+        profile["_resolved_obs_scene"] = expected_scene
+        profile["_resolved_obs_source"] = expected_source
+        return {
+            "status": "connected",
+            "websocket_connected": True,
+            "scene_detected": bool(expected_scene),
+            "source_detected": bool(expected_source),
+            "selected_scene": expected_scene,
+            "selected_source": expected_source,
+            "active_scene": current_scene.get("currentProgramSceneName"),
+            "scene_count": len(scene_names),
+            "source_count": len(input_names),
+            "scene_names": scene_names,
+            "source_names": input_names,
+            "scene_item_names": scene_item_names,
+            "test_source": False,
+            "production_capture": True,
+        }
 
 
 def capture_frames(args: argparse.Namespace, profile: dict[str, Any], run_dir: Path, target_total: int) -> list[Path]:
@@ -326,34 +362,204 @@ def capture_ffmpeg_testsrc(raw_dir: Path, target_total: int, ffmpeg_path: str) -
 
 
 def capture_obs_source_screenshots(profile: dict[str, Any], raw_dir: Path, target_total: int) -> list[Path]:
-    try:
-        from obsws_python import ReqClient  # type: ignore
-    except Exception as exc:
-        raise RuntimeError(f"blocked_by_obs_websocket_client_missing: {exc}") from exc
     password = os.environ.get(str(profile.get("obs_password_env") or "OBS_WEBSOCKET_PASSWORD")) or None
-    client = ReqClient(
+    client = ObsWebSocketClient(
         host=str(profile.get("obs_host") or "127.0.0.1"),
         port=int(profile.get("obs_port") or 4455),
         password=password,
         timeout=5,
     )
-    source = str(profile.get("obs_source") or "")
+    source = str(profile.get("_resolved_obs_source") or profile.get("obs_source") or "")
     if not source:
         raise RuntimeError("blocked_by_obs_source_not_configured")
+    screenshot_width = int(profile.get("obs_screenshot_width") or 1920)
+    screenshot_height = int(profile.get("obs_screenshot_height") or 1080)
     interval = max(0.05, int(profile.get("frame_interval_ms", 500)) / 1000)
     paths: list[Path] = []
-    for index in range(1, target_total + 1):
-        response = client.get_source_screenshot(source, "png", 0, 0, 100)
-        encoded = getattr(response, "image_data", None) or getattr(response, "imageData", None)
-        if not encoded:
-            raise RuntimeError("blocked_by_obs_no_frame")
-        if "," in encoded:
-            encoded = encoded.split(",", 1)[1]
-        output = raw_dir / f"obs_frame_{index:04d}.png"
-        output.write_bytes(base64.b64decode(encoded))
-        paths.append(output)
-        time.sleep(interval)
+    with client:
+        for index in range(1, target_total + 1):
+            response = client.request(
+                "GetSourceScreenshot",
+                {
+                    "sourceName": source,
+                    "imageFormat": "png",
+                    "imageWidth": screenshot_width,
+                    "imageHeight": screenshot_height,
+                    "imageCompressionQuality": 100,
+                },
+            )
+            encoded = response.get("imageData")
+            if not encoded:
+                raise RuntimeError("blocked_by_obs_no_frame")
+            if "," in encoded:
+                encoded = encoded.split(",", 1)[1]
+            output = raw_dir / f"obs_frame_{index:04d}.png"
+            output.write_bytes(base64.b64decode(encoded))
+            paths.append(output)
+            time.sleep(interval)
     return paths
+
+
+class ObsWebSocketClient:
+    """Small OBS WebSocket v5 client for screenshot-only capture."""
+
+    def __init__(self, host: str, port: int, password: str | None, timeout: float = 5.0) -> None:
+        self.host = host
+        self.port = port
+        self.password = password
+        self.timeout = timeout
+        self._sock: socket.socket | None = None
+        self._request_counter = 0
+
+    def __enter__(self) -> ObsWebSocketClient:
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+        sock.settimeout(self.timeout)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        request = (
+            "GET / HTTP/1.1\r\n"
+            f"Host: {self.host}:{self.port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        sock.sendall(request.encode("ascii"))
+        response = self._read_http_response(sock)
+        if " 101 " not in response.split("\r\n", 1)[0]:
+            raise RuntimeError("blocked_by_obs_websocket_handshake_failed")
+        self._sock = sock
+        hello = self._receive_json()
+        if hello.get("op") != 0:
+            raise RuntimeError("blocked_by_obs_unexpected_hello")
+        authentication = hello.get("d", {}).get("authentication")
+        if authentication:
+            if not self.password:
+                raise RuntimeError("blocked_by_obs_auth_required")
+            raise RuntimeError("blocked_by_obs_auth_not_supported_for_safety")
+        self._send_json({"op": 1, "d": {"rpcVersion": 1}})
+        identified = self._receive_json()
+        if identified.get("op") != 2:
+            raise RuntimeError("blocked_by_obs_identify_failed")
+
+    def close(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            finally:
+                self._sock = None
+
+    def request(self, request_type: str, request_data: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._request_counter += 1
+        request_id = f"p14-onegame-{self._request_counter}"
+        self._send_json(
+            {
+                "op": 6,
+                "d": {
+                    "requestType": request_type,
+                    "requestId": request_id,
+                    "requestData": request_data or {},
+                },
+            }
+        )
+        while True:
+            message = self._receive_json()
+            if message.get("op") != 7:
+                continue
+            data = message.get("d", {})
+            if data.get("requestId") != request_id:
+                continue
+            status = data.get("requestStatus", {})
+            if not status.get("result"):
+                code = status.get("code", "unknown")
+                comment = status.get("comment") or request_type
+                raise RuntimeError(f"blocked_by_obs_request_failed:{request_type}:{code}:{comment}")
+            return data.get("responseData") or {}
+
+    def _read_http_response(self, sock: socket.socket) -> str:
+        chunks: list[bytes] = []
+        while b"\r\n\r\n" not in b"".join(chunks):
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("blocked_by_obs_websocket_handshake_closed")
+            chunks.append(chunk)
+        return b"".join(chunks).decode("iso-8859-1", errors="replace")
+
+    def _send_json(self, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self._send_frame(body)
+
+    def _send_frame(self, payload: bytes) -> None:
+        if self._sock is None:
+            raise RuntimeError("blocked_by_obs_not_connected")
+        header = bytearray([0x81])
+        length = len(payload)
+        if length < 126:
+            header.append(0x80 | length)
+        elif length < 65536:
+            header.extend([0x80 | 126, (length >> 8) & 0xFF, length & 0xFF])
+        else:
+            header.append(0x80 | 127)
+            header.extend(length.to_bytes(8, "big"))
+        mask = os.urandom(4)
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self._sock.sendall(bytes(header) + mask + masked)
+
+    def _receive_json(self) -> dict[str, Any]:
+        while True:
+            payload, opcode = self._receive_frame()
+            if opcode == 1:
+                return json.loads(payload.decode("utf-8"))
+            if opcode == 8:
+                raise RuntimeError("blocked_by_obs_websocket_closed")
+            if opcode == 9:
+                self._send_pong(payload)
+
+    def _receive_frame(self) -> tuple[bytes, int]:
+        if self._sock is None:
+            raise RuntimeError("blocked_by_obs_not_connected")
+        first = self._recv_exact(2)
+        opcode = first[0] & 0x0F
+        masked = bool(first[1] & 0x80)
+        length = first[1] & 0x7F
+        if length == 126:
+            length = int.from_bytes(self._recv_exact(2), "big")
+        elif length == 127:
+            length = int.from_bytes(self._recv_exact(8), "big")
+        mask = self._recv_exact(4) if masked else b""
+        payload = self._recv_exact(length) if length else b""
+        if masked:
+            payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        return payload, opcode
+
+    def _recv_exact(self, length: int) -> bytes:
+        if self._sock is None:
+            raise RuntimeError("blocked_by_obs_not_connected")
+        chunks: list[bytes] = []
+        remaining = length
+        while remaining > 0:
+            chunk = self._sock.recv(remaining)
+            if not chunk:
+                raise RuntimeError("blocked_by_obs_websocket_closed")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def _send_pong(self, payload: bytes) -> None:
+        if self._sock is None:
+            return
+        header = bytearray([0x8A])
+        length = len(payload)
+        header.append(0x80 | length)
+        mask = os.urandom(4)
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self._sock.sendall(bytes(header) + mask + masked)
 
 
 def evaluate_frames(
@@ -629,6 +835,18 @@ def read_png_pixels(path: Path) -> PngPixels:
             else:
                 gray.append(int(row[x] * 0.299 + row[x + 1] * 0.587 + row[x + 2] * 0.114))
     return PngPixels(width=int(width), height=int(height), gray=gray)
+
+
+def downsample_pixels(pixels: PngPixels, max_width: int = 320) -> PngPixels:
+    if pixels.width <= max_width:
+        return pixels
+    target_width = max(1, max_width)
+    target_height = max(1, round(pixels.height * target_width / pixels.width))
+    return PngPixels(
+        width=target_width,
+        height=target_height,
+        gray=sample_gray(pixels.gray, pixels.width, pixels.height, target_width, target_height),
+    )
 
 
 def unfilter(row: bytearray, previous: bytearray, filter_type: int, bpp: int) -> None:
