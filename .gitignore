@@ -8,6 +8,9 @@
 /deploy/installers/*
 !/deploy/installers/README.md
 !/deploy/installers/manifest.example.json
+/deploy/model_manifest.json
+/deploy/ocr_manifest.json
+/deploy/manual_installers/
 /models/
 *.db
 *.mp4
@@ -24,3 +27,6 @@ node_modules/
 apps/web-console/dist/
 apps/web-console/*.log
 .env
+.env.local
+.env.*.local
+apps/web-console/.env.tunnel.local

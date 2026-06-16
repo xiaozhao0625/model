@@ -2,7 +2,7 @@ import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 
 const settings = [
-  ["MASTER_URL", import.meta.env.VITE_MASTER_API_URL || "http://localhost:8000"],
+  ["API_BASE_URL", import.meta.env.VITE_MASTER_API_URL || import.meta.env.VITE_API_BASE_URL || "/api"],
   ["MODEL_GATEWAY_URL", "通过 Master API 代理"],
   ["DATA_ROOT", "runs/master"],
   ["MODEL_ROOT", "models/"],

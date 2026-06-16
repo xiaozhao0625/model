@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tunnel": "vite --host 0.0.0.0 --port 5173",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/smoke-test.mjs",

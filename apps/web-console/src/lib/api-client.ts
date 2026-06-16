@@ -60,15 +60,28 @@ export interface ApiClient {
   isUsingMockFallback(): boolean;
 }
 
-const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "http://localhost:8000";
+const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fetch): ApiClient {
   let usingMockFallback = false;
   const root = baseUrl.replace(/\/$/, "");
 
+  function buildUrl(path: string): string {
+    if (!root) {
+      return path;
+    }
+    if (root.endsWith("/api") && path.startsWith("/api/")) {
+      return `${root}${path.slice(4)}`;
+    }
+    if (root.endsWith("/api") && path === "/health") {
+      return `${root}/health`;
+    }
+    return `${root}${path}`;
+  }
+
   async function request<T>(path: string, fallback: T, options: RequestOptions = {}): Promise<T> {
     try {
-      const response = await fetcher(`${root}${path}`, {
+      const response = await fetcher(buildUrl(path), {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
         ...options
       });
