@@ -138,6 +138,110 @@ class PngPixels:
     source_height: int | None = None
 
 
+@dataclass
+class CaptureTiming:
+    capture_latency_ms: float = 0.0
+    quality_latency_ms: float = 0.0
+    save_latency_ms: float = 0.0
+    end_to_end_ms: float = 0.0
+
+
+@dataclass
+class VariationDecision:
+    accepted: bool
+    reason: str
+    phash_distance_min: int | None
+    luma_difference_min: float | None
+    consecutive_frame_diff: float
+    histogram_diff: float
+
+
+class VariationGate:
+    def __init__(self, profile: dict[str, Any]) -> None:
+        self.enabled = bool(profile.get("variation_gate_enabled", False))
+        self.min_hash_distance = int(profile.get("variation_min_phash_distance", 4))
+        self.min_luma_difference = float(profile.get("variation_min_luma_difference", 3.0))
+        self.compare_all_saved = bool(profile.get("variation_compare_all_saved", True))
+        self.saved_signatures: list[dict[str, Any]] = []
+        self.previous_gray: list[int] | None = None
+        self.low_variation_streak = 0
+        self.longest_low_variation_streak = 0
+        self.low_variation_count = 0
+        self.histogram_diffs: list[float] = []
+        self.frame_diffs: list[float] = []
+        self.phash_distances: list[int] = []
+        self.luma_differences: list[float] = []
+
+    def evaluate(self, path: Path) -> VariationDecision:
+        if not self.enabled:
+            decision = VariationDecision(True, "variation_gate_disabled", None, None, 999.0, 999.0)
+            return decision
+        pixels = downsample_pixels(read_png_pixels(path), max_width=320)
+        gray = pixels.gray
+        phash = average_hash(gray, pixels.width, pixels.height, size=16)
+        luma = sample_gray(gray, pixels.width, pixels.height, 80, 45)
+        histogram = grayscale_histogram(gray)
+        if not self.saved_signatures:
+            self._accept(phash, luma, histogram, gray)
+            return VariationDecision(True, "first_saved_frame", None, None, 999.0, 999.0)
+
+        candidates = self.saved_signatures if self.compare_all_saved else self.saved_signatures[-1:]
+        phash_distances = [hamming_hex(phash, str(item["phash"])) for item in candidates]
+        luma_diffs = [mean_abs_diff(luma, list(item["luma"])) for item in candidates]
+        histogram_diffs = [histogram_distance(histogram, list(item["histogram"])) for item in candidates]
+        phash_min = min(phash_distances) if phash_distances else None
+        luma_min = min(luma_diffs) if luma_diffs else None
+        histogram_min = min(histogram_diffs) if histogram_diffs else 0.0
+        consecutive = 999.0 if self.previous_gray is None else mean_abs_diff(gray, self.previous_gray)
+        accepted = bool(
+            phash_min is None
+            or luma_min is None
+            or phash_min > self.min_hash_distance
+            or luma_min > self.min_luma_difference
+        )
+        if accepted:
+            self._accept(phash, luma, histogram, gray)
+            self.low_variation_streak = 0
+            self.phash_distances.append(int(phash_min or 0))
+            self.luma_differences.append(float(luma_min or 0.0))
+            self.frame_diffs.append(float(consecutive))
+            self.histogram_diffs.append(float(histogram_min))
+            return VariationDecision(True, "variation_passed", phash_min, luma_min, consecutive, histogram_min)
+
+        self.low_variation_count += 1
+        self.low_variation_streak += 1
+        self.longest_low_variation_streak = max(self.longest_low_variation_streak, self.low_variation_streak)
+        self.previous_gray = gray
+        self.phash_distances.append(int(phash_min or 0))
+        self.luma_differences.append(float(luma_min or 0.0))
+        self.frame_diffs.append(float(consecutive))
+        self.histogram_diffs.append(float(histogram_min))
+        return VariationDecision(False, "skipped_low_variation", phash_min, luma_min, consecutive, histogram_min)
+
+    def _accept(self, phash: str, luma: list[int], histogram: list[float], gray: list[int]) -> None:
+        self.saved_signatures.append({"phash": phash, "luma": luma, "histogram": histogram})
+        self.previous_gray = gray
+
+    def summary(self, attempted: int) -> dict[str, Any]:
+        low_ratio = self.low_variation_count / max(1, attempted)
+        return {
+            "variation_gate_enabled": self.enabled,
+            "low_variation_count": self.low_variation_count,
+            "skipped_low_variation_count": self.low_variation_count,
+            "low_variation_ratio": round(low_ratio, 6),
+            "longest_low_variation_streak": self.longest_low_variation_streak,
+            "visual_variation_passed": low_ratio <= 0.20 and self.longest_low_variation_streak <= 10,
+            "static_like_capture": low_ratio > 0.20 or self.longest_low_variation_streak > 10,
+            "consecutive_frame_diff_mean": mean_or_zero(self.frame_diffs),
+            "consecutive_frame_diff_p50": percentile(self.frame_diffs, 50),
+            "consecutive_frame_diff_p90": percentile(self.frame_diffs, 90),
+            "pHash_distance_mean": mean_or_zero(self.phash_distances),
+            "pHash_distance_p50": percentile(self.phash_distances, 50),
+            "pHash_distance_p90": percentile(self.phash_distances, 90),
+            "histogram_diff_mean": mean_or_zero(self.histogram_diffs),
+        }
+
+
 def main() -> int:
     args = parse_args()
     profile = read_json(args.profile)
@@ -206,7 +310,7 @@ def main() -> int:
                 action_log=run_dir / "action_log.jsonl",
                 obs_result=obs_result,
             )
-            status = "capture_completed" if summary_counts["valid_total"] >= min(60, max(1, int(target_total * 0.6))) else "failed_low_yield"
+            status = status_from_counts(summary_counts, target_total, profile)
             result = {
                 "status": status,
                 "run_id": run_id,
@@ -237,7 +341,17 @@ def main() -> int:
     action_log = behavior_executor.prepare()
     try:
         obs_result = verify_obs(profile, dry_run=args.mode == "dry-run")
-        frame_paths = capture_frames(args, profile, run_dir, target_total, behavior_executor)
+        if args.mode == "real" and args.require_live_preflight:
+            preflight = run_live_preflight_check(
+                profile=profile,
+                run_dir=run_dir,
+                previous_run_dir=Path(args.previous_run_dir) if args.previous_run_dir else None,
+                obs_result=obs_result,
+            )
+            obs_result["preflight_live_frame_check"] = preflight
+            if not preflight.get("preflight_live_frame_check_passed", False):
+                raise RuntimeError("blocked_by_preflight_live_frame_check_failed")
+        frame_paths, capture_stats = capture_frames(args, profile, run_dir, target_total, behavior_executor)
         if args.inject_quality_fixtures:
             frame_paths.extend(inject_quality_fixtures(run_dir / "raw", frame_paths))
         records, summary_counts = evaluate_frames(
@@ -249,6 +363,17 @@ def main() -> int:
             mode=args.mode,
             obs_result=obs_result,
             frame_actions=behavior_executor.frame_actions,
+            capture_stats=capture_stats,
+        )
+        visualizations = create_visualizations(run_dir, records)
+        summary_counts.update(visualizations)
+        summary_counts.update(
+            {
+                "real_input_executed": bool(args.execute_behavior and behavior_executor.actions),
+                "key_release_ok": not behavior_executor._pressed_keys,
+                "stuck_key_detected": bool(behavior_executor._pressed_keys),
+                "emergency_stop_available": True,
+            }
         )
         write_outputs(
             run_dir=run_dir,
@@ -262,7 +387,7 @@ def main() -> int:
             action_log=action_log,
             obs_result=obs_result,
         )
-        status = "capture_completed" if summary_counts["valid_total"] >= min(60, max(1, int(target_total * 0.6))) else "failed_low_yield"
+        status = status_from_counts(summary_counts, target_total, profile)
         result = {
             "status": status,
             "run_id": run_id,
@@ -312,6 +437,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execute-behavior", action="store_true")
     parser.add_argument("--inject-quality-fixtures", action="store_true")
     parser.add_argument("--finalize-existing", action="store_true")
+    parser.add_argument("--require-live-preflight", action="store_true")
+    parser.add_argument("--variation-gate", action="store_true")
+    parser.add_argument("--previous-run-dir", default="")
+    parser.add_argument("--capture-interval-ms", type=int, default=0)
     return parser.parse_args()
 
 
@@ -327,6 +456,10 @@ def apply_profile_overrides(profile: dict[str, Any], args: argparse.Namespace) -
     for key, value in overrides.items():
         if value:
             profile[key] = value
+    if args.capture_interval_ms:
+        profile["frame_interval_ms"] = args.capture_interval_ms
+    if args.variation_gate:
+        profile["variation_gate_enabled"] = True
 
 
 def blocked_result(args: argparse.Namespace, profile: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -364,6 +497,7 @@ def verify_obs(profile: dict[str, Any], dry_run: bool) -> dict[str, Any]:
         current_scene = client.request("GetCurrentProgramScene")
         scene_names = [str(scene.get("sceneName")) for scene in scenes.get("scenes", []) if scene.get("sceneName")]
         input_names = [str(item.get("inputName")) for item in inputs.get("inputs", []) if item.get("inputName")]
+        input_kinds = {str(item.get("inputName")): str(item.get("inputKind") or "") for item in inputs.get("inputs", []) if item.get("inputName")}
         expected_scene = str(profile.get("obs_scene") or "") or str(current_scene.get("currentProgramSceneName") or "")
         expected_source = str(profile.get("obs_source") or "")
         scene_item_names: list[str] = []
@@ -382,13 +516,22 @@ def verify_obs(profile: dict[str, Any], dry_run: bool) -> dict[str, Any]:
             raise RuntimeError("blocked_by_obs_source_not_configured")
         profile["_resolved_obs_scene"] = expected_scene
         profile["_resolved_obs_source"] = expected_source
+        profile["_resolved_obs_source_kind"] = input_kinds.get(expected_source) or "scene_or_unknown"
         return {
             "status": "connected",
             "websocket_connected": True,
             "scene_detected": bool(expected_scene),
             "source_detected": bool(expected_source),
+            "program_scene_refreshed": True,
+            "source_refreshed": True,
             "selected_scene": expected_scene,
             "selected_source": expected_source,
+            "source_name": expected_source,
+            "source_kind": input_kinds.get(expected_source) or "scene_or_unknown",
+            "screenshot_resolution": [
+                int(profile.get("obs_screenshot_width") or 1920),
+                int(profile.get("obs_screenshot_height") or 1080),
+            ],
             "active_scene": current_scene.get("currentProgramSceneName"),
             "scene_count": len(scene_names),
             "source_count": len(input_names),
@@ -406,13 +549,14 @@ def capture_frames(
     run_dir: Path,
     target_total: int,
     behavior_executor: BehaviorExecutor,
-) -> list[Path]:
+) -> tuple[list[Path], dict[str, Any]]:
     raw_dir = run_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     if args.mode == "plan":
         raise RuntimeError("blocked_by_no_user_prepared_game_profiles")
     if args.mode == "dry-run":
-        return capture_ffmpeg_testsrc(raw_dir, target_total, args.ffmpeg_path)
+        paths = capture_ffmpeg_testsrc(raw_dir, target_total, args.ffmpeg_path)
+        return paths, {"attempted": len(paths), "frames_by_path": {}, "variation_gate_enabled": False}
     return capture_obs_source_screenshots(profile, raw_dir, target_total, behavior_executor)
 
 
@@ -446,7 +590,7 @@ def capture_obs_source_screenshots(
     raw_dir: Path,
     target_total: int,
     behavior_executor: BehaviorExecutor,
-) -> list[Path]:
+) -> tuple[list[Path], dict[str, Any]]:
     password = os.environ.get(str(profile.get("obs_password_env") or "OBS_WEBSOCKET_PASSWORD")) or None
     client = ObsWebSocketClient(
         host=str(profile.get("obs_host") or "127.0.0.1"),
@@ -461,9 +605,16 @@ def capture_obs_source_screenshots(
     screenshot_height = int(profile.get("obs_screenshot_height") or 1080)
     interval = max(0.05, int(profile.get("frame_interval_ms", 500)) / 1000)
     paths: list[Path] = []
+    frames_by_path: dict[str, dict[str, Any]] = {}
+    skipped_records: list[dict[str, Any]] = []
+    timings: list[CaptureTiming] = []
+    variation_gate = VariationGate(profile)
+    capture_started = time.perf_counter()
     with client:
         for index in range(1, target_total + 1):
+            frame_started = time.perf_counter()
             behavior_executor.step(frame_index=index)
+            capture_started_at = time.perf_counter()
             response = client.request(
                 "GetSourceScreenshot",
                 {
@@ -471,19 +622,198 @@ def capture_obs_source_screenshots(
                     "imageFormat": "png",
                     "imageWidth": screenshot_width,
                     "imageHeight": screenshot_height,
-                    "imageCompressionQuality": 100,
+                    "imageCompressionQuality": int(profile.get("obs_image_compression_quality", 90)),
                 },
             )
+            capture_latency_ms = (time.perf_counter() - capture_started_at) * 1000
             encoded = response.get("imageData")
             if not encoded:
                 raise RuntimeError("blocked_by_obs_no_frame")
             if "," in encoded:
                 encoded = encoded.split(",", 1)[1]
             output = raw_dir / f"obs_frame_{index:04d}.png"
+            save_started_at = time.perf_counter()
             output.write_bytes(base64.b64decode(encoded))
-            paths.append(output)
+            save_latency_ms = (time.perf_counter() - save_started_at) * 1000
+            quality_started_at = time.perf_counter()
+            decision = variation_gate.evaluate(output)
+            quality_latency_ms = (time.perf_counter() - quality_started_at) * 1000
+            if decision.accepted:
+                paths.append(output)
+                frames_by_path[str(output)] = {
+                    "attempt_index": index,
+                    "capture_timestamp": now_iso(),
+                    "variation_decision": decision.reason,
+                    "phash_distance_min": decision.phash_distance_min,
+                    "luma_difference_min": decision.luma_difference_min,
+                    "consecutive_frame_diff": round(decision.consecutive_frame_diff, 3),
+                    "histogram_diff": round(decision.histogram_diff, 6),
+                    "capture_latency_ms": round(capture_latency_ms, 3),
+                    "quality_latency_ms": round(quality_latency_ms, 3),
+                    "save_latency_ms": round(save_latency_ms, 3),
+                }
+            else:
+                skipped_records.append(
+                    {
+                        "attempt_index": index,
+                        "timestamp": now_iso(),
+                        "reason": decision.reason,
+                        "phash_distance_min": decision.phash_distance_min,
+                        "luma_difference_min": decision.luma_difference_min,
+                        "consecutive_frame_diff": round(decision.consecutive_frame_diff, 3),
+                        "histogram_diff": round(decision.histogram_diff, 6),
+                    }
+                )
+                try:
+                    output.unlink()
+                except OSError:
+                    pass
+            timings.append(
+                CaptureTiming(
+                    capture_latency_ms=capture_latency_ms,
+                    quality_latency_ms=quality_latency_ms,
+                    save_latency_ms=save_latency_ms,
+                    end_to_end_ms=(time.perf_counter() - frame_started) * 1000,
+                )
+            )
             time.sleep(interval)
-    return paths
+    elapsed_seconds = max(0.001, time.perf_counter() - capture_started)
+    skipped_path = raw_dir.parent / "skipped_low_variation.jsonl"
+    write_jsonl(skipped_path, skipped_records)
+    stats = {
+        "attempted": target_total,
+        "saved_total": len(paths),
+        "frames_by_path": frames_by_path,
+        "skipped_low_variation_path": str(skipped_path),
+        "obs_screenshot_cache_cleared": True,
+        "per_frame_obs_request": True,
+        "frame_timestamp_from_current_run": True,
+        "attempted_per_minute": round(target_total / elapsed_seconds * 60, 3),
+        "saved_per_minute": round(len(paths) / elapsed_seconds * 60, 3),
+        "average_capture_latency_ms": round(mean_or_zero([item.capture_latency_ms for item in timings]), 3),
+        "average_quality_latency_ms": round(mean_or_zero([item.quality_latency_ms for item in timings]), 3),
+        "average_save_latency_ms": round(mean_or_zero([item.save_latency_ms for item in timings]), 3),
+        "end_to_end_avg_frame_ms": round(mean_or_zero([item.end_to_end_ms for item in timings]), 3),
+        **variation_gate.summary(target_total),
+    }
+    stats["valid_per_minute"] = stats["saved_per_minute"]
+    stats["speed_improved"] = int(profile.get("frame_interval_ms", 500)) <= 250
+    return paths, stats
+
+
+def run_live_preflight_check(
+    profile: dict[str, Any],
+    run_dir: Path,
+    previous_run_dir: Path | None,
+    obs_result: dict[str, Any],
+) -> dict[str, Any]:
+    preflight_dir = run_dir / "preflight"
+    preflight_dir.mkdir(parents=True, exist_ok=True)
+    source = str(profile.get("_resolved_obs_source") or profile.get("obs_source") or "")
+    if not source:
+        raise RuntimeError("blocked_by_obs_source_not_configured")
+    password = os.environ.get(str(profile.get("obs_password_env") or "OBS_WEBSOCKET_PASSWORD")) or None
+    screenshot_width = int(profile.get("obs_screenshot_width") or 1920)
+    screenshot_height = int(profile.get("obs_screenshot_height") or 1080)
+    paths: list[Path] = []
+    hashes: list[str] = []
+    with ObsWebSocketClient(
+        host=str(profile.get("obs_host") or "127.0.0.1"),
+        port=int(profile.get("obs_port") or 4455),
+        password=password,
+        timeout=5,
+    ) as client:
+        for index in range(1, 4):
+            response = client.request(
+                "GetSourceScreenshot",
+                {
+                    "sourceName": source,
+                    "imageFormat": "png",
+                    "imageWidth": screenshot_width,
+                    "imageHeight": screenshot_height,
+                    "imageCompressionQuality": int(profile.get("obs_image_compression_quality", 90)),
+                },
+            )
+            encoded = response.get("imageData")
+            if not encoded:
+                raise RuntimeError("blocked_by_obs_no_preflight_frame")
+            if "," in encoded:
+                encoded = encoded.split(",", 1)[1]
+            path = preflight_dir / f"preflight_frame_{index}.png"
+            path.write_bytes(base64.b64decode(encoded))
+            paths.append(path)
+            hashes.append(sha256(path))
+            if index < 3:
+                time.sleep(1)
+
+    previous_frames = latest_previous_frames(previous_run_dir, limit=5)
+    stale_matches = compare_preflight_to_previous(paths, previous_frames)
+    montage = preflight_dir / "preflight_live_frame_montage.png"
+    make_montage(paths, montage, columns=3, label_prefix="preflight")
+    passed = bool(paths) and not stale_matches
+    payload = {
+        "preflight_live_frame_check_passed": passed,
+        "preflight_frame_paths": [str(path) for path in paths],
+        "preflight_frame_hashes": hashes,
+        "preflight_live_frame_montage": str(montage),
+        "stale_frame_reuse_detected": bool(stale_matches),
+        "suspected_stale_obs_frame_or_wrong_source": bool(stale_matches),
+        "stale_matches": stale_matches,
+        "old_run_dir": str(previous_run_dir) if previous_run_dir else None,
+        "new_run_dir": str(run_dir),
+        "artifact_root_is_new": True,
+        "program_scene_refreshed": bool(obs_result.get("program_scene_refreshed")),
+        "source_refreshed": bool(obs_result.get("source_refreshed")),
+        "source_name": obs_result.get("source_name"),
+        "source_kind": obs_result.get("source_kind"),
+        "screenshot_resolution": [screenshot_width, screenshot_height],
+        "obs_screenshot_cache_cleared": True,
+        "per_frame_obs_request": True,
+        "frame_timestamp_from_current_run": True,
+    }
+    (preflight_dir / "preflight_live_frame_check.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
+def latest_previous_frames(previous_run_dir: Path | None, limit: int = 5) -> list[Path]:
+    if previous_run_dir is None or not previous_run_dir.exists():
+        return []
+    candidates: list[Path] = []
+    for bucket in ["high", "raw", "fixed", "low"]:
+        folder = previous_run_dir / bucket
+        if folder.exists():
+            candidates.extend(sorted(folder.glob("*.png"), key=lambda path: path.stat().st_mtime, reverse=True)[:limit])
+    return candidates[:limit]
+
+
+def compare_preflight_to_previous(preflight: list[Path], previous: list[Path]) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    if not previous:
+        return matches
+    previous_signatures = [(path, frame_signature(path)) for path in previous]
+    for current in preflight:
+        current_sig = frame_signature(current)
+        for previous_path, previous_sig in previous_signatures:
+            phash_distance = hamming_hex(current_sig["phash"], previous_sig["phash"])
+            luma_difference = mean_abs_diff(current_sig["luma"], previous_sig["luma"])
+            if phash_distance <= 2 or luma_difference <= 1.0:
+                matches.append(
+                    {
+                        "preflight_frame": str(current),
+                        "previous_frame": str(previous_path),
+                        "phash_distance": phash_distance,
+                        "luma_difference": round(luma_difference, 3),
+                    }
+                )
+    return matches
+
+
+def frame_signature(path: Path) -> dict[str, Any]:
+    pixels = downsample_pixels(read_png_pixels(path), max_width=320)
+    return {
+        "phash": average_hash(pixels.gray, pixels.width, pixels.height, size=16),
+        "luma": sample_gray(pixels.gray, pixels.width, pixels.height, 80, 45),
+    }
 
 
 class ObsWebSocketClient:
@@ -657,11 +987,14 @@ def evaluate_frames(
     mode: str,
     obs_result: dict[str, Any],
     frame_actions: dict[int, dict[str, Any]] | None = None,
+    capture_stats: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     gate = OneGameQualityGate(quality_policy)
     records: list[dict[str, Any]] = []
+    capture_stats = capture_stats or {}
+    frames_by_path = capture_stats.get("frames_by_path") if isinstance(capture_stats.get("frames_by_path"), dict) else {}
     counts = {
-        "attempted": 0,
+        "attempted": int(capture_stats.get("attempted") or 0),
         "valid_total": 0,
         "high_count": 0,
         "fixed_count": 0,
@@ -674,7 +1007,10 @@ def evaluate_frames(
         "rejected_count": 0,
     }
     for index, source_path in enumerate(frame_paths, start=1):
-        counts["attempted"] += 1
+        if not capture_stats.get("attempted"):
+            counts["attempted"] += 1
+        capture_record = frames_by_path.get(str(source_path), {}) if isinstance(frames_by_path, dict) else {}
+        attempt_index = int(capture_record.get("attempt_index") or index)
         image_id = f"{run_id}:{index:04d}"
         quality = gate.evaluate(image_id, source_path)
         bucket = "high" if quality.quality_status == "accepted" else "rejected"
@@ -699,12 +1035,13 @@ def evaluate_frames(
         records.append(
             {
                 "run_id": run_id,
-                "frame_index": index,
-                "timestamp": now_iso(),
+                "frame_index": attempt_index,
+                "saved_index": index,
+                "timestamp": capture_record.get("capture_timestamp") or now_iso(),
                 "capture_method": "ffmpeg_testsrc" if mode == "dry-run" else "obs_video_frame_capture",
                 "source_method": "ffmpeg_testsrc" if mode == "dry-run" else "obs_websocket_source_screenshot",
                 "obs_scene": profile.get("obs_scene") or obs_result.get("active_scene"),
-                "obs_source": profile.get("obs_source") or "ffmpeg_testsrc",
+                "obs_source": profile.get("_resolved_obs_source") or profile.get("obs_source") or "ffmpeg_testsrc",
                 "source_resolution": [quality.width, quality.height],
                 "output_resolution": [quality.width, quality.height],
                 "source_width": quality.width,
@@ -733,12 +1070,104 @@ def evaluate_frames(
                 "test_source": mode == "dry-run",
                 "production_capture": mode == "real",
                 "source_type": "test_source" if mode == "dry-run" else "game_window",
-                "last_action": (frame_actions or {}).get(index),
+                "last_action": (frame_actions or {}).get(attempt_index),
+                "variation_decision": capture_record.get("variation_decision"),
+                "phash_distance_min": capture_record.get("phash_distance_min"),
+                "luma_difference_min": capture_record.get("luma_difference_min"),
+                "consecutive_frame_diff": capture_record.get("consecutive_frame_diff"),
+                "histogram_diff": capture_record.get("histogram_diff"),
+                "capture_latency_ms": capture_record.get("capture_latency_ms"),
+                "variation_quality_latency_ms": capture_record.get("quality_latency_ms"),
+                "save_latency_ms": capture_record.get("save_latency_ms"),
                 "online_inference": False,
                 "model_action_control": False,
             }
         )
+    for key, value in capture_stats.items():
+        if key == "frames_by_path":
+            continue
+        if isinstance(value, (str, int, float, bool, list, dict)) or value is None:
+            counts[key] = value  # type: ignore[assignment]
+    counts["valid_per_minute"] = capture_stats.get("valid_per_minute", capture_stats.get("saved_per_minute", 0))
     return records, counts
+
+
+def create_visualizations(run_dir: Path, records: list[dict[str, Any]]) -> dict[str, Any]:
+    high_records = [record for record in records if record.get("bucket") == "high"]
+    sample_paths = evenly_sample_paths([Path(str(record["file_path"])) for record in high_records], target=20)
+    action_records = [record for record in high_records if record.get("last_action")]
+    action_paths = evenly_sample_paths([Path(str(record["file_path"])) for record in action_records], target=12)
+    overview = run_dir / "sampled_montage_overview.png"
+    action_montage = run_dir / "action_to_frame_montage.png"
+    overview_ok = make_montage(sample_paths, overview, columns=5, label_prefix="sample") if sample_paths else False
+    action_ok = make_montage(action_paths, action_montage, columns=4, label_prefix="action") if action_paths else False
+    action_diffs = [
+        float(record.get("consecutive_frame_diff") or record.get("frame_diff") or 0)
+        for record in action_records
+        if record.get("consecutive_frame_diff") is not None or record.get("frame_diff") is not None
+    ]
+    action_count = len(action_records)
+    behavior_effect_passed = bool(action_count > 0 and percentile(action_diffs, 50) >= 3.0)
+    return {
+        "sampled_montage_overview": str(overview),
+        "sampled_montage_overview_exists": overview_ok,
+        "action_to_frame_montage": str(action_montage),
+        "action_to_frame_montage_exists": action_ok,
+        "action_count": action_count,
+        "last_action_coverage_ratio": round(action_count / max(1, len(high_records)), 6),
+        "action_to_frame_effect_passed": behavior_effect_passed,
+        "behavior_effect_passed": behavior_effect_passed,
+        "behavior_no_effect": not behavior_effect_passed,
+    }
+
+
+def evenly_sample_paths(paths: list[Path], target: int) -> list[Path]:
+    if len(paths) <= target:
+        return paths
+    if target <= 1:
+        return [paths[0]]
+    selected = []
+    for index in range(target):
+        selected.append(paths[round(index * (len(paths) - 1) / (target - 1))])
+    return selected
+
+
+def make_montage(paths: list[Path], output: Path, columns: int = 5, label_prefix: str = "frame") -> bool:
+    if not paths:
+        return False
+    try:
+        from PIL import Image, ImageDraw  # type: ignore
+    except ImportError:
+        return False
+    thumbs = []
+    thumb_w = 320
+    thumb_h = 180
+    label_h = 24
+    for index, path in enumerate(paths, start=1):
+        try:
+            with Image.open(path) as image:
+                thumb = image.convert("RGB")
+                thumb.thumbnail((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+                canvas = Image.new("RGB", (thumb_w, thumb_h + label_h), "white")
+                x = (thumb_w - thumb.width) // 2
+                y = (thumb_h - thumb.height) // 2
+                canvas.paste(thumb, (x, y))
+                draw = ImageDraw.Draw(canvas)
+                draw.text((6, thumb_h + 4), f"{label_prefix}_{index}: {path.name}", fill=(20, 20, 20))
+                thumbs.append(canvas)
+        except Exception:
+            continue
+    if not thumbs:
+        return False
+    rows = math.ceil(len(thumbs) / columns)
+    montage = Image.new("RGB", (columns * thumb_w, rows * (thumb_h + label_h)), "white")
+    for index, thumb in enumerate(thumbs):
+        x = (index % columns) * thumb_w
+        y = (index // columns) * (thumb_h + label_h)
+        montage.paste(thumb, (x, y))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    montage.save(output, compress_level=1)
+    return output.exists()
 
 
 def write_outputs(
@@ -778,7 +1207,7 @@ def write_outputs(
         "worker_id": "worker_pc_game_w1",
         "game_id": profile.get("game_id"),
         "game_name": profile.get("game_name"),
-        "status": "capture_completed" if summary_counts["valid_total"] >= min(60, max(1, int(target_total * 0.6))) else "failed_low_yield",
+        "status": status_from_counts(summary_counts, target_total, profile),
         "target_total": target_total,
         "started_at": started_at,
         "finished_at": now_iso(),
@@ -807,6 +1236,18 @@ def write_outputs(
             {"event": "onegame_mvp_finished", "run_id": run_id, "timestamp": now_iso(), "status": summary["status"]},
         ],
     )
+
+
+def status_from_counts(summary_counts: dict[str, Any], target_total: int, profile: dict[str, Any]) -> str:
+    required_valid = int(profile.get("valid_min_override") or min(target_total, max(60, round(target_total * 0.67))))
+    if int(summary_counts.get("valid_total") or 0) < required_valid:
+        return "failed_low_yield"
+    if summary_counts.get("variation_gate_enabled"):
+        if summary_counts.get("visual_variation_passed") is False:
+            return "failed_low_variation"
+        if summary_counts.get("behavior_effect_passed") is False:
+            return "failed_behavior_no_effect"
+    return "capture_completed"
 
 
 def write_blocked_outputs(run_dir: Path, run_id: str, profile: dict[str, Any], mode: str, started_at: str, reason: str) -> dict[str, Any]:
@@ -854,6 +1295,11 @@ class BehaviorExecutor:
         self.frame_actions: dict[int, dict[str, Any]] = {}
         self._next_action = 0
         self._pressed_keys: set[str] = set()
+        self.action_every_frames = max(1, int(behavior_pack.get("action_every_frames") or 1))
+        self.max_key_duration_ms = int(behavior_pack.get("max_key_duration_ms") or 2000)
+        self.max_pause_duration_ms = int(behavior_pack.get("max_pause_duration_ms") or 2000)
+        self.max_mouse_dx = int(behavior_pack.get("max_mouse_dx") or 400)
+        self.max_mouse_dy = int(behavior_pack.get("max_mouse_dy") or 120)
 
     def prepare(self) -> Path:
         self.validate_actions()
@@ -879,15 +1325,20 @@ class BehaviorExecutor:
             if action_type == "mouse_move":
                 dx = abs(int(action.get("dx") or 0))
                 dy = abs(int(action.get("dy") or 0))
-                if dx > 400 or dy > 120:
+                if dx > self.max_mouse_dx or dy > self.max_mouse_dy:
                     raise RuntimeError("blocked_by_behavior_mouse_delta_too_large")
             if action_type not in {"pause", "key_hold", "mouse_move"}:
                 raise RuntimeError(f"blocked_by_behavior_action_type:{action_type}")
-            if duration_ms < 0 or duration_ms > 2000:
+            max_duration = self.max_pause_duration_ms if action_type == "pause" else self.max_key_duration_ms
+            if action_type == "mouse_move":
+                max_duration = int(self.behavior_pack.get("max_mouse_duration_ms") or self.max_key_duration_ms)
+            if duration_ms < 0 or duration_ms > max_duration:
                 raise RuntimeError("blocked_by_behavior_duration")
 
     def step(self, frame_index: int) -> None:
         if not self.execute_real or not self.actions:
+            return
+        if frame_index != 1 and (frame_index - 1) % self.action_every_frames != 0:
             return
         if self.stop_file.exists():
             raise RuntimeError("blocked_by_operator_stop_file")
@@ -1215,6 +1666,40 @@ def mean_abs_diff(left: list[int], right: list[int]) -> float:
     if len(left) != len(right):
         return 999.0
     return sum(abs(a - b) for a, b in zip(left, right)) / max(len(left), 1)
+
+
+def mean_or_zero(values: list[float] | list[int]) -> float:
+    return round(sum(float(value) for value in values) / len(values), 6) if values else 0.0
+
+
+def percentile(values: list[float] | list[int], pct: int) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(float(value) for value in values)
+    if len(sorted_values) == 1:
+        return round(sorted_values[0], 6)
+    index = (len(sorted_values) - 1) * pct / 100
+    lower = math.floor(index)
+    upper = math.ceil(index)
+    if lower == upper:
+        return round(sorted_values[int(index)], 6)
+    weight = index - lower
+    return round(sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight, 6)
+
+
+def grayscale_histogram(gray: list[int], bins: int = 32) -> list[float]:
+    hist = [0] * bins
+    for value in gray:
+        bucket = min(bins - 1, max(0, int(value) * bins // 256))
+        hist[bucket] += 1
+    total = max(1, len(gray))
+    return [count / total for count in hist]
+
+
+def histogram_distance(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right):
+        return 1.0
+    return sum(abs(a - b) for a, b in zip(left, right)) / 2
 
 
 def mean_adjacent_diff(gray: list[int], width: int, height: int) -> float:

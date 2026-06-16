@@ -1,0 +1,32 @@
+{
+  "schema_version": "p14.5-onegame-behavior-pack",
+  "behavior_pack": "variation_boost_v1",
+  "mode": "manual_ready_safe_actions",
+  "real_execution_enabled": true,
+  "max_duration_sec": 240,
+  "max_key_duration_ms": 3000,
+  "max_mouse_duration_ms": 2200,
+  "max_pause_duration_ms": 1800,
+  "max_mouse_dx": 1200,
+  "max_mouse_dy": 160,
+  "action_every_frames": 8,
+  "actions": [
+    {"name": "observe_before_move", "type": "pause", "duration_ms": 500, "risk_flags": []},
+    {"name": "forward_long", "type": "key_hold", "key": "w", "duration_ms": 2200, "risk_flags": []},
+    {"name": "look_right_large", "type": "mouse_move", "dx": 850, "dy": 0, "duration_ms": 1300, "risk_flags": []},
+    {"name": "strafe_left_medium", "type": "key_hold", "key": "a", "duration_ms": 1600, "risk_flags": []},
+    {"name": "look_left_large", "type": "mouse_move", "dx": -900, "dy": 0, "duration_ms": 1400, "risk_flags": []},
+    {"name": "pause_stabilize", "type": "pause", "duration_ms": 700, "risk_flags": []},
+    {"name": "strafe_right_medium", "type": "key_hold", "key": "d", "duration_ms": 1600, "risk_flags": []},
+    {"name": "look_right_sweep", "type": "mouse_move", "dx": 1100, "dy": 0, "duration_ms": 1600, "risk_flags": []},
+    {"name": "back_short", "type": "key_hold", "key": "s", "duration_ms": 1100, "risk_flags": []},
+    {"name": "look_left_sweep", "type": "mouse_move", "dx": -1050, "dy": 0, "duration_ms": 1600, "risk_flags": []},
+    {"name": "forward_jitter", "type": "key_hold", "key": "w", "duration_ms": 1400, "risk_flags": []},
+    {"name": "look_right_finish", "type": "mouse_move", "dx": 650, "dy": 0, "duration_ms": 1100, "risk_flags": []}
+  ],
+  "random_jitter": true,
+  "stop_file": "D:\\work\\runs\\_control\\stop_onegame_variation_boost.txt",
+  "blocked_contexts": ["login", "captcha", "payment", "chat", "matchmaking", "ranked", "purchase"],
+  "blocked_actions": ["login", "chat", "purchase", "matchmaking", "ranked", "captcha", "payment"],
+  "release_keys_on_exit": true
+}
