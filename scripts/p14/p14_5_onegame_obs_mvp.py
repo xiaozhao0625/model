@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
 import hashlib
 import json
 import math
 import os
+import random
 import shutil
 import socket
 import struct
@@ -69,10 +71,12 @@ class OneGameQualityGate:
         laplacian_var = laplacian_variance(gray, metrics_pixels.width, metrics_pixels.height)
         entropy = grayscale_entropy(gray)
         frame_diff = 999.0 if self._previous_gray is None else mean_abs_diff(gray, self._previous_gray)
+        source_width = pixels.source_width or pixels.width
+        source_height = pixels.source_height or pixels.height
 
         reject_reason: str | None = None
         duplicate_of: str | None = None
-        if pixels.width < int(self.policy["min_width"]) or pixels.height < int(self.policy["min_height"]):
+        if source_width < int(self.policy["min_width"]) or source_height < int(self.policy["min_height"]):
             reject_reason = "low_resolution"
         elif black_ratio >= float(self.policy["black_ratio_threshold"]) and brightness_mean <= float(self.policy["black_brightness_max"]):
             reject_reason = "black_screen"
@@ -119,8 +123,8 @@ class OneGameQualityGate:
             edge_density=round(edge_density, 3),
             entropy=round(entropy, 3),
             frame_diff=round(frame_diff, 3),
-            width=pixels.width,
-            height=pixels.height,
+            width=source_width,
+            height=source_height,
             duplicate_of=duplicate_of,
         )
 
@@ -130,6 +134,8 @@ class PngPixels:
     width: int
     height: int
     gray: list[int]
+    source_width: int | None = None
+    source_height: int | None = None
 
 
 def main() -> int:
@@ -139,8 +145,8 @@ def main() -> int:
     quality_policy = read_json(args.quality_policy)
     behavior_pack = read_json(args.behavior_pack)
     target_total = int(args.target_total or profile.get("target_total", 100))
-    if target_total < 1 or target_total > 300:
-        raise ValueError("OneGame MVP target_total must be between 1 and 300")
+    if target_total < 1 or target_total > 5000:
+        raise ValueError("OneGame target_total must be between 1 and 5000")
     if args.mode == "plan":
         run_id = args.run_id or default_run_id(args.mode)
         run_dir = Path(args.output_root) / run_id
@@ -164,10 +170,74 @@ def main() -> int:
     run_dir = Path(args.output_root) / run_id
     create_run_dirs(run_dir)
     started_at = now_iso()
-    action_log = write_behavior_actions(run_dir, behavior_pack, execute_real=args.execute_behavior)
+    if args.finalize_existing:
+        try:
+            frame_paths = sorted((run_dir / "raw").glob("*.png"))
+            if not frame_paths:
+                raise RuntimeError("blocked_by_no_existing_raw_frames")
+            target_total = len(frame_paths)
+            obs_result = {
+                "status": "finalize_existing",
+                "websocket_connected": False,
+                "scene_detected": False,
+                "source_detected": False,
+                "test_source": False,
+                "production_capture": True,
+            }
+            records, summary_counts = evaluate_frames(
+                frame_paths=frame_paths,
+                run_dir=run_dir,
+                run_id=run_id,
+                profile=profile,
+                quality_policy=quality_policy,
+                mode="real",
+                obs_result=obs_result,
+                frame_actions=load_frame_actions(run_dir / "action_log.jsonl"),
+            )
+            write_outputs(
+                run_dir=run_dir,
+                run_id=run_id,
+                profile=profile,
+                mode="real",
+                started_at=started_at,
+                records=records,
+                summary_counts=summary_counts,
+                target_total=target_total,
+                action_log=run_dir / "action_log.jsonl",
+                obs_result=obs_result,
+            )
+            status = "capture_completed" if summary_counts["valid_total"] >= min(60, max(1, int(target_total * 0.6))) else "failed_low_yield"
+            result = {
+                "status": status,
+                "run_id": run_id,
+                "mode": "finalize_existing",
+                "run_dir": str(run_dir),
+                "attempted": summary_counts["attempted"],
+                "valid_total": summary_counts["valid_total"],
+                "duplicate_count": summary_counts["duplicate_count"],
+                "black_screen_count": summary_counts["black_screen_count"],
+                "low_quality_count": summary_counts["low_quality_count"],
+                "rejected_count": summary_counts["rejected_count"],
+                "test_source": False,
+                "production_capture": True,
+                "online_inference": False,
+                "model_action_control": False,
+                "automatic_upload": False,
+                "automatic_cleanup": False,
+                "obs": obs_result,
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if status == "capture_completed" else 1
+        except Exception as exc:
+            result = write_blocked_outputs(run_dir, run_id, profile, "real", started_at, str(exc))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 1
+
+    behavior_executor = BehaviorExecutor(run_dir, behavior_pack, execute_real=args.execute_behavior)
+    action_log = behavior_executor.prepare()
     try:
         obs_result = verify_obs(profile, dry_run=args.mode == "dry-run")
-        frame_paths = capture_frames(args, profile, run_dir, target_total)
+        frame_paths = capture_frames(args, profile, run_dir, target_total, behavior_executor)
         if args.inject_quality_fixtures:
             frame_paths.extend(inject_quality_fixtures(run_dir / "raw", frame_paths))
         records, summary_counts = evaluate_frames(
@@ -178,6 +248,7 @@ def main() -> int:
             quality_policy=quality_policy,
             mode=args.mode,
             obs_result=obs_result,
+            frame_actions=behavior_executor.frame_actions,
         )
         write_outputs(
             run_dir=run_dir,
@@ -217,6 +288,8 @@ def main() -> int:
         result = write_blocked_outputs(run_dir, run_id, profile, args.mode, started_at, str(exc))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1
+    finally:
+        behavior_executor.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -238,6 +311,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--user-ready", action="store_true")
     parser.add_argument("--execute-behavior", action="store_true")
     parser.add_argument("--inject-quality-fixtures", action="store_true")
+    parser.add_argument("--finalize-existing", action="store_true")
     return parser.parse_args()
 
 
@@ -326,14 +400,20 @@ def verify_obs(profile: dict[str, Any], dry_run: bool) -> dict[str, Any]:
         }
 
 
-def capture_frames(args: argparse.Namespace, profile: dict[str, Any], run_dir: Path, target_total: int) -> list[Path]:
+def capture_frames(
+    args: argparse.Namespace,
+    profile: dict[str, Any],
+    run_dir: Path,
+    target_total: int,
+    behavior_executor: BehaviorExecutor,
+) -> list[Path]:
     raw_dir = run_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     if args.mode == "plan":
         raise RuntimeError("blocked_by_no_user_prepared_game_profiles")
     if args.mode == "dry-run":
         return capture_ffmpeg_testsrc(raw_dir, target_total, args.ffmpeg_path)
-    return capture_obs_source_screenshots(profile, raw_dir, target_total)
+    return capture_obs_source_screenshots(profile, raw_dir, target_total, behavior_executor)
 
 
 def capture_ffmpeg_testsrc(raw_dir: Path, target_total: int, ffmpeg_path: str) -> list[Path]:
@@ -361,7 +441,12 @@ def capture_ffmpeg_testsrc(raw_dir: Path, target_total: int, ffmpeg_path: str) -
     return sorted(raw_dir.glob("ffmpeg_testsrc_*.png"))
 
 
-def capture_obs_source_screenshots(profile: dict[str, Any], raw_dir: Path, target_total: int) -> list[Path]:
+def capture_obs_source_screenshots(
+    profile: dict[str, Any],
+    raw_dir: Path,
+    target_total: int,
+    behavior_executor: BehaviorExecutor,
+) -> list[Path]:
     password = os.environ.get(str(profile.get("obs_password_env") or "OBS_WEBSOCKET_PASSWORD")) or None
     client = ObsWebSocketClient(
         host=str(profile.get("obs_host") or "127.0.0.1"),
@@ -378,6 +463,7 @@ def capture_obs_source_screenshots(profile: dict[str, Any], raw_dir: Path, targe
     paths: list[Path] = []
     with client:
         for index in range(1, target_total + 1):
+            behavior_executor.step(frame_index=index)
             response = client.request(
                 "GetSourceScreenshot",
                 {
@@ -570,6 +656,7 @@ def evaluate_frames(
     quality_policy: dict[str, Any],
     mode: str,
     obs_result: dict[str, Any],
+    frame_actions: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     gate = OneGameQualityGate(quality_policy)
     records: list[dict[str, Any]] = []
@@ -646,6 +733,7 @@ def evaluate_frames(
                 "test_source": mode == "dry-run",
                 "production_capture": mode == "real",
                 "source_type": "test_source" if mode == "dry-run" else "game_window",
+                "last_action": (frame_actions or {}).get(index),
                 "online_inference": False,
                 "model_action_control": False,
             }
@@ -752,33 +840,195 @@ def write_blocked_outputs(run_dir: Path, run_id: str, profile: dict[str, Any], m
     return summary
 
 
-def write_behavior_actions(run_dir: Path, behavior_pack: dict[str, Any], execute_real: bool) -> Path:
-    action_log = run_dir / "action_log.jsonl"
-    actions = behavior_pack.get("actions") or []
-    blocked = set(behavior_pack.get("blocked_actions") or []) | set(behavior_pack.get("blocked_contexts") or [])
-    if execute_real:
-        raise RuntimeError("real behavior execution is disabled for OneGame MVP until explicit operator approval")
-    rows = []
-    for index, action in enumerate(actions, start=1):
+class BehaviorExecutor:
+    allowed_keys = {"w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44}
+
+    def __init__(self, run_dir: Path, behavior_pack: dict[str, Any], execute_real: bool) -> None:
+        self.run_dir = run_dir
+        self.behavior_pack = behavior_pack
+        self.execute_real = execute_real
+        self.action_log = run_dir / "action_log.jsonl"
+        self.actions = list(behavior_pack.get("actions") or [])
+        self.blocked = set(behavior_pack.get("blocked_actions") or []) | set(behavior_pack.get("blocked_contexts") or [])
+        self.stop_file = Path(str(behavior_pack.get("stop_file") or run_dir / "_stop_onegame_mvp.txt"))
+        self.frame_actions: dict[int, dict[str, Any]] = {}
+        self._next_action = 0
+        self._pressed_keys: set[str] = set()
+
+    def prepare(self) -> Path:
+        self.validate_actions()
+        self.action_log.parent.mkdir(parents=True, exist_ok=True)
+        self.action_log.write_text("", encoding="utf-8")
+        if not self.execute_real:
+            for index, action in enumerate(self.actions, start=1):
+                self._append_action_row(index, action, dry_run=True, executed=False, skipped=False)
+        return self.action_log
+
+    def validate_actions(self) -> None:
+        if not self.actions:
+            return
+        for index, action in enumerate(self.actions, start=1):
+            unsafe, reason = self._unsafe_reason(action)
+            if unsafe:
+                raise RuntimeError(f"blocked_by_behavior_risk:{index}:{reason}")
+            action_type = str(action.get("type") or "")
+            key = str(action.get("key") or "").lower()
+            duration_ms = int(action.get("duration_ms") or 0)
+            if action_type == "key_hold" and key not in self.allowed_keys:
+                raise RuntimeError(f"blocked_by_behavior_key_not_allowed:{key}")
+            if action_type == "mouse_move":
+                dx = abs(int(action.get("dx") or 0))
+                dy = abs(int(action.get("dy") or 0))
+                if dx > 400 or dy > 120:
+                    raise RuntimeError("blocked_by_behavior_mouse_delta_too_large")
+            if action_type not in {"pause", "key_hold", "mouse_move"}:
+                raise RuntimeError(f"blocked_by_behavior_action_type:{action_type}")
+            if duration_ms < 0 or duration_ms > 2000:
+                raise RuntimeError("blocked_by_behavior_duration")
+
+    def step(self, frame_index: int) -> None:
+        if not self.execute_real or not self.actions:
+            return
+        if self.stop_file.exists():
+            raise RuntimeError("blocked_by_operator_stop_file")
+        action = self.actions[self._next_action % len(self.actions)]
+        self._next_action += 1
+        action_index = self._next_action
+        started_at = now_iso()
+        try:
+            self._execute_action(action)
+            row = self._append_action_row(
+                action_index,
+                action,
+                dry_run=False,
+                executed=True,
+                skipped=False,
+                started_at=started_at,
+                frame_index=frame_index,
+            )
+            self.frame_actions[frame_index] = row
+        except Exception:
+            self.release_all()
+            raise
+
+    def close(self) -> None:
+        self.release_all()
+
+    def release_all(self) -> None:
+        for key in list(self._pressed_keys):
+            self._key_up(key)
+        self._pressed_keys.clear()
+
+    def _execute_action(self, action: dict[str, Any]) -> None:
         action_type = str(action.get("type") or "")
-        action_name = str(action.get("name") or f"action_{index}")
+        duration_ms = int(action.get("duration_ms") or 0)
+        if action_type == "pause":
+            time.sleep(duration_ms / 1000)
+            return
+        if action_type == "key_hold":
+            key = str(action.get("key") or "").lower()
+            self._key_down(key)
+            try:
+                time.sleep(duration_ms / 1000)
+            finally:
+                self._key_up(key)
+            return
+        if action_type == "mouse_move":
+            dx = int(action.get("dx") or 0)
+            dy = int(action.get("dy") or 0)
+            if bool(self.behavior_pack.get("random_jitter", False)):
+                dx += random.randint(-12, 12)
+                dy += random.randint(-4, 4)
+            steps = max(1, min(24, duration_ms // 35 if duration_ms else 1))
+            moved_x = moved_y = 0
+            for step in range(1, steps + 1):
+                target_x = round(dx * step / steps)
+                target_y = round(dy * step / steps)
+                self._mouse_move(target_x - moved_x, target_y - moved_y)
+                moved_x, moved_y = target_x, target_y
+                time.sleep(max(0.01, duration_ms / 1000 / steps))
+            return
+        raise RuntimeError(f"blocked_by_behavior_action_type:{action_type}")
+
+    def _unsafe_reason(self, action: dict[str, Any]) -> tuple[bool, str]:
+        action_type = str(action.get("type") or "")
+        action_name = str(action.get("name") or "")
         risk_flags = set(action.get("risk_flags") or [])
-        unsafe = action_type in SAFE_BLOCKED_ACTIONS or action_name in SAFE_BLOCKED_ACTIONS or bool(risk_flags & SAFE_BLOCKED_ACTIONS) or bool(blocked & SAFE_BLOCKED_ACTIONS and action_type in SAFE_BLOCKED_ACTIONS)
-        rows.append(
-            {
-                "index": index,
-                "action_name": action_name,
-                "action_type": action_type,
-                "duration_ms": action.get("duration_ms"),
-                "dry_run": True,
-                "executed": False,
-                "skipped": unsafe,
-                "risk_flags": sorted(risk_flags | ({action_type} if unsafe else set())),
-                "timestamp": now_iso(),
-            }
-        )
-    write_jsonl(action_log, rows)
-    return action_log
+        if action_type in SAFE_BLOCKED_ACTIONS:
+            return True, action_type
+        if action_name in SAFE_BLOCKED_ACTIONS:
+            return True, action_name
+        overlap = risk_flags & SAFE_BLOCKED_ACTIONS
+        if overlap:
+            return True, ",".join(sorted(overlap))
+        return False, ""
+
+    def _append_action_row(
+        self,
+        index: int,
+        action: dict[str, Any],
+        dry_run: bool,
+        executed: bool,
+        skipped: bool,
+        started_at: str | None = None,
+        frame_index: int | None = None,
+    ) -> dict[str, Any]:
+        row = {
+            "index": index,
+            "action_name": str(action.get("name") or f"action_{index}"),
+            "action_type": str(action.get("type") or ""),
+            "key": action.get("key"),
+            "dx": action.get("dx"),
+            "dy": action.get("dy"),
+            "duration_ms": action.get("duration_ms"),
+            "dry_run": dry_run,
+            "executed": executed,
+            "skipped": skipped,
+            "risk_flags": list(action.get("risk_flags") or []),
+            "frame_index": frame_index,
+            "timestamp": started_at or now_iso(),
+            "finished_at": now_iso(),
+        }
+        with self.action_log.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        return row
+
+    def _key_down(self, key: str) -> None:
+        vk = self.allowed_keys[key]
+        ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+        self._pressed_keys.add(key)
+
+    def _key_up(self, key: str) -> None:
+        vk = self.allowed_keys[key]
+        ctypes.windll.user32.keybd_event(vk, 0, 0x0002, 0)
+        self._pressed_keys.discard(key)
+
+    def _mouse_move(self, dx: int, dy: int) -> None:
+        ctypes.windll.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
+
+
+def write_behavior_actions(run_dir: Path, behavior_pack: dict[str, Any], execute_real: bool) -> Path:
+    executor = BehaviorExecutor(run_dir, behavior_pack, execute_real=execute_real)
+    path = executor.prepare()
+    executor.close()
+    return path
+
+
+def load_frame_actions(path: Path) -> dict[int, dict[str, Any]]:
+    actions: dict[int, dict[str, Any]] = {}
+    if not path.exists():
+        return actions
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        frame_index = row.get("frame_index")
+        if isinstance(frame_index, int):
+            actions[frame_index] = row
+    return actions
 
 
 def inject_quality_fixtures(raw_dir: Path, frame_paths: list[Path]) -> list[Path]:
@@ -794,6 +1044,28 @@ def inject_quality_fixtures(raw_dir: Path, frame_paths: list[Path]) -> list[Path
 
 
 def read_png_pixels(path: Path) -> PngPixels:
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(path) as image:
+            source_width, source_height = image.size
+            gray = image.convert("L")
+            max_width = 320
+            if source_width > max_width:
+                target_width = max_width
+                target_height = max(1, round(source_height * target_width / source_width))
+                gray = gray.resize((target_width, target_height))
+            width, height = gray.size
+            return PngPixels(
+                width=int(width),
+                height=int(height),
+                gray=list(gray.tobytes()),
+                source_width=int(source_width),
+                source_height=int(source_height),
+            )
+    except ImportError:
+        pass
+
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError(f"not a png: {path}")
@@ -834,18 +1106,22 @@ def read_png_pixels(path: Path) -> PngPixels:
                 gray.append(row[x])
             else:
                 gray.append(int(row[x] * 0.299 + row[x + 1] * 0.587 + row[x + 2] * 0.114))
-    return PngPixels(width=int(width), height=int(height), gray=gray)
+    return PngPixels(width=int(width), height=int(height), gray=gray, source_width=int(width), source_height=int(height))
 
 
 def downsample_pixels(pixels: PngPixels, max_width: int = 320) -> PngPixels:
     if pixels.width <= max_width:
         return pixels
+    source_width = pixels.source_width or pixels.width
+    source_height = pixels.source_height or pixels.height
     target_width = max(1, max_width)
     target_height = max(1, round(pixels.height * target_width / pixels.width))
     return PngPixels(
         width=target_width,
         height=target_height,
         gray=sample_gray(pixels.gray, pixels.width, pixels.height, target_width, target_height),
+        source_width=source_width,
+        source_height=source_height,
     )
 
 
