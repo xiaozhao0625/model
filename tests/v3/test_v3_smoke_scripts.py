@@ -17,3 +17,13 @@ def test_model_mock_smoke_has_local_fallback():
 
     assert "FallbackToLocal" in script
     assert "UiModelRegistry" in script
+
+
+def test_folder_watch_worker_smoke_runs_worker_once():
+    script = (REPO_ROOT / "scripts/v3/smoke_v3_folder_watch_worker.ps1").read_text(encoding="utf-8")
+
+    assert "run_folder_watch_once" in script
+    assert "folder_watch_summary.json" in script
+    assert "APP_SHOT_OBS_OUTPUT" in script
+    assert 'os.environ["APP_SHOT_RUNS"]' not in script
+    assert 'app_name="folder_watch_worker_smoke"' not in script
