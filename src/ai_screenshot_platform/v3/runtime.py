@@ -185,6 +185,7 @@ class V3Runtime:
             or record.config.app_type == "game"
             or _is_safe_pc_app_ui_label(record.config.app_type, box.text)
         ]
+        valid_boxes.extend(_split_safe_pc_app_menu_boxes(record.config.app_type, ocr_result.text_boxes))
         ocr_clicks = ocr_candidates(valid_boxes)
         model_request = ModelRequest(
             screenshot_path=latest.path,
@@ -488,6 +489,46 @@ def _is_safe_pc_app_ui_label(app_type: str, text: str) -> bool:
         return False
     normalized = text.strip().casefold()
     return normalized in _SAFE_PC_APP_UI_LABELS
+
+
+def _split_safe_pc_app_menu_boxes(app_type: str, boxes) -> list:
+    if app_type != "pc_app":
+        return []
+    from ai_screenshot_platform.v3.schemas import OcrTextBox
+
+    split_boxes: list[OcrTextBox] = []
+    seen: set[tuple[str, tuple[int, int, int, int]]] = set()
+    for box in boxes:
+        text = box.text.strip()
+        if _is_safe_pc_app_ui_label(app_type, text):
+            continue
+        if len(text) < 4:
+            continue
+        x1, y1, x2, y2 = box.bbox
+        width = max(1, x2 - x1)
+        text_len = max(1, len(text))
+        for label in _SAFE_PC_APP_UI_LABELS:
+            if len(label) <= 1:
+                continue
+            index = text.casefold().find(label.casefold())
+            if index < 0:
+                continue
+            left = x1 + int(width * index / text_len)
+            right = x1 + int(width * (index + len(label)) / text_len)
+            bbox = [left, y1, max(left + 8, right), y2]
+            key = (label, tuple(bbox))
+            if key in seen:
+                continue
+            seen.add(key)
+            split_boxes.append(
+                OcrTextBox(
+                    text=label,
+                    bbox=bbox,
+                    confidence=box.confidence,
+                    language_hint=box.language_hint,
+                )
+            )
+    return split_boxes
 
 
 _SAFE_PC_APP_UI_LABELS = {
