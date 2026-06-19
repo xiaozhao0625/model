@@ -36,3 +36,16 @@ def test_model_env_check_defaults_to_app_shot_models():
     assert "APP_SHOT_MODELS" in script
     assert '"D:\\work\\app-shot"' in script
     assert '[string]$ModelRoot = "models"' not in script
+
+
+def test_local_html_observe_smoke_is_observe_only():
+    script = (REPO_ROOT / "scripts/v3/smoke_v3_local_html_observe.ps1").read_text(encoding="utf-8")
+
+    assert "local_html_observe" in script
+    assert "run_folder_watch_once" in script
+    assert "observe_only=True" in script
+    assert "enable_auto_click=False" in script
+    assert "execute_action" not in script
+    assert "actions/execute" not in script
+    assert "--headless" in script
+    assert "APP_SHOT_OBS_OUTPUT" in script
