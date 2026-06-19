@@ -50,7 +50,8 @@ for (const apiName of [
   "getToolHealth",
   "getV3Health",
   "createV3Run",
-  "startV3Run"
+  "startV3Run",
+  "getV3Actions"
 ]) {
   assert(apiClient.includes(apiName), `missing api client method ${apiName}`);
 }
@@ -90,7 +91,7 @@ for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健
 }
 
 const v3 = read("src/routes/v3-dashboard.tsx");
-for (const phrase of ["observe_only", "完整自动模式", "创建 observe_only 任务", "模型与 OCR"]) {
+for (const phrase of ["observe_only", "完整自动模式", "创建 observe_only 任务", "模型与 OCR", "Action Audit", "blocked reason", "before_image", "after_image"]) {
   assert(v3.includes(phrase), `missing v3 phrase ${phrase}`);
 }
 

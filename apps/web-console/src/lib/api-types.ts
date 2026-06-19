@@ -77,7 +77,7 @@ export interface RunLogEntry {
 
 export interface V3TaskConfig {
   app_name: string;
-  app_type: "software" | "game" | "auto";
+  app_type: "software" | "game" | "web" | "auto";
   target_language: string;
   capture_source: "obs" | "folder_watch" | "window";
   capture_interval_ms: number;
@@ -88,6 +88,7 @@ export interface V3TaskConfig {
   enable_game_explorer: boolean;
   delete_rejected: boolean;
   max_images: number;
+  max_actions: number;
   safety_mode: "strict" | "review" | "off";
   observe_only: boolean;
   must_have_text: boolean;
@@ -128,6 +129,22 @@ export interface V3Summary {
   model_ready: boolean;
   ocr_ready: boolean;
   safety_gate_ready: boolean;
+}
+
+export interface V3ActionRecord {
+  decision: Record<string, unknown>;
+  result: {
+    executed?: boolean;
+    reason?: string;
+    status?: string;
+    clicked?: number[];
+    rollback_reason?: string;
+  };
+  label?: string | null;
+  source_candidate_id?: string | null;
+  safety_result?: Record<string, unknown>;
+  before_image?: string | null;
+  after_image?: string | null;
 }
 
 export interface MetaEntry {

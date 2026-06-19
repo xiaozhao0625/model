@@ -12,6 +12,7 @@ import type {
   ToolHealthRecord,
   UploadRecord,
   V3Health,
+  V3ActionRecord,
   V3RunRecord,
   V3Summary,
   V3TaskConfig,
@@ -69,6 +70,7 @@ export interface ApiClient {
   pauseV3Run(runId: string): Promise<V3RunRecord>;
   stopV3Run(runId: string): Promise<V3RunRecord>;
   getV3Summary(runId: string): Promise<V3Summary>;
+  getV3Actions(runId: string): Promise<V3ActionRecord[]>;
   isUsingMockFallback(): boolean;
 }
 
@@ -236,6 +238,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           enable_game_explorer: false,
           delete_rejected: false,
           max_images: 100,
+          max_actions: 5,
           safety_mode: "strict",
           observe_only: true,
           must_have_text: false
@@ -258,6 +261,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         ocr_ready: true,
         safety_gate_ready: true
       }),
+    getV3Actions: (runId) => request(`/api/v3/runs/${runId}/actions`, []),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }
@@ -278,6 +282,7 @@ function mockV3Defaults(): V3TaskConfig {
     enable_game_explorer: false,
     delete_rejected: false,
     max_images: 100,
+    max_actions: 5,
     safety_mode: "strict",
     observe_only: true,
     must_have_text: false
