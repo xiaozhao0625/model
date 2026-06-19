@@ -16,6 +16,7 @@ class PaddleOcrProvider(OcrProvider):
         self._paddleocr_cls = paddleocr_cls
         self._enabled = _env_enabled("APP_SHOT_ENABLE_PADDLEOCR") if enabled is None else enabled
         self._engine: Any | None = None
+        self._engines: dict[str, Any] = {}
         self._error: str | None = None
         if self._paddleocr_cls is not None:
             return
@@ -43,23 +44,30 @@ class PaddleOcrProvider(OcrProvider):
         )
 
     def recognize(self, image_path: str) -> OcrResult:
+        return self._recognize_with_lang(image_path, os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch"))
+
+    def recognize_for_language(self, image_path: str, target_language: str) -> OcrResult:
+        return self._recognize_with_lang(image_path, _paddle_lang_for_target(target_language))
+
+    def _recognize_with_lang(self, image_path: str, lang: str) -> OcrResult:
         if self._paddleocr_cls is None:
             return OcrResult(provider=self.provider_name, status="unavailable", error="paddleocr_not_installed")
         if not self._enabled:
             return OcrResult(provider=self.provider_name, status="unavailable", error="paddleocr_disabled_by_default")
 
         try:
-            engine = self._get_engine()
+            engine = self._get_engine(lang)
             raw = engine.predict(image_path) if hasattr(engine, "predict") else engine.ocr(image_path, cls=True)
             return OcrResult(provider=self.provider_name, status="ok", text_boxes=_parse_paddle_result(raw))
         except Exception as exc:
             return OcrResult(provider=self.provider_name, status="error", error=str(exc))
 
-    def _get_engine(self) -> Any:
-        if self._engine is not None:
+    def _get_engine(self, lang: str | None = None) -> Any:
+        lang = lang or os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch")
+        if lang in self._engines:
+            self._engine = self._engines[lang]
             return self._engine
         _configure_paddle_cache_env()
-        lang = os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch")
         ocr_version = os.environ.get("APP_SHOT_PADDLEOCR_VERSION")
         try:
             self._engine = self._paddleocr_cls(
@@ -71,6 +79,7 @@ class PaddleOcrProvider(OcrProvider):
             )
         except TypeError:
             self._engine = self._paddleocr_cls(lang=lang)
+        self._engines[lang] = self._engine
         return self._engine
 
 
@@ -88,6 +97,16 @@ def _configure_paddle_cache_env() -> None:
     app_shot_home = os.environ.get("APP_SHOT_HOME")
     if app_shot_home:
         os.environ.setdefault("PADDLE_HOME", str(os.path.join(app_shot_home, "cache", "paddle")))
+
+
+def _paddle_lang_for_target(target_language: str) -> str:
+    if target_language.startswith("ko"):
+        return "korean"
+    if target_language.startswith("ja"):
+        return os.environ.get("APP_SHOT_PADDLEOCR_LANG_JA", os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch"))
+    if target_language.startswith("en"):
+        return os.environ.get("APP_SHOT_PADDLEOCR_LANG_EN", os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch"))
+    return os.environ.get("APP_SHOT_PADDLEOCR_LANG", "ch")
 
 
 def _parse_paddle_result(raw: Any) -> list[OcrTextBox]:

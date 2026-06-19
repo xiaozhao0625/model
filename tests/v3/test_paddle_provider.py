@@ -70,6 +70,29 @@ def test_paddle_provider_passes_optional_ocr_version(monkeypatch, tmp_path):
     assert provider._engine.kwargs["ocr_version"] == "PP-OCRv5"
 
 
+def test_paddle_provider_uses_korean_engine_for_ko_target(tmp_path):
+    image = tmp_path / "korean.png"
+    image.write_bytes(b"fake")
+
+    provider = PaddleOcrProvider(paddleocr_cls=FakePaddleOCR, enabled=True)
+    provider.recognize_for_language(str(image), "ko")
+
+    assert provider._engine.kwargs["lang"] == "korean"
+
+
+def test_paddle_provider_keeps_distinct_engines_per_language(tmp_path):
+    image = tmp_path / "screen.png"
+    image.write_bytes(b"fake")
+
+    provider = PaddleOcrProvider(paddleocr_cls=FakePaddleOCR, enabled=True)
+    provider.recognize_for_language(str(image), "en")
+    english_engine = provider._engine
+    provider.recognize_for_language(str(image), "ko")
+
+    assert english_engine is not provider._engine
+    assert provider._engine.kwargs["lang"] == "korean"
+
+
 def test_paddle_provider_parses_paddleocr_37_mapping_results(tmp_path):
     image = tmp_path / "english.png"
     image.write_bytes(b"fake")

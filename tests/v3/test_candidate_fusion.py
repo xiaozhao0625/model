@@ -8,3 +8,9 @@ def test_candidate_fusion_blocks_risky_labels():
     fused = fuse_candidates([safe], [risky])
     assert any(item.blocked for item in fused if item.label == "Buy now")
     assert fused[0].label == "Start"
+
+
+def test_candidate_fusion_scores_showui_as_ui_model():
+    candidate = ModelClickCandidate(label="Start", source="showui", bbox=[0, 0, 10, 10], click_x=5, click_y=5, confidence=0.9, reason="test")
+    fused = fuse_candidates([], [candidate])
+    assert fused[0].ui_model_score == 0.9

@@ -97,19 +97,25 @@ class V3Runtime:
             reject_reason = "near_duplicate"
         meta: dict[str, object] = {"capture_source": record.config.capture_source, "quality": quality}
         if bucket == "pending" and record.config.enable_ocr:
-            ocr_result = self._active_ocr_provider().recognize(str(path))
+            ocr_result = self._recognize_for_target(str(path), record.config.target_language)
             meta["ocr"] = ocr_result.model_dump()
             if ocr_result.status != "ok":
                 bucket = "manual_review"
                 reject_reason = ocr_result.error or ocr_result.status
             else:
-                accepted_boxes = [
-                    box
-                    for box in ocr_result.text_boxes
-                    if filter_language(box.text, record.config.target_language).accepted
+                language_results = [filter_language(box.text, record.config.target_language) for box in ocr_result.text_boxes]
+                accepted_boxes = [box for box, result in zip(ocr_result.text_boxes, language_results) if result.accepted]
+                rejected_language_results = [
+                    result
+                    for result in language_results
+                    if result.reason in {"wrong_language", "mixed_language"}
                 ]
                 if accepted_boxes:
-                    bucket = "accepted"
+                    if rejected_language_results:
+                        bucket = "rejected"
+                        reject_reason = "mixed_language"
+                    else:
+                        bucket = "accepted"
                 elif record.config.must_have_text and not ocr_result.text_boxes:
                     bucket = "rejected"
                     reject_reason = "no_text"
@@ -125,6 +131,12 @@ class V3Runtime:
             meta=meta,
         )
         return self.store.add_image(run_id, image)
+
+    def _recognize_for_target(self, image_path: str, target_language: str):
+        provider = self._active_ocr_provider()
+        if isinstance(provider, PaddleOcrProvider):
+            return provider.recognize_for_language(image_path, target_language)
+        return provider.recognize(image_path)
 
     def _active_ocr_provider(self) -> OcrProvider:
         if self.ocr_provider is not None:

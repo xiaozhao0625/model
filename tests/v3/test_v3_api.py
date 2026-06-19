@@ -16,6 +16,17 @@ def test_v3_api_create_start_summary(tmp_path):
         assert summary["observe_only"] is True
 
 
+def test_v3_api_accepts_web_app_type(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v3/runs",
+            json={"config": {"save_root": str(tmp_path / "v3"), "app_type": "web"}},
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["config"]["app_type"] == "web"
+
+
 def test_v3_api_ingests_image_into_run(tmp_path):
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     image = tmp_path / "start_button.png"

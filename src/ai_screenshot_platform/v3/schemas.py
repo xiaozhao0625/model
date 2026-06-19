@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 RunStatus = Literal["created", "running", "paused", "stopped", "completed", "failed"]
-AppType = Literal["software", "game", "auto"]
+AppType = Literal["software", "game", "web", "auto"]
 CaptureSource = Literal["obs", "folder_watch", "window"]
 SafetyMode = Literal["strict", "review", "off"]
 

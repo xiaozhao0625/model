@@ -58,3 +58,24 @@ def test_ingest_rejects_wrong_language_text(tmp_path):
 
     assert record.bucket == "rejected"
     assert record.reject_reason == "wrong_language"
+
+
+def test_ingest_rejects_mixed_language_text(tmp_path):
+    image = tmp_path / "mixed.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="Start", bbox=[0, 0, 10, 10], confidence=0.9),
+                OcrTextBox(text="開始", bbox=[0, 20, 10, 30], confidence=0.9),
+                OcrTextBox(text="시작", bbox=[0, 40, 10, 50], confidence=0.9),
+            ]
+        ),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "rejected"
+    assert record.reject_reason == "mixed_language"

@@ -13,7 +13,7 @@ def fuse_candidates(
     merged: list[FusedCandidate] = []
     for candidate in [*ocr, *model]:
         ocr_score = candidate.confidence if "ocr" in candidate.source else 0.0
-        model_score = candidate.confidence if "model" in candidate.source else 0.0
+        model_score = candidate.confidence if _is_ui_model_source(candidate.source) else 0.0
         layout_score = 0.5
         history_score = history_scores.get(candidate.label, 0.0)
         risks = risk_terms_in_text(candidate.label)
@@ -32,3 +32,7 @@ def fuse_candidates(
         )
         merged.append(fused)
     return sorted(merged, key=lambda item: item.final_score, reverse=True)
+
+
+def _is_ui_model_source(source: str) -> bool:
+    return "model" in source or source in {"showui", "omniparser"}
