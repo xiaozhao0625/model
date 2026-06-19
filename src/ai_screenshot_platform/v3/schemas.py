@@ -39,6 +39,10 @@ class V3RunCreateRequest(BaseModel):
     config: V3TaskConfig = Field(default_factory=V3TaskConfig)
 
 
+class V3ImageIngestRequest(BaseModel):
+    image_path: str
+
+
 class V3RunRecord(BaseModel):
     run_id: str
     status: RunStatus = "created"

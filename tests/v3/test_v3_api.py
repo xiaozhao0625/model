@@ -14,3 +14,28 @@ def test_v3_api_create_start_summary(tmp_path):
         summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
         assert started["status"] == "running"
         assert summary["observe_only"] is True
+
+
+def test_v3_api_ingests_image_into_run(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image = tmp_path / "start_button.png"
+    image.write_bytes(b"not-empty")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "target_language": "en",
+                    "must_have_text": True,
+                }
+            },
+        ).json()["data"]
+
+        ingested = client.post(
+            f"/api/v3/runs/{created['run_id']}/images/ingest",
+            json={"image_path": str(image)},
+        ).json()["data"]
+
+        assert ingested["path"] == str(image)
+        assert ingested["bucket"] == "accepted"

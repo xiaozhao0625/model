@@ -1,0 +1,60 @@
+from ai_screenshot_platform.v3.ocr.base import OcrProvider
+from ai_screenshot_platform.v3.runtime import V3Runtime
+from ai_screenshot_platform.v3.schemas import OcrResult, OcrTextBox, ProviderHealth, V3TaskConfig
+from ai_screenshot_platform.v3.storage.run_store import V3RunStore
+
+
+class StaticOcrProvider(OcrProvider):
+    provider_name = "static"
+
+    def __init__(self, boxes: list[OcrTextBox]) -> None:
+        self.boxes = boxes
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(provider=self.provider_name, status="ready", enabled=True)
+
+    def recognize(self, image_path: str) -> OcrResult:
+        return OcrResult(provider=self.provider_name, status="ok", text_boxes=self.boxes)
+
+
+def test_ingest_accepts_image_with_target_language_text(tmp_path):
+    image = tmp_path / "english.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Start", bbox=[1, 2, 3, 4], confidence=0.9)]),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "accepted"
+    assert record.reject_reason is None
+    assert record.meta["ocr"]["provider"] == "static"
+
+
+def test_ingest_rejects_image_without_required_text(tmp_path):
+    image = tmp_path / "blank.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(store=V3RunStore(tmp_path / "runs"), ocr_provider=StaticOcrProvider([]))
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "rejected"
+    assert record.reject_reason == "no_text"
+
+
+def test_ingest_rejects_wrong_language_text(tmp_path):
+    image = tmp_path / "wrong.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Start", bbox=[1, 2, 3, 4], confidence=0.9)]),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="zh", must_have_text=True))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "rejected"
+    assert record.reject_reason == "wrong_language"

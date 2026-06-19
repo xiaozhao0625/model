@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ai_screenshot_platform.v3.model.base import UiModelProvider
@@ -9,8 +10,8 @@ from ai_screenshot_platform.v3.schemas import ModelRequest, ModelResult, Provide
 class ShowUiProvider(UiModelProvider):
     provider_name = "showui"
 
-    def __init__(self, model_dir: str = "models/showui", enabled: bool = False) -> None:
-        self.model_dir = Path(model_dir)
+    def __init__(self, model_dir: str | None = None, enabled: bool = False) -> None:
+        self.model_dir = Path(model_dir) if model_dir is not None else _default_showui_dir()
         self.enabled = enabled
 
     def health(self) -> ProviderHealth:
@@ -42,3 +43,13 @@ class ShowUiProvider(UiModelProvider):
     def _unavailable_result(self) -> ModelResult:
         health = self.health()
         return ModelResult(provider=self.provider_name, status=health.status, error=health.reason)
+
+
+def _default_showui_dir() -> Path:
+    explicit = os.environ.get("APP_SHOT_SHOWUI_MODEL_DIR")
+    if explicit:
+        return Path(explicit)
+    model_root = os.environ.get("APP_SHOT_MODELS")
+    if model_root:
+        return Path(model_root) / "showui" / "ShowUI-2B"
+    return Path("models/showui")

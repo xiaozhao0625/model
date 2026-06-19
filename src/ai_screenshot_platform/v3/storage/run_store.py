@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -16,8 +17,8 @@ from ai_screenshot_platform.v3.schemas import (
 
 
 class V3RunStore:
-    def __init__(self, root: str | Path = "runs/v3") -> None:
-        self.root = Path(root)
+    def __init__(self, root: str | Path | None = None) -> None:
+        self.root = Path(root) if root is not None else _default_v3_runs_root()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def create_run(self, config: V3TaskConfig) -> V3RunRecord:
@@ -133,3 +134,11 @@ class V3RunStore:
         record.counts = counts
         record.updated_at = utc_now()
         self._write_run(record)
+
+
+def _default_v3_runs_root() -> Path:
+    app_shot_runs = os.environ.get("APP_SHOT_RUNS")
+    if not app_shot_runs:
+        return Path("runs/v3")
+    root = Path(app_shot_runs)
+    return root if root.name.lower() == "v3" else root / "v3"

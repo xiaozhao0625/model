@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, FastAPI, Request
 
 from ai_screenshot_platform.v3.runtime import V3Runtime
-from ai_screenshot_platform.v3.schemas import ModelRequest, V3RunCreateRequest
+from ai_screenshot_platform.v3.schemas import ModelRequest, V3ImageIngestRequest, V3RunCreateRequest
 
 
 def v3_ok(data: object) -> dict[str, object]:
@@ -60,6 +60,10 @@ def create_v3_router() -> APIRouter:
     @router.get("/runs/{run_id}/images")
     def images(run_id: str, request: Request):
         return v3_ok([image.model_dump() for image in get_runtime(request).images(run_id)])
+
+    @router.post("/runs/{run_id}/images/ingest")
+    def ingest_image(run_id: str, payload: V3ImageIngestRequest, request: Request):
+        return v3_ok(get_runtime(request).ingest_image(run_id, payload.image_path).model_dump())
 
     @router.get("/runs/{run_id}/ocr-status")
     def ocr_status(run_id: str, request: Request):

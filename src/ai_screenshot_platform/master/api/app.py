@@ -66,7 +66,7 @@ class MasterServices:
 
 
 def create_app(settings: MasterSettings | None = None) -> FastAPI:
-    settings = settings or MasterSettings()
+    settings = settings or MasterSettings.from_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

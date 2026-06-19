@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.action.action_loop import ActionLoop
 from ai_screenshot_platform.v3.action.candidate_fusion import fuse_candidates
 from ai_screenshot_platform.v3.action.candidate_generator import ocr_candidates
@@ -24,11 +25,17 @@ from ai_screenshot_platform.v3.storage.run_store import V3RunStore
 
 
 class V3Runtime:
-    def __init__(self, store: V3RunStore | None = None, model_registry: UiModelRegistry | None = None) -> None:
+    def __init__(
+        self,
+        store: V3RunStore | None = None,
+        model_registry: UiModelRegistry | None = None,
+        ocr_provider: OcrProvider | None = None,
+    ) -> None:
         self.store = store or V3RunStore()
         self.model_registry = model_registry or UiModelRegistry()
         self.mock_ocr = MockOcrProvider()
         self.paddle_ocr = PaddleOcrProvider()
+        self.ocr_provider = ocr_provider
         self.duplicates = DuplicateFilter()
         self.actions = ActionLoop()
 
@@ -86,15 +93,44 @@ class V3Runtime:
         elif not unique:
             bucket = "rejected"
             reject_reason = "near_duplicate"
+        meta: dict[str, object] = {"capture_source": record.config.capture_source, "quality": quality}
+        if bucket == "pending" and record.config.enable_ocr:
+            ocr_result = self._active_ocr_provider().recognize(str(path))
+            meta["ocr"] = ocr_result.model_dump()
+            if ocr_result.status != "ok":
+                bucket = "manual_review"
+                reject_reason = ocr_result.error or ocr_result.status
+            else:
+                accepted_boxes = [
+                    box
+                    for box in ocr_result.text_boxes
+                    if filter_language(box.text, record.config.target_language).accepted
+                ]
+                if accepted_boxes:
+                    bucket = "accepted"
+                elif record.config.must_have_text and not ocr_result.text_boxes:
+                    bucket = "rejected"
+                    reject_reason = "no_text"
+                elif record.config.must_have_text:
+                    bucket = "rejected"
+                    reject_reason = "wrong_language"
         image = V3ImageRecord(
             image_id=path.stem,
             path=str(path),
             bucket=bucket,  # type: ignore[arg-type]
             sha256=digest,
             reject_reason=reject_reason,
-            meta={"capture_source": record.config.capture_source, "quality": quality},
+            meta=meta,
         )
         return self.store.add_image(run_id, image)
+
+    def _active_ocr_provider(self) -> OcrProvider:
+        if self.ocr_provider is not None:
+            return self.ocr_provider
+        paddle_health = self.paddle_ocr.health()
+        if paddle_health.status == "ready" and paddle_health.enabled:
+            return self.paddle_ocr
+        return self.mock_ocr
 
     def ocr_status(self, run_id: str) -> dict[str, object]:
         return {"run_id": run_id, "providers": [self.mock_ocr.health().model_dump(), self.paddle_ocr.health().model_dump()]}
@@ -108,7 +144,12 @@ class V3Runtime:
         if not images:
             return []
         latest = images[-1]
-        ocr_result = self.mock_ocr.recognize(latest.path)
+        if isinstance(latest.meta.get("ocr"), dict):
+            from ai_screenshot_platform.v3.schemas import OcrResult
+
+            ocr_result = OcrResult.model_validate(latest.meta["ocr"])
+        else:
+            ocr_result = self._active_ocr_provider().recognize(latest.path)
         valid_boxes = [
             box
             for box in ocr_result.text_boxes

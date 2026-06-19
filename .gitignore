@@ -25,6 +25,7 @@
 *.jpeg
 *.webp
 __pycache__/
+*.egg-info/
 .venv/
 node_modules/
 apps/web-console/dist/
@@ -33,3 +34,4 @@ apps/web-console/*.log
 .env.local
 .env.*.local
 apps/web-console/.env.tunnel.local
+/scripts/v3/env/app_shot_env.ps1
