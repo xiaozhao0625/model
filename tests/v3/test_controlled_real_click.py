@@ -34,6 +34,20 @@ class StaticOcrProvider(OcrProvider):
         return OcrResult(provider=self.provider_name, status="ok", text_boxes=self.boxes)
 
 
+class PathAwareOcrProvider(OcrProvider):
+    provider_name = "path_aware"
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(provider=self.provider_name, status="ready", enabled=True)
+
+    def recognize(self, image_path: str) -> OcrResult:
+        if "after_risk" in image_path:
+            boxes = [OcrTextBox(text="Payment", bbox=[20, 10, 80, 30], confidence=0.95)]
+        else:
+            boxes = [OcrTextBox(text="Start", bbox=[20, 10, 40, 30], confidence=0.95)]
+        return OcrResult(provider=self.provider_name, status="ok", text_boxes=boxes)
+
+
 class StaticUiModelProvider(UiModelProvider):
     provider_name = "static_ui_model"
 
@@ -119,6 +133,108 @@ def test_runtime_real_click_uses_safe_ocr_candidate_and_writes_audit(tmp_path):
     assert action_entry["label"] == "Start"
     assert action_entry["before_image"].endswith("english.png")
     assert action_entry["after_image"].endswith("english.png")
+
+
+def test_runtime_records_no_effect_when_after_image_hash_matches(tmp_path):
+    image = tmp_path / "english.png"
+    image.write_bytes(b"same-image")
+    clicks: list[tuple[int, int]] = []
+    runtime = _runtime_with_controlled_clicks(tmp_path, clicks)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    action = runtime.execute_action(run.run_id)[0]
+    effect = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "effect.jsonl")[0]
+
+    assert action["result"]["status"] == "no_effect"
+    assert effect["status"] == "no_effect"
+    assert effect["before_sha256"] == effect["after_sha256"]
+
+
+def test_runtime_records_ui_changed_when_after_image_hash_differs(tmp_path):
+    before = tmp_path / "english.png"
+    after = tmp_path / "after_changed.png"
+    before.write_bytes(b"before-image")
+    after.write_bytes(b"after-image")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Start", bbox=[20, 10, 40, 30], confidence=0.95)]),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    runtime._capture_after_image = lambda run_id, action_index, before_image: str(after)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(before))
+
+    action = runtime.execute_action(run.run_id)[0]
+    effect = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "effect.jsonl")[0]
+
+    assert action["result"]["status"] == "ui_changed"
+    assert effect["status"] == "ui_changed"
+    assert effect["before_sha256"] != effect["after_sha256"]
+
+
+def test_runtime_requests_rollback_when_after_ocr_has_risk_term(tmp_path):
+    before = tmp_path / "english.png"
+    after = tmp_path / "after_risk.png"
+    before.write_bytes(b"before-image")
+    after.write_bytes(b"after-risk-image")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=PathAwareOcrProvider(),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    runtime._capture_after_image = lambda run_id, action_index, before_image: str(after)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(before))
+
+    action = runtime.execute_action(run.run_id)[0]
+    effect = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "effect.jsonl")[0]
+    rollback = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "rollback.jsonl")[0]
+
+    assert action["result"]["status"] == "rollback_requested"
+    assert effect["status"] == "rollback_requested"
+    assert effect["rollback_reason"] == "after_ocr_risk_terms:payment"
+    assert rollback["reason"] == "after_ocr_risk_terms:payment"
+    assert rollback["sequence"][:3] == ["esc", "alt_left", "backspace"]
 
 
 def test_runtime_lists_actions_without_evaluating_or_clicking(tmp_path):

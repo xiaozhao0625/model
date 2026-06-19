@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
+from ai_screenshot_platform.v3.action.rollback import rollback_plan
 from ai_screenshot_platform.v3.action.action_loop import ActionLoop
 from ai_screenshot_platform.v3.action.candidate_fusion import fuse_candidates
 from ai_screenshot_platform.v3.action.candidate_generator import ocr_candidates
+from ai_screenshot_platform.v3.action.safety_gate import risk_terms_in_text
 from ai_screenshot_platform.v3.model.health import build_v3_health
 from ai_screenshot_platform.v3.model.registry import UiModelRegistry
 from ai_screenshot_platform.v3.model.showui_provider import preload_showui_torch_runtime
@@ -215,6 +218,7 @@ class V3Runtime:
             before_image=latest.path,
             action_index=executed_count + 1,
             run_id=run_id,
+            target_language=record.config.target_language,
         )
         self._write_action_audit(run_id, action)
         return [action]
@@ -236,6 +240,7 @@ class V3Runtime:
             before_image=latest.path,
             action_index=executed_count + 1,
             run_id=run_id,
+            target_language=record.config.target_language,
         )
         self._write_action_audit(run_id, action)
         return [action]
@@ -309,11 +314,15 @@ class V3Runtime:
         before_image: str,
         action_index: int,
         run_id: str,
+        target_language: str = "en",
     ) -> dict[str, object]:
         result = dict(action.get("result", {}))
         after_image = self._capture_after_image(run_id, action_index, before_image) if result.get("executed") else before_image
         if result.get("executed"):
-            result["status"] = "no_effect"
+            effect = self._evaluate_click_effect(run_id, before_image, after_image, target_language)
+            result["status"] = effect["status"]
+            if effect.get("rollback_reason"):
+                result["rollback_reason"] = effect["rollback_reason"]
         action["result"] = result
         action["label"] = candidate.label
         action["source_candidate_id"] = _candidate_id(candidate)
@@ -321,6 +330,41 @@ class V3Runtime:
         action["before_image"] = before_image
         action["after_image"] = after_image
         return action
+
+    def _evaluate_click_effect(self, run_id: str, before_image: str, after_image: str, target_language: str) -> dict[str, object]:
+        before_sha = _file_sha256(before_image)
+        after_sha = _file_sha256(after_image)
+        effect: dict[str, object] = {
+            "before_image": before_image,
+            "after_image": after_image,
+            "before_sha256": before_sha,
+            "after_sha256": after_sha,
+            "status": "no_effect" if before_sha == after_sha else "ui_changed",
+        }
+        if before_sha != after_sha:
+            rollback_reason = self._rollback_reason_for_after_image(after_image, target_language)
+            if rollback_reason:
+                effect["status"] = "rollback_requested"
+                effect["rollback_reason"] = rollback_reason
+                self.store.append_meta_jsonl(run_id, "rollback.jsonl", rollback_plan(rollback_reason))
+        self.store.append_meta_jsonl(run_id, "effect.jsonl", effect)
+        return effect
+
+    def _rollback_reason_for_after_image(self, after_image: str, target_language: str) -> str | None:
+        try:
+            ocr_result = self._recognize_for_target(after_image, target_language)
+        except Exception as exc:
+            return f"after_ocr_error:{exc}"
+        if ocr_result.status != "ok":
+            return f"after_ocr_status:{ocr_result.status}"
+        for box in ocr_result.text_boxes:
+            risks = risk_terms_in_text(box.text)
+            if risks:
+                return f"after_ocr_risk_terms:{','.join(risks)}"
+            language = filter_language(box.text, target_language)
+            if not language.accepted and not _is_low_confidence_short_noise(box.text, box.confidence):
+                return f"after_ocr_language:{language.reason}"
+        return None
 
     def _capture_after_image(self, run_id: str, action_index: int, before_image: str) -> str:
         if os.environ.get("APP_SHOT_CAPTURE_AFTER_CLICK", "").strip() != "1":
@@ -386,3 +430,14 @@ def _result_executed(action: dict[str, object]) -> bool:
 def _is_low_confidence_short_noise(text: str, confidence: float) -> bool:
     compact = "".join(text.split())
     return confidence < 0.65 and 0 < len(compact) <= 2
+
+
+def _file_sha256(path: str) -> str | None:
+    image_path = Path(path)
+    if not image_path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with image_path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
