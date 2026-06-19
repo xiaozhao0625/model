@@ -48,4 +48,22 @@ def test_local_html_observe_smoke_is_observe_only():
     assert "execute_action" not in script
     assert "actions/execute" not in script
     assert "--headless" in script
+    assert "app_shot_env.ps1" in script
     assert "APP_SHOT_OBS_OUTPUT" in script
+
+
+def test_local_html_controlled_click_smoke_requires_explicit_arm():
+    script = (REPO_ROOT / "scripts/v3/smoke_v3_local_html_controlled_click.ps1").read_text(encoding="utf-8")
+
+    assert "local_html_controlled_click" in script
+    assert "ExecuteRealClick" in script
+    assert "APP_SHOT_ALLOW_REAL_CLICK" in script
+    assert "APP_SHOT_CAPTURE_AFTER_CLICK" in script
+    assert "observe_only=False" in script
+    assert "enable_auto_click=True" in script
+    assert "max_actions=1" in script
+    assert "execute_action" in script
+    assert "run_folder_watch_once" in script
+    assert "app_shot_env.ps1" in script
+    assert "ImageGrab.grab(bbox=" in script
+    assert "click_backend=offset_click" in script

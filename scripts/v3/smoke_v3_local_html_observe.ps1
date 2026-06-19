@@ -15,6 +15,10 @@ $Python = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
 if (!(Test-Path -LiteralPath $Python)) {
   throw "Python venv not found: $Python"
 }
+$EnvScript = Join-Path $ProjectRoot "scripts\v3\env\app_shot_env.ps1"
+if (Test-Path -LiteralPath $EnvScript) {
+  . $EnvScript
+}
 
 $env:APP_SHOT_HOME = $AppShotHome
 $env:APP_SHOT_PROJECT = $ProjectRoot
@@ -109,6 +113,10 @@ image.save(path)
 
 $env:V3_LOCAL_HTML_USE_MOCK_OCR = if ($UseMockOcr) { "1" } else { "0" }
 Set-Location $ProjectRoot
+$pythonLog = Join-Path $env:APP_SHOT_OBS_OUTPUT "local_html_observe_python.stderr.log"
+$oldErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
 $result = @'
 import json
 import os
@@ -164,10 +172,15 @@ if summary.auto_click_ready:
     raise SystemExit('local HTML observe smoke unexpectedly enabled auto click')
 if actions:
     raise SystemExit('local HTML observe smoke unexpectedly wrote actions')
-'@ | & $Python -
+'@ | & $Python - 2> $pythonLog
+  $pythonExitCode = $LASTEXITCODE
+} finally {
+  $ErrorActionPreference = $oldErrorActionPreference
+}
 
-if ($LASTEXITCODE -ne 0) {
-  throw "local HTML observe smoke failed"
+if ($pythonExitCode -ne 0) {
+  $logTail = if (Test-Path -LiteralPath $pythonLog) { (Get-Content -LiteralPath $pythonLog -Tail 20) -join "`n" } else { "" }
+  throw "local HTML observe smoke failed`n$logTail"
 }
 
 $payload = $result | ConvertFrom-Json
