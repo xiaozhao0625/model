@@ -121,7 +121,11 @@ class V3Runtime:
                     if result.reason in {"wrong_language", "mixed_language"}
                 ]
                 if accepted_boxes:
-                    if rejected_language_results:
+                    if rejected_language_results and not _pc_app_target_language_dominates(
+                        record.config.app_type,
+                        ocr_result.text_boxes,
+                        record.config.target_language,
+                    ):
                         bucket = "rejected"
                         reject_reason = "mixed_language"
                     else:
@@ -177,7 +181,9 @@ class V3Runtime:
         valid_boxes = [
             box
             for box in ocr_result.text_boxes
-            if filter_language(box.text, record.config.target_language).accepted or record.config.app_type == "game"
+            if filter_language(box.text, record.config.target_language).accepted
+            or record.config.app_type == "game"
+            or _is_safe_pc_app_ui_label(record.config.app_type, box.text)
         ]
         ocr_clicks = ocr_candidates(valid_boxes)
         model_request = ModelRequest(
@@ -244,6 +250,10 @@ class V3Runtime:
         )
         self._write_action_audit(run_id, action)
         return [action]
+
+    def record_action_audit(self, run_id: str, action: dict[str, object]) -> dict[str, object]:
+        self._write_action_audit(run_id, action)
+        return action
 
     def _prepare_controlled_action(self, run_id: str):
         record = self.get_run(run_id)
@@ -397,6 +407,30 @@ class V3Runtime:
 
 
 _SAFE_CLICK_LABELS = [
+    "file",
+    "edit",
+    "search",
+    "view",
+    "encoding",
+    "language",
+    "settings",
+    "tools",
+    "macro",
+    "plugins",
+    "window",
+    "help",
+    "文件",
+    "编辑",
+    "搜索",
+    "视图",
+    "编码",
+    "语言",
+    "设置",
+    "工具",
+    "宏",
+    "插件",
+    "窗口",
+    "帮助",
     "start",
     "next",
     "confirm",
@@ -430,6 +464,104 @@ def _result_executed(action: dict[str, object]) -> bool:
 def _is_low_confidence_short_noise(text: str, confidence: float) -> bool:
     compact = "".join(text.split())
     return confidence < 0.65 and 0 < len(compact) <= 2
+
+
+def _pc_app_target_language_dominates(app_type: str, boxes, target_language: str) -> bool:
+    if app_type != "pc_app":
+        return False
+    target_chars = 0
+    other_chars = 0
+    for box in boxes:
+        for char in box.text:
+            script = _script_for_char(char)
+            if script is None:
+                continue
+            if _script_matches_target(script, target_language):
+                target_chars += 1
+            else:
+                other_chars += 1
+    return target_chars >= 20 and target_chars >= other_chars * 3
+
+
+def _is_safe_pc_app_ui_label(app_type: str, text: str) -> bool:
+    if app_type != "pc_app":
+        return False
+    normalized = text.strip().casefold()
+    return normalized in _SAFE_PC_APP_UI_LABELS
+
+
+_SAFE_PC_APP_UI_LABELS = {
+    "file",
+    "edit",
+    "search",
+    "view",
+    "encoding",
+    "language",
+    "settings",
+    "tools",
+    "macro",
+    "plugins",
+    "window",
+    "help",
+    "?",
+    "preferences",
+    "find",
+    "replace",
+    "word wrap",
+    "zoom",
+    "new",
+    "open",
+    "cancel",
+    "back",
+    "ok",
+    "文件",
+    "编辑",
+    "搜索",
+    "视图",
+    "编码",
+    "语言",
+    "设置",
+    "工具",
+    "宏",
+    "插件",
+    "窗口",
+    "帮助",
+    "首选项",
+    "查找",
+    "替换",
+    "自动换行",
+    "缩放",
+    "新建",
+    "打开",
+    "取消",
+    "返回",
+    "确定",
+}
+
+
+def _script_for_char(char: str) -> str | None:
+    code = ord(char)
+    if "a" <= char.lower() <= "z":
+        return "latin"
+    if "\u4e00" <= char <= "\u9fff":
+        return "han"
+    if 0x3040 <= code <= 0x30FF:
+        return "japanese"
+    if 0xAC00 <= code <= 0xD7AF:
+        return "korean"
+    return None
+
+
+def _script_matches_target(script: str, target_language: str) -> bool:
+    if target_language.startswith("en"):
+        return script == "latin"
+    if target_language.startswith("zh"):
+        return script == "han"
+    if target_language.startswith("ja"):
+        return script in {"han", "japanese"}
+    if target_language.startswith("ko"):
+        return script == "korean"
+    return True
 
 
 def _file_sha256(path: str) -> str | None:

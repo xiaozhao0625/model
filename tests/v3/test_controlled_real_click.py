@@ -388,6 +388,34 @@ def test_runtime_does_not_real_click_rejected_images(tmp_path):
     assert clicks == []
 
 
+def test_pc_app_candidates_include_safe_ui_chrome_labels(tmp_path):
+    image = tmp_path / "notepadpp.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="Start", bbox=[20, 100, 80, 130], confidence=0.95),
+                OcrTextBox(text="文件", bbox=[8, 30, 42, 50], confidence=0.92),
+            ]
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    labels = {candidate["label"] for candidate in runtime.candidates(run.run_id)}
+
+    assert "Start" in labels
+    assert "文件" in labels
+
+
 def _runtime_with_controlled_clicks(tmp_path, clicks: list[tuple[int, int]]) -> V3Runtime:
     ocr_provider = StaticOcrProvider(
         [

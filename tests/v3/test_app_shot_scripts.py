@@ -35,6 +35,7 @@ def test_backend_app_shot_script_enables_real_paddleocr():
     text = (REPO_ROOT / "scripts/v3/start_v3_backend_app_shot.ps1").read_text(encoding="utf-8")
 
     assert "APP_SHOT_ENABLE_PADDLEOCR" in text
+    assert "APP_SHOT_ENABLE_SHOWUI" in text
     assert '"1"' in text
 
 

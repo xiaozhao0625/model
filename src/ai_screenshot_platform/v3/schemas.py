@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 RunStatus = Literal["created", "running", "paused", "stopped", "completed", "failed"]
-AppType = Literal["software", "game", "web", "auto"]
+AppType = Literal["software", "pc_app", "game", "web", "auto"]
 CaptureSource = Literal["obs", "folder_watch", "window"]
 SafetyMode = Literal["strict", "review", "off"]
 
@@ -30,7 +30,7 @@ class V3TaskConfig(BaseModel):
     enable_game_explorer: bool = False
     delete_rejected: bool = False
     max_images: int = Field(default=100, ge=1, le=50000)
-    max_actions: int = Field(default=5, ge=1, le=5)
+    max_actions: int = Field(default=5, ge=1, le=20)
     safety_mode: SafetyMode = "strict"
     observe_only: bool = True
     must_have_text: bool = False
@@ -42,6 +42,10 @@ class V3RunCreateRequest(BaseModel):
 
 class V3ImageIngestRequest(BaseModel):
     image_path: str
+
+
+class V3ActionAuditRequest(BaseModel):
+    action: dict[str, object]
 
 
 class V3RunRecord(BaseModel):

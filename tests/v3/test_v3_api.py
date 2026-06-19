@@ -27,6 +27,25 @@ def test_v3_api_accepts_web_app_type(tmp_path):
         assert response.json()["data"]["config"]["app_type"] == "web"
 
 
+def test_v3_api_accepts_pc_app_type_and_twenty_actions(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "app_type": "pc_app",
+                    "max_actions": 20,
+                }
+            },
+        )
+        assert response.status_code == 200
+        config = response.json()["data"]["config"]
+        assert config["app_type"] == "pc_app"
+        assert config["max_actions"] == 20
+
+
 def test_v3_api_ingests_image_into_run(tmp_path):
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     image = tmp_path / "start_button.png"
@@ -120,4 +139,30 @@ def test_v3_api_post_execute_records_action_without_default_real_click(tmp_path)
         assert executed[0]["label"] == "Start"
         assert executed[0]["result"]["executed"] is False
         assert executed[0]["result"]["reason"] == "real_click_disabled_by_default"
+        assert summary["counts"]["actions"] == 1
+
+
+def test_v3_api_records_external_action_audit(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={"config": {"save_root": str(tmp_path / "v3")}},
+        ).json()["data"]
+        action = {
+            "label": "File",
+            "source_candidate_id": "ocr_box:File:1:2:3:4",
+            "before_image": "before.png",
+            "after_image": "after.png",
+            "result": {"executed": True, "status": "menu_opened", "reason": "computer_use_click"},
+            "safety_result": {"allowed": True, "reason": "allowed"},
+        }
+
+        response = client.post(f"/api/v3/runs/{created['run_id']}/actions/record", json={"action": action})
+        listed = client.get(f"/api/v3/runs/{created['run_id']}/actions").json()["data"]
+        summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
+
+        assert response.status_code == 200
+        assert listed[0]["label"] == "File"
+        assert listed[0]["result"]["status"] == "menu_opened"
         assert summary["counts"]["actions"] == 1

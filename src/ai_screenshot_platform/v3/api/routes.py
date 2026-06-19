@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, FastAPI, Request
 
 from ai_screenshot_platform.v3.runtime import V3Runtime
-from ai_screenshot_platform.v3.schemas import ModelRequest, V3ImageIngestRequest, V3RunCreateRequest
+from ai_screenshot_platform.v3.schemas import ModelRequest, V3ActionAuditRequest, V3ImageIngestRequest, V3RunCreateRequest
 
 
 def v3_ok(data: object) -> dict[str, object]:
@@ -88,6 +88,10 @@ def create_v3_router() -> APIRouter:
     @router.post("/runs/{run_id}/actions/execute")
     def execute_action(run_id: str, request: Request):
         return v3_ok(get_runtime(request).execute_action(run_id))
+
+    @router.post("/runs/{run_id}/actions/record")
+    def record_action(run_id: str, payload: V3ActionAuditRequest, request: Request):
+        return v3_ok(get_runtime(request).record_action_audit(run_id, payload.action))
 
     @router.get("/runs/{run_id}/events")
     def events(run_id: str, request: Request):
