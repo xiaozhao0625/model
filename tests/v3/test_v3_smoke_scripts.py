@@ -27,3 +27,12 @@ def test_folder_watch_worker_smoke_runs_worker_once():
     assert "APP_SHOT_OBS_OUTPUT" in script
     assert 'os.environ["APP_SHOT_RUNS"]' not in script
     assert 'app_name="folder_watch_worker_smoke"' not in script
+
+
+def test_model_env_check_defaults_to_app_shot_models():
+    script = (REPO_ROOT / "scripts/v3/model/check_model_env.ps1").read_text(encoding="utf-8")
+
+    assert "APP_SHOT_HOME" in script
+    assert "APP_SHOT_MODELS" in script
+    assert '"D:\\work\\app-shot"' in script
+    assert '[string]$ModelRoot = "models"' not in script
