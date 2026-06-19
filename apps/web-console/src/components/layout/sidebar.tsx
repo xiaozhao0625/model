@@ -1,4 +1,18 @@
-import { Activity, AppWindow, Bot, ClipboardCheck, Gauge, GitBranch, HardDriveUpload, PlaySquare, ScanText, Settings, Stethoscope, Server } from "lucide-react";
+import {
+  Activity,
+  AppWindow,
+  Bot,
+  ClipboardCheck,
+  Gauge,
+  GitBranch,
+  HardDriveUpload,
+  PlaySquare,
+  ScanText,
+  Server,
+  Settings,
+  Stethoscope,
+  Wand2
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const navItems = [
@@ -12,6 +26,7 @@ const navItems = [
   { to: "/ocr-status", label: "OCR 状态", icon: ScanText },
   { to: "/behavior-candidates", label: "行为包候选", icon: GitBranch },
   { to: "/tool-health", label: "工具健康", icon: Stethoscope },
+  { to: "/v3", label: "V3 采集器", icon: Wand2 },
   { to: "/settings", label: "系统设置", icon: Settings }
 ];
 

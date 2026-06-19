@@ -1,0 +1,41 @@
+{
+  "schema_version": "v3.0",
+  "providers": [
+    {
+      "name": "paddleocr",
+      "type": "ocr",
+      "path": "models/paddleocr",
+      "enabled": false,
+      "sha256_required": true,
+      "source": "https://github.com/PaddlePaddle/PaddleOCR",
+      "license_review_required": true
+    },
+    {
+      "name": "fasttext_language",
+      "type": "language",
+      "path": "models/fasttext/lid.176.ftz",
+      "enabled": false,
+      "sha256_required": true,
+      "source": "https://fasttext.cc/docs/en/language-identification.html",
+      "license_review_required": true
+    },
+    {
+      "name": "showui",
+      "type": "ui_model",
+      "path": "models/showui",
+      "enabled": false,
+      "sha256_required": true,
+      "source": "https://huggingface.co/showlab/ShowUI-2B",
+      "license_review_required": true
+    },
+    {
+      "name": "omniparser",
+      "type": "optional_ui_parser",
+      "path": "models/omniparser",
+      "enabled": false,
+      "sha256_required": true,
+      "source": "https://github.com/microsoft/OmniParser",
+      "license_review_required": true
+    }
+  ]
+}

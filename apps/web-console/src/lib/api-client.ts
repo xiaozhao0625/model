@@ -11,6 +11,10 @@ import type {
   SceneClassifyResult,
   ToolHealthRecord,
   UploadRecord,
+  V3Health,
+  V3RunRecord,
+  V3Summary,
+  V3TaskConfig,
   WorkerRecord
 } from "./api-types";
 import {
@@ -57,6 +61,14 @@ export interface ApiClient {
   rejectBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   rollbackBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   getToolHealth(): Promise<ToolHealthRecord>;
+  getV3Health(): Promise<V3Health>;
+  getV3Defaults(): Promise<V3TaskConfig>;
+  listV3Runs(): Promise<V3RunRecord[]>;
+  createV3Run(payload: { config: V3TaskConfig }): Promise<V3RunRecord>;
+  startV3Run(runId: string): Promise<V3RunRecord>;
+  pauseV3Run(runId: string): Promise<V3RunRecord>;
+  stopV3Run(runId: string): Promise<V3RunRecord>;
+  getV3Summary(runId: string): Promise<V3Summary>;
   isUsingMockFallback(): boolean;
 }
 
@@ -205,8 +217,81 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         { method: "POST", body: JSON.stringify({}) }
       ),
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
+    getV3Health: () =>
+      request("/api/v3/health", {
+        status: "degraded",
+        ocr: [],
+        models: [],
+        complete_auto_mode_ready: false,
+        defaults: {
+          app_name: "manual_target",
+          app_type: "auto",
+          target_language: "zh",
+          capture_source: "folder_watch",
+          capture_interval_ms: 1000,
+          save_root: "runs/v3",
+          enable_ocr: true,
+          enable_ui_model: true,
+          enable_auto_click: false,
+          enable_game_explorer: false,
+          delete_rejected: false,
+          max_images: 100,
+          safety_mode: "strict",
+          observe_only: true,
+          must_have_text: false
+        }
+      }),
+    getV3Defaults: () => request("/api/v3/config/defaults", mockV3Defaults()),
+    listV3Runs: () => request("/api/v3/runs", []),
+    createV3Run: (payload) => request("/api/v3/runs", mockV3Run(payload.config), { method: "POST", body: JSON.stringify(payload) }),
+    startV3Run: (runId) => request(`/api/v3/runs/${runId}/start`, mockV3Run(mockV3Defaults(), runId, "running"), { method: "POST" }),
+    pauseV3Run: (runId) => request(`/api/v3/runs/${runId}/pause`, mockV3Run(mockV3Defaults(), runId, "paused"), { method: "POST" }),
+    stopV3Run: (runId) => request(`/api/v3/runs/${runId}/stop`, mockV3Run(mockV3Defaults(), runId, "stopped"), { method: "POST" }),
+    getV3Summary: (runId) =>
+      request(`/api/v3/runs/${runId}/summary`, {
+        run_id: runId,
+        status: "created",
+        counts: {},
+        observe_only: true,
+        auto_click_ready: false,
+        model_ready: false,
+        ocr_ready: true,
+        safety_gate_ready: true
+      }),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }
 
 export const apiClient = createApiClient();
+
+function mockV3Defaults(): V3TaskConfig {
+  return {
+    app_name: "manual_target",
+    app_type: "auto",
+    target_language: "zh",
+    capture_source: "folder_watch",
+    capture_interval_ms: 1000,
+    save_root: "runs/v3",
+    enable_ocr: true,
+    enable_ui_model: true,
+    enable_auto_click: false,
+    enable_game_explorer: false,
+    delete_rejected: false,
+    max_images: 100,
+    safety_mode: "strict",
+    observe_only: true,
+    must_have_text: false
+  };
+}
+
+function mockV3Run(config: V3TaskConfig, runId = "mock_v3_run", status: V3RunRecord["status"] = "created"): V3RunRecord {
+  return {
+    run_id: runId,
+    status,
+    config,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    counts: { pending: 0, accepted: 0, rejected: 0, deleted: 0, manual_review: 0, events: 0, actions: 0 },
+    last_error: null
+  };
+}

@@ -11,6 +11,7 @@ import { RunsRoute } from "./routes/runs";
 import { SettingsRoute } from "./routes/settings";
 import { ToolHealthRoute } from "./routes/tool-health";
 import { UploadRoute } from "./routes/upload";
+import { V3DashboardRoute } from "./routes/v3-dashboard";
 import { WorkersRoute } from "./routes/workers";
 
 export function AppRoutes() {
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route path="/ocr-status" element={<OcrStatusRoute />} />
         <Route path="/behavior-candidates" element={<BehaviorCandidatesRoute />} />
         <Route path="/tool-health" element={<ToolHealthRoute />} />
+        <Route path="/v3" element={<V3DashboardRoute />} />
         <Route path="/settings" element={<SettingsRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

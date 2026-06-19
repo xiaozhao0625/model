@@ -75,6 +75,61 @@ export interface RunLogEntry {
   details: Record<string, unknown>;
 }
 
+export interface V3TaskConfig {
+  app_name: string;
+  app_type: "software" | "game" | "auto";
+  target_language: string;
+  capture_source: "obs" | "folder_watch" | "window";
+  capture_interval_ms: number;
+  save_root: string;
+  enable_ocr: boolean;
+  enable_ui_model: boolean;
+  enable_auto_click: boolean;
+  enable_game_explorer: boolean;
+  delete_rejected: boolean;
+  max_images: number;
+  safety_mode: "strict" | "review" | "off";
+  observe_only: boolean;
+  must_have_text: boolean;
+}
+
+export interface V3ProviderHealth {
+  provider: string;
+  status: "ready" | "degraded" | "unavailable";
+  enabled: boolean;
+  reason?: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface V3Health {
+  status: "ready" | "degraded";
+  ocr: V3ProviderHealth[];
+  models: V3ProviderHealth[];
+  complete_auto_mode_ready: boolean;
+  defaults: V3TaskConfig;
+}
+
+export interface V3RunRecord {
+  run_id: string;
+  status: "created" | "running" | "paused" | "stopped" | "completed" | "failed";
+  config: V3TaskConfig;
+  created_at: string;
+  updated_at: string;
+  counts: Record<string, number>;
+  last_error?: string | null;
+}
+
+export interface V3Summary {
+  run_id: string;
+  status: V3RunRecord["status"];
+  counts: Record<string, number>;
+  observe_only: boolean;
+  auto_click_ready: boolean;
+  model_ready: boolean;
+  ocr_ready: boolean;
+  safety_gate_ready: boolean;
+}
+
 export interface MetaEntry {
   image_id: string;
   bucket: "fixed" | "low" | "high" | "rejected";

@@ -49,6 +49,8 @@ from ai_screenshot_platform.master.services.run_service import RunService
 from ai_screenshot_platform.master.services.serialization import to_api_data
 from ai_screenshot_platform.master.services.upload_service import UploadService
 from ai_screenshot_platform.master.services.worker_service import WorkerService
+from ai_screenshot_platform.v3.api.routes import register_v3_routes
+from ai_screenshot_platform.v3.runtime import V3Runtime
 
 
 @dataclass
@@ -71,6 +73,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         database = MasterDatabase(settings)
         app.state.database = database
         app.state.services = _create_services(settings, database)
+        app.state.v3_runtime = V3Runtime()
         try:
             yield
         finally:
@@ -80,6 +83,7 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.database = None
     app.state.services = None
+    app.state.v3_runtime = None
 
     def get_services() -> MasterServices:
         services = app.state.services
@@ -104,6 +108,8 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
                 "database_backend": settings.database_backend,
             }
         )
+
+    register_v3_routes(app)
 
     @app.post("/api/apps")
     def create_app_record(payload: AppCreateRequest):

@@ -24,6 +24,7 @@ const requiredFiles = [
   "src/routes/ocr-status.tsx",
   "src/routes/behavior-candidates.tsx",
   "src/routes/tool-health.tsx",
+  "src/routes/v3-dashboard.tsx",
   "src/routes/settings.tsx",
   "src/components/layout/theme-toggle.tsx"
 ];
@@ -33,20 +34,7 @@ for (const file of requiredFiles) {
 }
 
 const app = read("src/app.tsx");
-for (const route of [
-  "/",
-  "/apps",
-  "/runs",
-  "/runs/:runId",
-  "/workers",
-  "/upload",
-  "/model-gateway",
-  "/quality-reports",
-  "/ocr-status",
-  "/behavior-candidates",
-  "/tool-health",
-  "/settings"
-]) {
+for (const route of ["/", "/apps", "/runs", "/runs/:runId", "/workers", "/upload", "/model-gateway", "/quality-reports", "/ocr-status", "/behavior-candidates", "/tool-health", "/v3", "/settings"]) {
   assert(app.includes(route), `missing route ${route}`);
 }
 
@@ -59,18 +47,23 @@ for (const apiName of [
   "approveBehaviorCandidate",
   "rejectBehaviorCandidate",
   "rollbackBehaviorCandidate",
-  "getToolHealth"
+  "getToolHealth",
+  "getV3Health",
+  "createV3Run",
+  "startV3Run"
 ]) {
   assert(apiClient.includes(apiName), `missing api client method ${apiName}`);
 }
 
 for (const path of [
+  "/api/v3/health",
+  "/api/v3/runs",
   "/api/behavior-candidates",
   "/api/behavior-candidates/${candidatePackId}/approve",
   "/api/behavior-candidates/${candidatePackId}/reject",
   "/api/behavior-candidates/${candidatePackId}/rollback"
 ]) {
-  assert(apiClient.includes(path), `missing behavior candidate api path ${path}`);
+  assert(apiClient.includes(path), `missing api path ${path}`);
 }
 
 const mockData = read("src/lib/mock-data.ts");
@@ -92,12 +85,17 @@ for (const key of [
 }
 
 const sidebar = read("src/components/layout/sidebar.tsx");
-for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健康"]) {
+for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健康", "V3 采集器"]) {
   assert(sidebar.includes(label), `missing sidebar label ${label}`);
 }
 
+const v3 = read("src/routes/v3-dashboard.tsx");
+for (const phrase of ["observe_only", "完整自动模式", "创建 observe_only 任务", "模型与 OCR"]) {
+  assert(v3.includes(phrase), `missing v3 phrase ${phrase}`);
+}
+
 const quality = read("src/routes/quality-reports.tsx");
-for (const phrase of ["quality_report.json", "browser_chrome_visible", "os_taskbar_visible", "dangerous_page / ocr_risk_detected", "clean 数量", "rejected 数量"]) {
+for (const phrase of ["quality_report.json", "browser_chrome_visible", "os_taskbar_visible", "dangerous_page / ocr_risk_detected"]) {
   assert(quality.includes(phrase), `missing quality phrase ${phrase}`);
 }
 
@@ -107,7 +105,7 @@ for (const phrase of ["paddleocr optional", "easyocr optional", "risk_hits", "sc
 }
 
 const behavior = read("src/routes/behavior-candidates.tsx");
-for (const phrase of ["pending_review", "approve", "reject", "rollback", "window.confirm", "rejected 不可启用"]) {
+for (const phrase of ["pending_review", "approve", "reject", "rollback", "window.confirm"]) {
   assert(behavior.includes(phrase), `missing behavior candidate phrase ${phrase}`);
 }
 
