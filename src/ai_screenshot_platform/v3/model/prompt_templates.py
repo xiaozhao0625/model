@@ -1,2 +1,2 @@
-SHOWUI_RANK_PROMPT = """Identify safe clickable UI regions. Return structured candidates only; never execute actions."""
+SHOWUI_RANK_PROMPT = """Based on the screenshot of the page, I give a text description and you give its corresponding location. The coordinate represents a clickable location [x, y] for an element, which is a relative coordinate on the screenshot, scaled from 0 to 1."""
 SHOWUI_SCENE_PROMPT = """Classify the screenshot as software_ui, game_menu, game_loading, game_in_match, game_unknown, or unsafe_page."""

@@ -8,6 +8,7 @@ from ai_screenshot_platform.v3.action.candidate_fusion import fuse_candidates
 from ai_screenshot_platform.v3.action.candidate_generator import ocr_candidates
 from ai_screenshot_platform.v3.model.health import build_v3_health
 from ai_screenshot_platform.v3.model.registry import UiModelRegistry
+from ai_screenshot_platform.v3.model.showui_provider import preload_showui_torch_runtime
 from ai_screenshot_platform.v3.ocr.language_filter import filter_language
 from ai_screenshot_platform.v3.ocr.mock_provider import MockOcrProvider
 from ai_screenshot_platform.v3.ocr.paddle_provider import PaddleOcrProvider
@@ -34,6 +35,7 @@ class V3Runtime:
         self.store = store or V3RunStore()
         self.model_registry = model_registry or UiModelRegistry()
         self.mock_ocr = MockOcrProvider()
+        preload_showui_torch_runtime()
         self.paddle_ocr = PaddleOcrProvider()
         self.ocr_provider = ocr_provider
         self.duplicates = DuplicateFilter()

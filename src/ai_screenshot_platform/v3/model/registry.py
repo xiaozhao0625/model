@@ -28,9 +28,18 @@ class UiModelRegistry:
 
     def _first_ok(self, method: str, request: ModelRequest) -> ModelResult:
         fallback: ModelResult | None = None
-        for provider in self.providers:
+        for provider in sorted(self.providers, key=_provider_priority):
             result = getattr(provider, method)(request)
             if result.status == "ok":
                 return result
             fallback = result
         return fallback or ModelResult(provider="none", status="unavailable", error="no model provider configured")
+
+
+def _provider_priority(provider: UiModelProvider) -> int:
+    health = provider.health()
+    if provider.provider_name == "mock_ui_model":
+        return 20
+    if health.status == "ready" and health.enabled:
+        return 0
+    return 10
