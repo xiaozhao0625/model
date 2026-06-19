@@ -1,3 +1,6 @@
+import builtins
+from types import SimpleNamespace
+
 from ai_screenshot_platform.v3.ocr.paddle_provider import PaddleOcrProvider
 
 
@@ -123,3 +126,23 @@ def test_paddle_provider_stays_disabled_by_default_when_available():
     assert provider.health().status == "ready"
     assert provider.health().enabled is False
     assert provider.recognize("unused.png").status == "unavailable"
+
+
+def test_paddle_provider_configures_mkldnn_before_import(monkeypatch):
+    captured: dict[str, str | None] = {}
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "paddleocr":
+            import os
+
+            captured["mkldnn"] = os.environ.get("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT")
+            return SimpleNamespace(PaddleOCR=FakePaddleOCR)
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.delenv("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", raising=False)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    PaddleOcrProvider()
+
+    assert captured["mkldnn"] == "False"

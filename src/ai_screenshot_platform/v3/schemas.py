@@ -30,6 +30,7 @@ class V3TaskConfig(BaseModel):
     enable_game_explorer: bool = False
     delete_rejected: bool = False
     max_images: int = Field(default=100, ge=1, le=50000)
+    max_actions: int = Field(default=5, ge=1, le=5)
     safety_mode: SafetyMode = "strict"
     observe_only: bool = True
     must_have_text: bool = False

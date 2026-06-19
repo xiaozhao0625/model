@@ -38,6 +38,13 @@ def test_backend_app_shot_script_enables_real_paddleocr():
     assert '"1"' in text
 
 
+def test_paddleocr_check_uses_project_provider_not_bare_import():
+    text = (REPO_ROOT / "scripts/v3/model/check_paddleocr_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "PaddleOcrProvider" in text
+    assert "import paddleocr" not in text
+
+
 def test_showui_smoke_requires_explicit_enable_flag():
     text = (REPO_ROOT / "scripts/v3/model/smoke_showui_inference_app_shot.ps1").read_text(encoding="utf-8")
 

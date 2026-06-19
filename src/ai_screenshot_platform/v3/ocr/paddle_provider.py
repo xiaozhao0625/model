@@ -22,6 +22,7 @@ class PaddleOcrProvider(OcrProvider):
             return
 
         try:
+            _configure_paddle_cache_env()
             from paddleocr import PaddleOCR  # type: ignore
             self._paddleocr_cls = PaddleOCR
         except Exception as exc:  # Optional runtime dependency.

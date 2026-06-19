@@ -67,7 +67,7 @@ class ShowUiProvider(UiModelProvider):
 
     def _unavailable_result(self) -> ModelResult:
         health = self.health()
-        return ModelResult(provider=self.provider_name, status=health.status, error=health.reason)
+        return ModelResult(provider=self.provider_name, status=_model_status_from_health(health), error=health.reason)
 
 
 class LocalShowUiRunner:
@@ -233,6 +233,10 @@ def _default_showui_dir() -> Path:
 
 def _showui_enabled() -> bool:
     return os.environ.get("APP_SHOT_ENABLE_SHOWUI", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _model_status_from_health(health: ProviderHealth) -> str:
+    return "degraded" if health.status == "ready" else health.status
 
 
 def preload_showui_torch_runtime(importer=importlib.import_module) -> None:

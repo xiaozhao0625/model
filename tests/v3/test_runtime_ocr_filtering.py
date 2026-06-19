@@ -79,3 +79,23 @@ def test_ingest_rejects_mixed_language_text(tmp_path):
 
     assert record.bucket == "rejected"
     assert record.reject_reason == "mixed_language"
+
+
+def test_ingest_ignores_low_confidence_short_language_noise(tmp_path):
+    image = tmp_path / "english_with_noise.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="Start", bbox=[0, 0, 10, 10], confidence=0.99),
+                OcrTextBox(text="Пк", bbox=[20, 0, 30, 10], confidence=0.54),
+            ]
+        ),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "accepted"
+    assert record.reject_reason is None

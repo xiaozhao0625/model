@@ -19,5 +19,7 @@ if (!(Test-Path -LiteralPath $Python)) {
   throw "Python venv not found: $Python"
 }
 
-& $Python -c "import paddle; import paddleocr; print('paddle', paddle.__version__); print('paddleocr ok')"
-& $Python -c "from ai_screenshot_platform.v3.ocr.paddle_provider import PaddleOcrProvider; h=PaddleOcrProvider().health(); print(h.model_dump_json())"
+& $Python -c "from ai_screenshot_platform.v3.ocr.paddle_provider import PaddleOcrProvider; h=PaddleOcrProvider().health(); print(h.model_dump_json()); raise SystemExit(0 if h.status == 'ready' and h.enabled else 1)"
+if ($LASTEXITCODE -ne 0) {
+  throw "PaddleOCR provider check failed"
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
@@ -31,6 +32,7 @@ class V3Runtime:
         store: V3RunStore | None = None,
         model_registry: UiModelRegistry | None = None,
         ocr_provider: OcrProvider | None = None,
+        action_loop: ActionLoop | None = None,
     ) -> None:
         self.store = store or V3RunStore()
         self.model_registry = model_registry or UiModelRegistry()
@@ -39,7 +41,7 @@ class V3Runtime:
         self.paddle_ocr = PaddleOcrProvider()
         self.ocr_provider = ocr_provider
         self.duplicates = DuplicateFilter()
-        self.actions = ActionLoop()
+        self.actions = action_loop or ActionLoop()
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -103,11 +105,16 @@ class V3Runtime:
                 bucket = "manual_review"
                 reject_reason = ocr_result.error or ocr_result.status
             else:
-                language_results = [filter_language(box.text, record.config.target_language) for box in ocr_result.text_boxes]
-                accepted_boxes = [box for box, result in zip(ocr_result.text_boxes, language_results) if result.accepted]
+                language_evaluations = []
+                for box in ocr_result.text_boxes:
+                    result = filter_language(box.text, record.config.target_language)
+                    if not result.accepted and _is_low_confidence_short_noise(box.text, box.confidence):
+                        continue
+                    language_evaluations.append((box, result))
+                accepted_boxes = [box for box, result in language_evaluations if result.accepted]
                 rejected_language_results = [
                     result
-                    for result in language_results
+                    for _, result in language_evaluations
                     if result.reason in {"wrong_language", "mixed_language"}
                 ]
                 if accepted_boxes:
@@ -182,16 +189,50 @@ class V3Runtime:
 
     def actions_for_run(self, run_id: str) -> list[dict[str, object]]:
         record = self.get_run(run_id)
+        images = self.images(run_id)
+        latest = images[-1] if images else None
+        if latest is not None and latest.bucket in {"rejected", "manual_review", "deleted"}:
+            self._append_observation_audit(run_id, [], latest.meta.get("ocr"))
+            result = self._stopped_action(f"image_bucket_{latest.bucket}", latest.path)
+            self._write_action_audit(run_id, result)
+            return [result]
+
         candidates = self.candidates(run_id)
-        if not candidates:
-            return []
         from ai_screenshot_platform.v3.schemas import FusedCandidate
 
-        top = FusedCandidate.model_validate(candidates[0])
-        result = self.actions.observe_or_click(top, observe_only=record.config.observe_only or not record.config.enable_auto_click)
-        self.store.write_artifact(run_id, "actions.json", [result])
-        self.store.append_event(run_id, "action_evaluated", result)
-        return [result]
+        self._append_observation_audit(run_id, candidates, latest.meta.get("ocr") if latest else None)
+        if not candidates or latest is None:
+            result = self._stopped_action("no_candidates", latest.path if latest else None)
+            self._write_action_audit(run_id, result)
+            return [result]
+        executed_count = sum(1 for action in self.store.list_meta_jsonl(run_id, "actions.jsonl") if _result_executed(action))
+        if executed_count >= record.config.max_actions:
+            result = self._stopped_action("max_actions_reached", latest.path)
+            self._write_action_audit(run_id, result)
+            return [result]
+
+        selected = self._select_controlled_candidate(
+            [FusedCandidate.model_validate(candidate) for candidate in candidates],
+            clicked_labels=_clicked_labels(self.store.list_meta_jsonl(run_id, "actions.jsonl")),
+        )
+        if selected is None:
+            result = self._stopped_action("no_safe_ocr_candidate", latest.path)
+            self._write_action_audit(run_id, result)
+            return [result]
+
+        action = self.actions.observe_or_click(
+            selected,
+            observe_only=record.config.observe_only or not record.config.enable_auto_click,
+        )
+        action = self._build_action_audit(
+            action,
+            selected,
+            before_image=latest.path,
+            action_index=executed_count + 1,
+            run_id=run_id,
+        )
+        self._write_action_audit(run_id, action)
+        return [action]
 
     def model_classify_scene(self, request: ModelRequest):
         return self.model_registry.classify_scene(request)
@@ -201,3 +242,115 @@ class V3Runtime:
 
     def model_propose_visual_candidates(self, request: ModelRequest):
         return self.model_registry.propose_visual_candidates(request)
+
+    def _append_observation_audit(self, run_id: str, candidates: list[dict[str, object]], ocr: object | None) -> None:
+        self.store.append_meta_jsonl(run_id, "candidates.jsonl", {"candidates": candidates})
+        if ocr is not None:
+            self.store.append_meta_jsonl(run_id, "ocr.jsonl", ocr)
+
+    def _select_controlled_candidate(
+        self,
+        candidates: list[FusedCandidate],
+        clicked_labels: set[str],
+    ) -> FusedCandidate | None:
+        safe = [
+            candidate
+            for candidate in candidates
+            if not candidate.blocked
+            and not candidate.risk_flags
+            and candidate.risk_penalty <= 0
+            and candidate.label.strip().casefold() not in clicked_labels
+        ]
+        for label in _SAFE_CLICK_LABELS:
+            for candidate in safe:
+                if candidate.source == "ocr_box" and candidate.label.strip().casefold() == label:
+                    return candidate
+        for candidate in safe:
+            if candidate.source == "ocr_box":
+                return candidate
+        return None
+
+    def _build_action_audit(
+        self,
+        action: dict[str, object],
+        candidate: FusedCandidate,
+        before_image: str,
+        action_index: int,
+        run_id: str,
+    ) -> dict[str, object]:
+        result = dict(action.get("result", {}))
+        after_image = self._capture_after_image(run_id, action_index, before_image) if result.get("executed") else before_image
+        if result.get("executed"):
+            result["status"] = "no_effect"
+        action["result"] = result
+        action["label"] = candidate.label
+        action["source_candidate_id"] = _candidate_id(candidate)
+        action["safety_result"] = action.get("decision", {})
+        action["before_image"] = before_image
+        action["after_image"] = after_image
+        return action
+
+    def _capture_after_image(self, run_id: str, action_index: int, before_image: str) -> str:
+        if os.environ.get("APP_SHOT_CAPTURE_AFTER_CLICK", "").strip() != "1":
+            return before_image
+        try:
+            from PIL import ImageGrab
+
+            path = self.store.write_artifact(run_id, f"meta/after_{action_index}.png", "")
+            path.unlink(missing_ok=True)
+            ImageGrab.grab().save(path)
+            return str(path)
+        except Exception:
+            return before_image
+
+    def _stopped_action(self, reason: str, image_path: str | None) -> dict[str, object]:
+        return {
+            "decision": {"allowed": False, "reason": reason},
+            "result": {"executed": False, "reason": reason, "status": "stopped"},
+            "source_candidate_id": None,
+            "safety_result": {"allowed": False, "reason": reason},
+            "before_image": image_path,
+            "after_image": image_path,
+        }
+
+    def _write_action_audit(self, run_id: str, action: dict[str, object]) -> None:
+        self.store.write_artifact(run_id, "actions.json", [action])
+        self.store.append_meta_jsonl(run_id, "actions.jsonl", action)
+        self.store.append_meta_jsonl(run_id, "events.jsonl", {"event": "action_evaluated", "details": action})
+        self.store.append_event(run_id, "action_evaluated", action)
+
+
+_SAFE_CLICK_LABELS = [
+    "start",
+    "next",
+    "confirm",
+    "settings",
+    "back",
+    "cancel",
+    "open project",
+    "view report",
+    "help center",
+]
+
+
+def _candidate_id(candidate: FusedCandidate) -> str:
+    bbox = ":".join(str(item) for item in candidate.bbox)
+    return f"{candidate.source}:{candidate.label}:{bbox}"
+
+
+def _clicked_labels(actions: list[dict[str, object]]) -> set[str]:
+    return {
+        str(action.get("label", "")).strip().casefold()
+        for action in actions
+        if _result_executed(action) and action.get("label")
+    }
+
+
+def _result_executed(action: dict[str, object]) -> bool:
+    result = action.get("result", {})
+    return isinstance(result, dict) and result.get("executed") is True
+
+
+def _is_low_confidence_short_noise(text: str, confidence: float) -> bool:
+    compact = "".join(text.split())
+    return confidence < 0.65 and 0 < len(compact) <= 2

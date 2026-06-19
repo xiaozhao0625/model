@@ -3,6 +3,7 @@ from pathlib import Path
 from PIL import Image
 
 from ai_screenshot_platform.v3.model import showui_provider
+from ai_screenshot_platform.v3.model.omniparser_provider import OmniParserProvider
 from ai_screenshot_platform.v3.model.prompt_templates import SHOWUI_RANK_PROMPT
 from ai_screenshot_platform.v3.model.registry import UiModelRegistry
 from ai_screenshot_platform.v3.model.showui_provider import ShowUiProvider
@@ -82,3 +83,18 @@ def test_registry_prefers_ready_showui_over_mock(tmp_path: Path):
     assert result.status == "ok"
     assert result.provider == "showui"
     assert result.candidates[0].source == "showui"
+
+
+def test_showui_unimplemented_methods_return_model_status(tmp_path: Path):
+    provider = ShowUiProvider(model_dir=str(tmp_path), enabled=True)
+
+    result = provider.classify_scene(ModelRequest(screenshot_path="mock.png"))
+
+    assert result.status == "degraded"
+    assert result.error == "enabled"
+
+
+def test_omniparser_blocked_status_maps_to_model_status():
+    result = OmniParserProvider(license_accepted=True).classify_scene(ModelRequest(screenshot_path="mock.png"))
+
+    assert result.status == "degraded"

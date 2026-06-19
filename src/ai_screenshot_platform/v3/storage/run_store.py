@@ -83,6 +83,21 @@ class V3RunStore:
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
+    def append_meta_jsonl(self, run_id: str, name: str, payload: object) -> Path:
+        path = self._run_dir(run_id) / "meta" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        if name == "actions.jsonl":
+            self._increment(run_id, "actions")
+        return path
+
+    def list_meta_jsonl(self, run_id: str, name: str) -> list[dict[str, object]]:
+        path = self._run_dir(run_id) / "meta" / name
+        if not path.is_file():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
     def summary(self, run_id: str, ocr_ready: bool, model_ready: bool, safety_gate_ready: bool) -> V3Summary:
         record = self.get_run(run_id)
         events = self.list_events(run_id)
