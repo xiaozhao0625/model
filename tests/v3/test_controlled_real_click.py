@@ -121,6 +121,57 @@ def test_runtime_real_click_uses_safe_ocr_candidate_and_writes_audit(tmp_path):
     assert action_entry["after_image"].endswith("english.png")
 
 
+def test_runtime_lists_actions_without_evaluating_or_clicking(tmp_path):
+    image = tmp_path / "english.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = _runtime_with_controlled_clicks(tmp_path, clicks)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    actions = runtime.list_actions(run.run_id)
+
+    assert actions == []
+    assert clicks == []
+    assert not (tmp_path / "runs" / run.run_id / "meta" / "actions.jsonl").exists()
+
+
+def test_runtime_evaluates_action_without_clicking(tmp_path):
+    image = tmp_path / "english.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = _runtime_with_controlled_clicks(tmp_path, clicks)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    actions = runtime.evaluate_action(run.run_id)
+
+    assert actions[0]["label"] == "Start"
+    assert actions[0]["result"]["executed"] is False
+    assert actions[0]["result"]["status"] == "evaluated"
+    assert actions[0]["result"]["reason"] == "evaluation_only"
+    assert clicks == []
+    assert runtime.list_actions(run.run_id)[0]["result"]["status"] == "evaluated"
+
+
 def test_runtime_stops_after_max_actions(tmp_path):
     image = tmp_path / "english.png"
     image.write_bytes(b"not-empty")

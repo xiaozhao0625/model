@@ -50,3 +50,74 @@ def test_v3_api_ingests_image_into_run(tmp_path):
 
         assert ingested["path"] == str(image)
         assert ingested["bucket"] == "accepted"
+
+
+def test_v3_api_get_actions_is_read_only(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={"config": {"save_root": str(tmp_path / "v3")}},
+        ).json()["data"]
+
+        actions = client.get(f"/api/v3/runs/{created['run_id']}/actions").json()["data"]
+        summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
+
+        assert actions == []
+        assert summary["counts"]["actions"] == 0
+
+
+def test_v3_api_post_evaluate_records_non_executed_action(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image = tmp_path / "start_button.png"
+    image.write_bytes(b"not-empty")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "target_language": "en",
+                    "must_have_text": True,
+                    "enable_auto_click": True,
+                    "observe_only": False,
+                }
+            },
+        ).json()["data"]
+        client.post(f"/api/v3/runs/{created['run_id']}/images/ingest", json={"image_path": str(image)})
+
+        evaluated = client.post(f"/api/v3/runs/{created['run_id']}/actions/evaluate").json()["data"]
+        listed = client.get(f"/api/v3/runs/{created['run_id']}/actions").json()["data"]
+
+        assert evaluated[0]["label"] == "Start"
+        assert evaluated[0]["result"]["executed"] is False
+        assert evaluated[0]["result"]["status"] == "evaluated"
+        assert listed[0]["result"]["status"] == "evaluated"
+
+
+def test_v3_api_post_execute_records_action_without_default_real_click(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image = tmp_path / "start_button.png"
+    image.write_bytes(b"not-empty")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "target_language": "en",
+                    "must_have_text": True,
+                    "enable_auto_click": True,
+                    "observe_only": False,
+                }
+            },
+        ).json()["data"]
+        client.post(f"/api/v3/runs/{created['run_id']}/images/ingest", json={"image_path": str(image)})
+
+        executed = client.post(f"/api/v3/runs/{created['run_id']}/actions/execute").json()["data"]
+        summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
+
+        assert executed[0]["label"] == "Start"
+        assert executed[0]["result"]["executed"] is False
+        assert executed[0]["result"]["reason"] == "real_click_disabled_by_default"
+        assert summary["counts"]["actions"] == 1

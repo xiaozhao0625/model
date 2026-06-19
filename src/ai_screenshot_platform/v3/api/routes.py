@@ -79,7 +79,15 @@ def create_v3_router() -> APIRouter:
 
     @router.get("/runs/{run_id}/actions")
     def actions(run_id: str, request: Request):
-        return v3_ok(get_runtime(request).actions_for_run(run_id))
+        return v3_ok(get_runtime(request).list_actions(run_id))
+
+    @router.post("/runs/{run_id}/actions/evaluate")
+    def evaluate_action(run_id: str, request: Request):
+        return v3_ok(get_runtime(request).evaluate_action(run_id))
+
+    @router.post("/runs/{run_id}/actions/execute")
+    def execute_action(run_id: str, request: Request):
+        return v3_ok(get_runtime(request).execute_action(run_id))
 
     @router.get("/runs/{run_id}/events")
     def events(run_id: str, request: Request):

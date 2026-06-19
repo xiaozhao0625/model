@@ -188,38 +188,44 @@ class V3Runtime:
         return [item.model_dump() for item in fused]
 
     def actions_for_run(self, run_id: str) -> list[dict[str, object]]:
-        record = self.get_run(run_id)
-        images = self.images(run_id)
-        latest = images[-1] if images else None
-        if latest is not None and latest.bucket in {"rejected", "manual_review", "deleted"}:
-            self._append_observation_audit(run_id, [], latest.meta.get("ocr"))
-            result = self._stopped_action(f"image_bucket_{latest.bucket}", latest.path)
-            self._write_action_audit(run_id, result)
-            return [result]
+        return self.execute_action(run_id)
 
-        candidates = self.candidates(run_id)
-        from ai_screenshot_platform.v3.schemas import FusedCandidate
+    def list_actions(self, run_id: str) -> list[dict[str, object]]:
+        return self.store.list_meta_jsonl(run_id, "actions.jsonl")
 
-        self._append_observation_audit(run_id, candidates, latest.meta.get("ocr") if latest else None)
-        if not candidates or latest is None:
-            result = self._stopped_action("no_candidates", latest.path if latest else None)
-            self._write_action_audit(run_id, result)
-            return [result]
-        executed_count = sum(1 for action in self.store.list_meta_jsonl(run_id, "actions.jsonl") if _result_executed(action))
-        if executed_count >= record.config.max_actions:
-            result = self._stopped_action("max_actions_reached", latest.path)
-            self._write_action_audit(run_id, result)
-            return [result]
+    def evaluate_action(self, run_id: str) -> list[dict[str, object]]:
+        prepared = self._prepare_controlled_action(run_id)
+        if isinstance(prepared, dict):
+            self._write_action_audit(run_id, prepared)
+            return [prepared]
 
-        selected = self._select_controlled_candidate(
-            [FusedCandidate.model_validate(candidate) for candidate in candidates],
-            clicked_labels=_clicked_labels(self.store.list_meta_jsonl(run_id, "actions.jsonl")),
+        record, latest, selected, executed_count = prepared
+        decision = self.actions.safety_gate.evaluate(
+            "click",
+            candidate=selected,
+            observe_only=record.config.observe_only or not record.config.enable_auto_click,
         )
-        if selected is None:
-            result = self._stopped_action("no_safe_ocr_candidate", latest.path)
-            self._write_action_audit(run_id, result)
-            return [result]
+        action = {
+            "decision": decision.model_dump(),
+            "result": {"executed": False, "reason": "evaluation_only", "status": "evaluated"},
+        }
+        action = self._build_action_audit(
+            action,
+            selected,
+            before_image=latest.path,
+            action_index=executed_count + 1,
+            run_id=run_id,
+        )
+        self._write_action_audit(run_id, action)
+        return [action]
 
+    def execute_action(self, run_id: str) -> list[dict[str, object]]:
+        prepared = self._prepare_controlled_action(run_id)
+        if isinstance(prepared, dict):
+            self._write_action_audit(run_id, prepared)
+            return [prepared]
+
+        record, latest, selected, executed_count = prepared
         action = self.actions.observe_or_click(
             selected,
             observe_only=record.config.observe_only or not record.config.enable_auto_click,
@@ -233,6 +239,32 @@ class V3Runtime:
         )
         self._write_action_audit(run_id, action)
         return [action]
+
+    def _prepare_controlled_action(self, run_id: str):
+        record = self.get_run(run_id)
+        images = self.images(run_id)
+        latest = images[-1] if images else None
+        if latest is not None and latest.bucket in {"rejected", "manual_review", "deleted"}:
+            self._append_observation_audit(run_id, [], latest.meta.get("ocr"))
+            return self._stopped_action(f"image_bucket_{latest.bucket}", latest.path)
+
+        candidates = self.candidates(run_id)
+        from ai_screenshot_platform.v3.schemas import FusedCandidate
+
+        self._append_observation_audit(run_id, candidates, latest.meta.get("ocr") if latest else None)
+        if not candidates or latest is None:
+            return self._stopped_action("no_candidates", latest.path if latest else None)
+        executed_count = sum(1 for action in self.store.list_meta_jsonl(run_id, "actions.jsonl") if _result_executed(action))
+        if executed_count >= record.config.max_actions:
+            return self._stopped_action("max_actions_reached", latest.path)
+
+        selected = self._select_controlled_candidate(
+            [FusedCandidate.model_validate(candidate) for candidate in candidates],
+            clicked_labels=_clicked_labels(self.store.list_meta_jsonl(run_id, "actions.jsonl")),
+        )
+        if selected is None:
+            return self._stopped_action("no_safe_ocr_candidate", latest.path)
+        return record, latest, selected, executed_count
 
     def model_classify_scene(self, request: ModelRequest):
         return self.model_registry.classify_scene(request)
