@@ -29,6 +29,17 @@ def test_folder_watch_worker_smoke_runs_worker_once():
     assert 'app_name="folder_watch_worker_smoke"' not in script
 
 
+def test_folder_watch_loop_smoke_runs_long_worker():
+    script = (REPO_ROOT / "scripts/v3/smoke_v3_folder_watch_loop.ps1").read_text(encoding="utf-8")
+
+    assert "run_folder_watch_loop" in script
+    assert "DurationSeconds = 600" in script
+    assert "MaxIterations" in script
+    assert "folder_watch_summary.json" in script
+    assert "observe_only=True" in script
+    assert "enable_auto_click=False" in script
+
+
 def test_model_env_check_defaults_to_app_shot_models():
     script = (REPO_ROOT / "scripts/v3/model/check_model_env.ps1").read_text(encoding="utf-8")
 

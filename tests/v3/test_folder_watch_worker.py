@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ai_screenshot_platform.v3.capture.folder_watch_worker import run_folder_watch_once
+from ai_screenshot_platform.v3.capture.folder_watch_worker import run_folder_watch_loop, run_folder_watch_once
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.runtime import V3Runtime
 from ai_screenshot_platform.v3.schemas import OcrResult, OcrTextBox, ProviderHealth, V3TaskConfig
@@ -68,3 +68,52 @@ def test_folder_watch_worker_keeps_going_after_ingest_failure(tmp_path):
     assert stats["failures"][0]["image"].endswith("bad.png")
     assert second["discovered"] == 0
     assert len(runtime.images(run.run_id)) == 1
+
+
+def test_folder_watch_loop_accumulates_iterations_and_summary(tmp_path):
+    folder = tmp_path / "watch"
+    folder.mkdir()
+    image = folder / "first.png"
+    image.write_bytes(b"first")
+    runtime = V3Runtime(store=V3RunStore(tmp_path / "runs"), ocr_provider=StaticOcrProvider())
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    stats = run_folder_watch_loop(
+        runtime,
+        run.run_id,
+        folder,
+        poll_interval_seconds=0,
+        max_iterations=2,
+    )
+
+    assert stats["iterations"] == 2
+    assert stats["discovered"] == 1
+    assert stats["processed"] == 1
+    assert stats["failed"] == 0
+    assert stats["stopped_reason"] == "max_iterations"
+    assert (tmp_path / "runs" / run.run_id / "meta" / "folder_watch_summary.json").is_file()
+
+
+def test_folder_watch_loop_retries_failures_before_quarantine(tmp_path):
+    folder = tmp_path / "watch"
+    folder.mkdir()
+    bad = folder / "bad.png"
+    bad.write_bytes(b"bad")
+    runtime = FailingRuntime(store=V3RunStore(tmp_path / "runs"), ocr_provider=StaticOcrProvider())
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    stats = run_folder_watch_loop(
+        runtime,
+        run.run_id,
+        folder,
+        poll_interval_seconds=0,
+        max_iterations=2,
+        max_retries=1,
+    )
+
+    assert stats["iterations"] == 2
+    assert stats["discovered"] == 2
+    assert stats["processed"] == 0
+    assert stats["failed"] == 2
+    assert stats["quarantined"] == 1
+    assert stats["seen"] == 1
