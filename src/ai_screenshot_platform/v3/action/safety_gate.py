@@ -63,9 +63,20 @@ class SafetyGate:
         if observe_only and action == "click":
             return ActionDecision(action="click", allowed=False, reason="observe_only_blocks_click", candidate=candidate)
         if candidate:
+            if candidate.candidate_region_type == "content_area":
+                candidate.blocked = True
+                candidate.block_reason = "content_area_not_clickable"
+                candidate.blocked_reason = "content_area_not_clickable"
+                return ActionDecision(action="click", allowed=False, reason="content_area_not_clickable", candidate=candidate)
+            if candidate.candidate_region_type == "unsafe_chrome":
+                candidate.blocked = True
+                candidate.block_reason = "unsafe_chrome"
+                candidate.blocked_reason = "unsafe_chrome"
+                return ActionDecision(action="click", allowed=False, reason="unsafe_chrome", candidate=candidate)
             risks = set(candidate.risk_flags) | set(risk_terms_in_text(candidate.label))
             if risks:
                 candidate.blocked = True
                 candidate.block_reason = f"risk_terms:{','.join(sorted(risks))}"
+                candidate.blocked_reason = candidate.block_reason
                 return ActionDecision(action="click", allowed=False, reason=candidate.block_reason, candidate=candidate)
         return ActionDecision(action=action, allowed=True, reason="allowed", candidate=candidate)

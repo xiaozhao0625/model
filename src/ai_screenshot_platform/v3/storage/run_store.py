@@ -126,7 +126,11 @@ class V3RunStore:
         accepted_by_ui_state_hint = _count_meta_values(accepted_images, "ui_state_hint", "unknown")
         failed = _folder_watch_metric(self._run_dir(run_id), "failed", 0)
         quarantined = _folder_watch_metric(self._run_dir(run_id), "quarantined", 0)
+        action_state_count = _folder_watch_metric(self._run_dir(run_id), "action_state_count", 0)
+        frame_pump_restart_count = _folder_watch_metric(self._run_dir(run_id), "frame_pump_restart_count", 0)
+        frame_pump_heartbeat = _folder_watch_object(self._run_dir(run_id), "frame_pump_heartbeat")
         action_status_counts = _count_action_statuses(actions)
+        region_counts = _count_action_regions(actions)
         auto_ready = (
             ocr_ready
             and model_ready
@@ -145,7 +149,14 @@ class V3RunStore:
             rejected=sum(1 for image in images if image.bucket == "rejected"),
             failed=failed,
             quarantined=quarantined,
+            manual_review_count=sum(1 for image in images if image.bucket == "manual_review"),
+            action_state_count=action_state_count,
             near_duplicate_count=sum(1 for image in images if image.reject_reason == "near_duplicate"),
+            frame_pump_restart_count=frame_pump_restart_count,
+            frame_pump_heartbeat=frame_pump_heartbeat,
+            content_area_blocked_count=region_counts["content_area_blocked"],
+            ui_chrome_click_count=region_counts["ui_chrome_click"],
+            unsafe_chrome_blocked_count=region_counts["unsafe_chrome_blocked"],
             reject_reason_distribution=_count_reject_reasons(images),
             accepted_by_capture_reason=accepted_by_capture_reason,
             accepted_by_ui_state_hint=accepted_by_ui_state_hint,
@@ -247,6 +258,18 @@ def _folder_watch_metric(run_dir: Path, key: str, default: int) -> int:
     return value if isinstance(value, int) else default
 
 
+def _folder_watch_object(run_dir: Path, key: str) -> dict[str, object]:
+    path = run_dir / "meta" / "folder_watch_summary.json"
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    value = payload.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
 def _count_action_statuses(actions: list[dict[str, object]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for action in actions:
@@ -256,6 +279,28 @@ def _count_action_statuses(actions: list[dict[str, object]]) -> dict[str, int]:
         status = result.get("status")
         if isinstance(status, str):
             counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _count_action_regions(actions: list[dict[str, object]]) -> dict[str, int]:
+    counts = {
+        "content_area_blocked": 0,
+        "ui_chrome_click": 0,
+        "unsafe_chrome_blocked": 0,
+    }
+    for action in actions:
+        region = action.get("candidate_region_type")
+        result = action.get("result", {})
+        if not isinstance(result, dict):
+            result = {}
+        executed = result.get("executed") is True
+        reason = str(result.get("reason") or action.get("blocked_reason") or "")
+        if region == "content_area" and (not executed or reason == "content_area_not_clickable"):
+            counts["content_area_blocked"] += 1
+        elif region == "ui_chrome" and executed:
+            counts["ui_chrome_click"] += 1
+        elif region == "unsafe_chrome" and (not executed or reason == "unsafe_chrome"):
+            counts["unsafe_chrome_blocked"] += 1
     return counts
 
 

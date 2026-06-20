@@ -66,6 +66,15 @@ def test_preload_showui_torch_runtime_only_runs_when_enabled(monkeypatch):
     assert imported == ["torch"]
 
 
+def test_preload_showui_torch_runtime_degrades_when_torch_missing(monkeypatch):
+    def missing_torch(name: str):
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setenv("APP_SHOT_ENABLE_SHOWUI", "1")
+
+    showui_provider.preload_showui_torch_runtime(importer=missing_torch)
+
+
 def test_registry_prefers_ready_showui_over_mock(tmp_path: Path):
     image_path = tmp_path / "screen.png"
     Image.new("RGB", (200, 100), "white").save(image_path)

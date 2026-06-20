@@ -20,6 +20,14 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/model/smoke_showui_inference_app_shot.ps1",
         "scripts/v3/action/diagnose_input_gateway_app_shot.ps1",
         "scripts/v3/action/smoke_input_gateway_app_shot.ps1",
+        "scripts/v3/power/save_power_policy_app_shot.ps1",
+        "scripts/v3/power/prevent_sleep_for_capture_app_shot.ps1",
+        "scripts/v3/power/restore_power_policy_app_shot.ps1",
+        "scripts/v3/power/smoke_power_policy_app_shot.ps1",
+        "scripts/v3/capture/run_sumatrapdf_real_capture_app_shot.ps1",
+        "scripts/v3/capture/start_sumatrapdf_frame_pump_app_shot.ps1",
+        "scripts/v3/capture/stop_sumatrapdf_frame_pump_app_shot.ps1",
+        "scripts/v3/capture/smoke_sumatrapdf_frame_pump_app_shot.ps1",
     ]
 
     for script in expected:
@@ -123,3 +131,89 @@ def test_input_gateway_smoke_requires_audited_backend_and_no_sendkeys():
     assert "actions.jsonl" in text
     assert "risk button" in text
     assert "SendKeys" not in text
+
+
+def test_power_policy_scripts_save_prevent_restore_structured_json():
+    save = (REPO_ROOT / "scripts/v3/power/save_power_policy_app_shot.ps1").read_text(encoding="utf-8")
+    prevent = (REPO_ROOT / "scripts/v3/power/prevent_sleep_for_capture_app_shot.ps1").read_text(encoding="utf-8")
+    restore = (REPO_ROOT / "scripts/v3/power/restore_power_policy_app_shot.ps1").read_text(encoding="utf-8")
+    smoke = (REPO_ROOT / "scripts/v3/power/smoke_power_policy_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "power_policy_before_capture.json" in save
+    assert "power_policy_capture_active.json" in prevent
+    assert "power_policy_restored.json" in restore
+    assert "ConvertTo-Json" in save
+    assert "monitor-timeout-ac" in prevent
+    assert "monitor-timeout-dc" in prevent
+    assert "standby-timeout-ac" in prevent
+    assert "standby-timeout-dc" in prevent
+    assert "hibernate-timeout-ac" in prevent
+    assert "hibernate-timeout-dc" in prevent
+    assert "finally" in smoke
+    assert "restore_power_policy_app_shot.ps1" in smoke
+    assert "SendKeys" not in save + prevent + restore + smoke
+
+
+def test_sumatrapdf_real_capture_script_wraps_power_policy_and_audited_input():
+    text = (REPO_ROOT / "scripts/v3/capture/run_sumatrapdf_real_capture_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "save_power_policy_app_shot.ps1" in text
+    assert "prevent_sleep_for_capture_app_shot.ps1" in text
+    assert "restore_power_policy_app_shot.ps1" in text
+    assert "finally" in text
+    assert "diagnose_input_gateway_app_shot.ps1" in text
+    assert "APP_SHOT_ALLOW_REAL_CLICK" in text
+    assert "sumatrapdf_real_auto_explore_sample" in text
+    assert "max_actions=20" in text
+    assert "target_accepted_min=50" in text
+    assert "SendKeys" not in text
+
+
+def test_sumatrapdf_frame_pump_scripts_have_heartbeat_and_atomic_sidecars():
+    start = (REPO_ROOT / "scripts/v3/capture/start_sumatrapdf_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    stop = (REPO_ROOT / "scripts/v3/capture/stop_sumatrapdf_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    smoke = (REPO_ROOT / "scripts/v3/capture/smoke_sumatrapdf_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    runner_text = start + stop + smoke
+
+    assert "frame_pump_heartbeat.json" in runner_text
+    assert "sumatrapdf_frame_pump.pid" in runner_text
+    assert "window_title" in start
+    assert "frame_path" in start
+    assert "capture_reason" in start
+    assert "action_id" in start
+    assert "ui_state_hint" in start
+    assert "frame_index" in start
+    assert ".tmp" in start
+    assert "Replace" in start or "replace" in start
+    assert "window_occluded_or_minimized" in start
+    assert "MinFrames" in smoke
+    assert "SendKeys" not in runner_text
+
+
+def test_sumatrapdf_real_capture_script_restarts_stale_frame_pump():
+    text = (REPO_ROOT / "scripts/v3/capture/run_sumatrapdf_real_capture_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "start_sumatrapdf_frame_pump_app_shot.ps1" in text
+    assert "stop_sumatrapdf_frame_pump_app_shot.ps1" in text
+    assert "frame_pump_restart_count" in text
+    assert "frame_pump_heartbeat" in text
+    assert "stale" in text
+
+
+def test_sumatrapdf_real_capture_script_forces_english_ui_and_tracks_action_attempts():
+    text = (REPO_ROOT / "scripts/v3/capture/run_sumatrapdf_real_capture_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "SumatraPDF-settings.txt" in text
+    assert "UiLanguage = en" in text
+    assert "ShowMenubar = true" in text
+    assert "action_attempts" in text
+    assert "summary.accepted > 0" in text
+
+
+def test_notepadplusplus_frame_pump_smoke_starts_missing_target_window():
+    text = (REPO_ROOT / "scripts/v3/capture/smoke_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "notepad++.exe" in text
+    assert "Start-Process" in text
+    assert "started_by_smoke" in text
+    assert "CloseMainWindow" in text

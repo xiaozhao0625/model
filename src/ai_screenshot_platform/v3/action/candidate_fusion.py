@@ -18,6 +18,7 @@ def fuse_candidates(
         history_score = history_scores.get(candidate.label, 0.0)
         risks = [*risk_terms_in_text(candidate.label), *_action_risk_terms_in_label(candidate.label)]
         risk_penalty = 1.0 if risks or candidate.risk_flags else 0.0
+        block_reason = "risk_terms" if risk_penalty > 0 else None
         score = 0.35 * ocr_score + 0.45 * model_score + 0.10 * layout_score + 0.10 * history_score - risk_penalty
         fused = FusedCandidate(
             **candidate.model_dump(),
@@ -28,7 +29,8 @@ def fuse_candidates(
             history_score=history_score,
             risk_penalty=risk_penalty,
             blocked=risk_penalty > 0,
-            block_reason="risk_terms" if risk_penalty > 0 else None,
+            block_reason=block_reason,
+            blocked_reason=block_reason,
         )
         merged.append(fused)
     return sorted(merged, key=lambda item: item.final_score, reverse=True)

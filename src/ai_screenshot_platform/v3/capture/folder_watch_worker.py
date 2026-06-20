@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -22,7 +23,14 @@ def run_folder_watch_once(
         image_key = str(image.resolve())
         started = time.perf_counter()
         try:
-            runtime.ingest_image(run_id, str(image))
+            metadata = _image_sidecar_metadata(image)
+            runtime.ingest_image(
+                run_id,
+                str(image),
+                capture_reason=metadata["capture_reason"],
+                action_id=metadata["action_id"],
+                ui_state_hint=metadata["ui_state_hint"],
+            )
             processed += 1
         except Exception as exc:
             failures.append({"image": str(image), "error": str(exc)})
@@ -81,7 +89,14 @@ def run_folder_watch_loop(
             attempts[image_key] = attempt
             started_ingest = time.perf_counter()
             try:
-                runtime.ingest_image(run_id, str(image))
+                metadata = _image_sidecar_metadata(image)
+                runtime.ingest_image(
+                    run_id,
+                    str(image),
+                    capture_reason=metadata["capture_reason"],
+                    action_id=metadata["action_id"],
+                    ui_state_hint=metadata["ui_state_hint"],
+                )
                 processed += 1
                 seen.add(image_key)
                 attempts.pop(image_key, None)
@@ -130,6 +145,40 @@ def run_folder_watch_loop(
     )
     runtime.store.write_artifact(run_id, "meta/folder_watch_summary.json", stats)
     return stats
+
+
+def _image_sidecar_metadata(image: Path) -> dict[str, str | None]:
+    defaults: dict[str, str | None] = {
+        "capture_reason": "periodic",
+        "action_id": None,
+        "ui_state_hint": "unknown",
+    }
+    sidecar = image.with_suffix(".json")
+    if not sidecar.is_file():
+        return defaults
+    payload: object = {}
+    deadline = time.monotonic() + 0.75
+    while True:
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+            break
+        except OSError:
+            if time.monotonic() >= deadline:
+                return defaults
+        except json.JSONDecodeError:
+            if time.monotonic() >= deadline:
+                return defaults
+        time.sleep(0.05)
+    if not isinstance(payload, dict):
+        return defaults
+    capture_reason = payload.get("capture_reason") or defaults["capture_reason"]
+    action_id = payload.get("action_id")
+    ui_state_hint = payload.get("ui_state_hint") or defaults["ui_state_hint"]
+    return {
+        "capture_reason": str(capture_reason),
+        "action_id": str(action_id) if action_id is not None else None,
+        "ui_state_hint": str(ui_state_hint),
+    }
 
 
 def _loop_stats(

@@ -241,4 +241,7 @@ def _model_status_from_health(health: ProviderHealth) -> str:
 
 def preload_showui_torch_runtime(importer=importlib.import_module) -> None:
     if _showui_enabled():
-        importer("torch")
+        try:
+            importer("torch")
+        except ModuleNotFoundError:
+            return

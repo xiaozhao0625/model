@@ -1,3 +1,5 @@
+import threading
+import time
 from pathlib import Path
 
 from ai_screenshot_platform.v3.capture.folder_watch_worker import run_folder_watch_loop, run_folder_watch_once
@@ -22,10 +24,10 @@ class StaticOcrProvider(OcrProvider):
 
 
 class FailingRuntime(V3Runtime):
-    def ingest_image(self, run_id: str, image_path: str):
+    def ingest_image(self, run_id: str, image_path: str, **kwargs):
         if "bad" in image_path:
             raise RuntimeError("boom")
-        return super().ingest_image(run_id, image_path)
+        return super().ingest_image(run_id, image_path, **kwargs)
 
 
 def test_folder_watch_worker_processes_images_and_writes_summary(tmp_path):
@@ -46,6 +48,67 @@ def test_folder_watch_worker_processes_images_and_writes_summary(tmp_path):
     assert stats["avg_ingest_ms"] >= 0
     assert len(runtime.images(run.run_id)) == 2
     assert (tmp_path / "runs" / run.run_id / "meta" / "folder_watch_summary.json").is_file()
+
+
+def test_folder_watch_worker_applies_frame_sidecar_metadata(tmp_path):
+    folder = tmp_path / "watch"
+    folder.mkdir()
+    image = folder / "frame.png"
+    image.write_bytes(b"not-empty")
+    image.with_suffix(".json").write_text(
+        '{"capture_reason":"after_action","action_id":"action:file","ui_state_hint":"menu_file"}',
+        encoding="utf-8",
+    )
+    runtime = V3Runtime(store=V3RunStore(tmp_path / "runs"))
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+
+    run_folder_watch_once(runtime, run.run_id, folder)
+
+    record = runtime.images(run.run_id)[0]
+    assert record.meta["capture_reason"] == "after_action"
+    assert record.meta["action_id"] == "action:file"
+    assert record.meta["ui_state_hint"] == "menu_file"
+
+
+def test_folder_watch_worker_waits_for_partially_written_sidecar(tmp_path):
+    folder = tmp_path / "watch"
+    folder.mkdir()
+    image = folder / "frame.png"
+    image.write_bytes(b"not-empty")
+    sidecar = image.with_suffix(".json")
+    sidecar.write_text('{"capture_reason":', encoding="utf-8")
+
+    def finish_sidecar() -> None:
+        time.sleep(0.1)
+        sidecar.write_text(
+            '{"capture_reason":"after_action","action_id":"action:view","ui_state_hint":"menu_view"}',
+            encoding="utf-8",
+        )
+
+    writer = threading.Thread(target=finish_sidecar)
+    writer.start()
+    runtime = V3Runtime(store=V3RunStore(tmp_path / "runs"))
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+
+    run_folder_watch_once(runtime, run.run_id, folder)
+    writer.join(timeout=1)
+
+    record = runtime.images(run.run_id)[0]
+    assert record.meta["capture_reason"] == "after_action"
+    assert record.meta["action_id"] == "action:view"
+    assert record.meta["ui_state_hint"] == "menu_view"
 
 
 def test_folder_watch_worker_keeps_going_after_ingest_failure(tmp_path):

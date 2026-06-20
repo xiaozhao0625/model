@@ -19,6 +19,7 @@ CaptureReason = Literal[
     "menu_state",
     "dialog_state",
 ]
+CandidateRegionType = Literal["unknown", "content_area", "ui_chrome", "unsafe_chrome"]
 UiStateHint = Literal[
     "editor",
     "main_view",
@@ -140,6 +141,8 @@ class ModelClickCandidate(BaseModel):
     confidence: float
     reason: str
     risk_flags: list[str] = Field(default_factory=list)
+    candidate_region_type: CandidateRegionType = "unknown"
+    candidate_source: str | None = None
 
 
 class SceneClassification(BaseModel):
@@ -173,6 +176,7 @@ class FusedCandidate(ModelClickCandidate):
     risk_penalty: float = 0.0
     blocked: bool = False
     block_reason: str | None = None
+    blocked_reason: str | None = None
 
 
 class ActionDecision(BaseModel):
@@ -197,7 +201,14 @@ class V3Summary(BaseModel):
     rejected: int = 0
     failed: int = 0
     quarantined: int = 0
+    manual_review_count: int = 0
+    action_state_count: int = 0
     near_duplicate_count: int = 0
+    frame_pump_restart_count: int = 0
+    frame_pump_heartbeat: dict[str, object] = Field(default_factory=dict)
+    content_area_blocked_count: int = 0
+    ui_chrome_click_count: int = 0
+    unsafe_chrome_blocked_count: int = 0
     reject_reason_distribution: dict[str, int] = Field(default_factory=dict)
     accepted_by_capture_reason: dict[str, int] = Field(default_factory=dict)
     accepted_by_ui_state_hint: dict[str, int] = Field(default_factory=dict)

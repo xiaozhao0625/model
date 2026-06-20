@@ -263,13 +263,15 @@ class V3Runtime:
         images = self.images(run_id)
         if not images:
             return []
-        latest = images[-1]
-        if isinstance(latest.meta.get("ocr"), dict):
+        return self._candidates_for_image(run_id, record, images[-1])
+
+    def _candidates_for_image(self, run_id: str, record: V3RunRecord, image: V3ImageRecord) -> list[dict[str, object]]:
+        if isinstance(image.meta.get("ocr"), dict):
             from ai_screenshot_platform.v3.schemas import OcrResult
 
-            ocr_result = OcrResult.model_validate(latest.meta["ocr"])
+            ocr_result = OcrResult.model_validate(image.meta["ocr"])
         else:
-            ocr_result = self._active_ocr_provider().recognize(latest.path)
+            ocr_result = self._active_ocr_provider().recognize(image.path)
         valid_boxes = [
             box
             for box in ocr_result.text_boxes
@@ -280,12 +282,13 @@ class V3Runtime:
         valid_boxes.extend(_split_safe_pc_app_menu_boxes(record.config.app_type, ocr_result.text_boxes))
         ocr_clicks = ocr_candidates(valid_boxes)
         model_request = ModelRequest(
-            screenshot_path=latest.path,
+            screenshot_path=image.path,
             task_context=record.config.model_dump(),
             ocr_boxes=valid_boxes,
         )
         model_result = self.model_registry.rank_click_candidates(model_request)
         fused = fuse_candidates(ocr_clicks, model_result.candidates)
+        fused = [_classify_candidate_region(item, record.config.app_type) for item in fused]
         self.store.write_artifact(run_id, "candidates.json", [item.model_dump() for item in fused])
         return [item.model_dump() for item in fused]
 
@@ -352,27 +355,39 @@ class V3Runtime:
         record = self.get_run(run_id)
         images = self.images(run_id)
         latest = images[-1] if images else None
-        if latest is not None and latest.bucket in {"rejected", "manual_review", "deleted"}:
+        action_image = _latest_accepted_image(images)
+        if action_image is None and latest is not None and latest.bucket in {"rejected", "manual_review", "deleted"}:
             self._append_observation_audit(run_id, [], latest.meta.get("ocr"))
             return self._stopped_action(f"image_bucket_{latest.bucket}", latest.path)
+        action_image = action_image or latest
 
-        candidates = self.candidates(run_id)
+        candidates = self._candidates_for_image(run_id, record, action_image) if action_image is not None else []
         from ai_screenshot_platform.v3.schemas import FusedCandidate
 
-        self._append_observation_audit(run_id, candidates, latest.meta.get("ocr") if latest else None)
-        if not candidates or latest is None:
-            return self._stopped_action("no_candidates", latest.path if latest else None)
+        self._append_observation_audit(run_id, candidates, action_image.meta.get("ocr") if action_image else None)
+        if not candidates or action_image is None:
+            return self._stopped_action("no_candidates", action_image.path if action_image else None)
         executed_count = sum(1 for action in self.store.list_meta_jsonl(run_id, "actions.jsonl") if _result_executed(action))
         if executed_count >= record.config.max_actions:
-            return self._stopped_action("max_actions_reached", latest.path)
+            return self._stopped_action("max_actions_reached", action_image.path)
 
         selected = self._select_controlled_candidate(
             [FusedCandidate.model_validate(candidate) for candidate in candidates],
             clicked_labels=_clicked_labels(self.store.list_meta_jsonl(run_id, "actions.jsonl")),
+            app_type=record.config.app_type,
         )
         if selected is None:
-            return self._stopped_action("no_safe_ocr_candidate", latest.path)
-        return record, latest, selected, executed_count
+            region_block = _first_region_blocked_candidate([FusedCandidate.model_validate(candidate) for candidate in candidates])
+            if region_block is not None:
+                reason = region_block.blocked_reason or region_block.block_reason or "candidate_region_blocked"
+                return self._stopped_action(
+                    reason,
+                    action_image.path,
+                    candidate_region_type=region_block.candidate_region_type,
+                    blocked_reason=reason,
+                )
+            return self._stopped_action("no_safe_ocr_candidate", action_image.path)
+        return record, action_image, selected, executed_count
 
     def model_classify_scene(self, request: ModelRequest):
         return self.model_registry.classify_scene(request)
@@ -384,7 +399,7 @@ class V3Runtime:
         return self.model_registry.propose_visual_candidates(request)
 
     def _append_observation_audit(self, run_id: str, candidates: list[dict[str, object]], ocr: object | None) -> None:
-        self.store.append_meta_jsonl(run_id, "candidates.jsonl", {"candidates": candidates})
+        self.store.append_meta_jsonl(run_id, "candidates.jsonl", {"candidates": [_candidate_audit_payload(candidate) for candidate in candidates]})
         if ocr is not None:
             self.store.append_meta_jsonl(run_id, "ocr.jsonl", ocr)
 
@@ -392,6 +407,7 @@ class V3Runtime:
         self,
         candidates: list[FusedCandidate],
         clicked_labels: set[str],
+        app_type: str = "auto",
     ) -> FusedCandidate | None:
         safe = [
             candidate
@@ -399,9 +415,12 @@ class V3Runtime:
             if not candidate.blocked
             and not candidate.risk_flags
             and candidate.risk_penalty <= 0
+            and (app_type != "pc_app" or candidate.candidate_region_type == "ui_chrome")
             and candidate.label.strip().casefold() not in clicked_labels
+            and _candidate_inside_action_area(candidate, app_type)
         ]
-        for label in _SAFE_CLICK_LABELS:
+        priority_labels = _SAFE_CLICK_LABELS if app_type == "pc_app" else _GENERIC_SAFE_CLICK_LABELS
+        for label in priority_labels:
             for candidate in safe:
                 if candidate.source == "ocr_box" and candidate.label.strip().casefold() == label:
                     return candidate
@@ -424,12 +443,20 @@ class V3Runtime:
         if result.get("executed"):
             effect = self._evaluate_click_effect(run_id, before_image, after_image, target_language)
             result["status"] = effect["status"]
+            if (
+                result["status"] == "ui_changed"
+                and self.get_run(run_id).config.app_type == "pc_app"
+                and _is_menu_candidate_label(candidate.label)
+            ):
+                result["status"] = "menu_opened"
             if effect.get("rollback_reason"):
                 result["rollback_reason"] = effect["rollback_reason"]
         action["result"] = result
         action["label"] = candidate.label
         action["source_candidate_id"] = _candidate_id(candidate)
         action["safety_result"] = action.get("decision", {})
+        action["candidate_region_type"] = candidate.candidate_region_type
+        action["blocked_reason"] = candidate.blocked_reason or candidate.block_reason or result.get("reason")
         action["before_image"] = before_image
         action["after_image"] = after_image
         action["click_backend"] = result.get("click_backend")
@@ -466,6 +493,8 @@ class V3Runtime:
             if risks:
                 return f"after_ocr_risk_terms:{','.join(risks)}"
             language = filter_language(box.text, target_language)
+            if language.reason == "too_few_chars":
+                continue
             if not language.accepted and not _is_low_confidence_short_noise(box.text, box.confidence):
                 return f"after_ocr_language:{language.reason}"
         return None
@@ -483,12 +512,20 @@ class V3Runtime:
         except Exception:
             return before_image
 
-    def _stopped_action(self, reason: str, image_path: str | None) -> dict[str, object]:
+    def _stopped_action(
+        self,
+        reason: str,
+        image_path: str | None,
+        candidate_region_type: str | None = None,
+        blocked_reason: str | None = None,
+    ) -> dict[str, object]:
         return {
             "decision": {"allowed": False, "reason": reason},
             "result": {"executed": False, "reason": reason, "status": "stopped"},
             "source_candidate_id": None,
             "safety_result": {"allowed": False, "reason": reason},
+            "candidate_region_type": candidate_region_type,
+            "blocked_reason": blocked_reason or reason,
             "before_image": image_path,
             "after_image": image_path,
         }
@@ -518,6 +555,21 @@ _SAFE_CLICK_LABELS = [
     "window",
     "help",
     "about",
+    "find",
+    "aa",
+    "page",
+    "previous",
+    "prev",
+    "next page",
+    "next",
+    "page",
+    "zoom",
+    "fit page",
+    "fit width",
+    "single page",
+    "continuous",
+    "bookmarks",
+    "aa",
     "文件",
     "编辑",
     "搜索",
@@ -542,9 +594,32 @@ _SAFE_CLICK_LABELS = [
 ]
 
 
+_GENERIC_SAFE_CLICK_LABELS = [
+    "start",
+    "next",
+    "continue",
+    "confirm",
+    "ok",
+    "back",
+    "cancel",
+    "open project",
+    "view report",
+    "help center",
+]
+
+
 def _candidate_id(candidate: FusedCandidate) -> str:
     bbox = ":".join(str(item) for item in candidate.bbox)
     return f"{candidate.source}:{candidate.label}:{bbox}"
+
+
+def _candidate_audit_payload(candidate: dict[str, object]) -> dict[str, object]:
+    payload = dict(candidate)
+    payload.setdefault("candidate_source", payload.get("source"))
+    payload.setdefault("text", payload.get("label"))
+    payload.setdefault("score", payload.get("final_score", payload.get("confidence")))
+    payload.setdefault("blocked_reason", payload.get("blocked_reason") or payload.get("block_reason"))
+    return payload
 
 
 def _clicked_labels(actions: list[dict[str, object]]) -> set[str]:
@@ -553,6 +628,21 @@ def _clicked_labels(actions: list[dict[str, object]]) -> set[str]:
         for action in actions
         if _result_executed(action) and action.get("label")
     }
+
+
+def _latest_accepted_image(images: list[V3ImageRecord]) -> V3ImageRecord | None:
+    for image in reversed(images):
+        if image.bucket == "accepted":
+            return image
+    return None
+
+
+def _first_region_blocked_candidate(candidates: list[FusedCandidate]) -> FusedCandidate | None:
+    for region in ("content_area", "unsafe_chrome"):
+        for candidate in candidates:
+            if candidate.candidate_region_type == region and candidate.blocked:
+                return candidate
+    return None
 
 
 def _result_executed(action: dict[str, object]) -> bool:
@@ -603,6 +693,8 @@ def _split_safe_pc_app_menu_boxes(app_type: str, boxes) -> list:
         if len(text) < 4:
             continue
         x1, y1, x2, y2 = box.bbox
+        if y2 > 120:
+            continue
         width = max(1, x2 - x1)
         text_len = max(1, len(text))
         for label in _SAFE_PC_APP_UI_LABELS:
@@ -629,6 +721,139 @@ def _split_safe_pc_app_menu_boxes(app_type: str, boxes) -> list:
     return split_boxes
 
 
+def _is_menu_candidate_label(label: str) -> bool:
+    normalized = label.strip().casefold()
+    return normalized in {
+        "file",
+        "edit",
+        "search",
+        "view",
+        "go to",
+        "goto",
+        "zoom",
+        "favorites",
+        "settings",
+        "help",
+        "about",
+        "文件",
+        "编辑",
+        "搜索",
+        "视图",
+        "设置",
+        "帮助",
+    }
+
+
+def _candidate_inside_action_area(candidate: FusedCandidate, app_type: str) -> bool:
+    if app_type != "pc_app":
+        return True
+    return candidate.click_y >= 28
+
+
+def _classify_candidate_region(candidate: FusedCandidate, app_type: str) -> FusedCandidate:
+    candidate.candidate_source = candidate.source
+    if app_type != "pc_app":
+        candidate.candidate_region_type = "unknown"
+        return candidate
+    label = candidate.label.strip()
+    normalized = label.casefold().strip(" :：\t\r\n")
+    x1, y1, x2, y2 = candidate.bbox
+    if _is_unsafe_pc_app_label(normalized) or y1 < 28:
+        candidate.candidate_region_type = "unsafe_chrome"
+        candidate.blocked = True
+        candidate.block_reason = "unsafe_chrome"
+        candidate.blocked_reason = "unsafe_chrome"
+        candidate.risk_penalty = max(candidate.risk_penalty, 1.0)
+        return candidate
+    if _is_sumatra_ui_chrome_label(normalized) or y2 <= 95:
+        candidate.candidate_region_type = "ui_chrome"
+        return candidate
+    if _looks_like_document_body_text(label, candidate.bbox):
+        candidate.candidate_region_type = "content_area"
+        candidate.blocked = True
+        candidate.block_reason = "content_area_not_clickable"
+        candidate.blocked_reason = "content_area_not_clickable"
+        return candidate
+    candidate.candidate_region_type = "content_area"
+    candidate.blocked = True
+    candidate.block_reason = "content_area_not_clickable"
+    candidate.blocked_reason = "content_area_not_clickable"
+    return candidate
+
+
+def _is_sumatra_ui_chrome_label(normalized: str) -> bool:
+    return normalized in _SUMATRA_UI_CHROME_LABELS
+
+
+def _is_unsafe_pc_app_label(normalized: str) -> bool:
+    return normalized in _UNSAFE_PC_APP_LABELS or any(term in normalized for term in _UNSAFE_PC_APP_LABEL_TERMS)
+
+
+def _looks_like_document_body_text(text: str, bbox: list[int]) -> bool:
+    compact = " ".join(text.split())
+    if len(compact) >= 24:
+        return True
+    x1, y1, x2, y2 = bbox
+    return y1 >= 120 and (x2 - x1) >= 120
+
+
+_SUMATRA_UI_CHROME_LABELS = {
+    "file",
+    "view",
+    "go to",
+    "goto",
+    "zoom",
+    "favorites",
+    "settings",
+    "help",
+    "search",
+    "find",
+    "page",
+    "page:",
+    "fit page",
+    "fit width",
+    "single page",
+    "continuous",
+    "bookmarks",
+    "previous",
+    "next",
+    "prev",
+    "zoom in",
+    "zoom out",
+    "aa",
+    "ok",
+    "cancel",
+    "close",
+    "about",
+    "options",
+    "preferences",
+    "?",
+}
+
+
+_UNSAFE_PC_APP_LABELS = {
+    "print",
+    "save as",
+    "exit",
+    "quit",
+    "open",
+    "open file",
+    "plugins admin",
+    "minimize",
+    "maximize",
+    "close window",
+}
+
+
+_UNSAFE_PC_APP_LABEL_TERMS = {
+    "http://",
+    "https://",
+    "www.",
+    ".com",
+    "@",
+}
+
+
 _SAFE_PC_APP_UI_LABELS = {
     "file",
     "edit",
@@ -652,6 +877,11 @@ _SAFE_PC_APP_UI_LABELS = {
     "single page",
     "continuous",
     "bookmarks",
+    "aa",
+    "page",
+    "previous",
+    "prev",
+    "next page",
     "?",
     "preferences",
     "find",

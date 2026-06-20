@@ -48,6 +48,20 @@ class PathAwareOcrProvider(OcrProvider):
         return OcrResult(provider=self.provider_name, status="ok", text_boxes=boxes)
 
 
+class SparseAfterOcrProvider(OcrProvider):
+    provider_name = "sparse_after"
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(provider=self.provider_name, status="ready", enabled=True)
+
+    def recognize(self, image_path: str) -> OcrResult:
+        if "after_sparse" in image_path:
+            boxes = [OcrTextBox(text="A", bbox=[20, 10, 30, 30], confidence=0.95)]
+        else:
+            boxes = [OcrTextBox(text="Start", bbox=[20, 10, 40, 30], confidence=0.95)]
+        return OcrResult(provider=self.provider_name, status="ok", text_boxes=boxes)
+
+
 class StaticUiModelProvider(UiModelProvider):
     provider_name = "static_ui_model"
 
@@ -199,6 +213,41 @@ def test_runtime_records_ui_changed_when_after_image_hash_differs(tmp_path):
     assert effect["before_sha256"] != effect["after_sha256"]
 
 
+def test_runtime_marks_safe_menu_click_ui_change_as_menu_opened(tmp_path):
+    before = tmp_path / "english.png"
+    after = tmp_path / "after_menu.png"
+    before.write_bytes(b"before-image")
+    after.write_bytes(b"after-menu-image")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="File", bbox=[20, 30, 40, 50], confidence=0.95)]),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    runtime._capture_after_image = lambda run_id, action_index, before_image: str(after)
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(before))
+
+    action = runtime.execute_action(run.run_id)[0]
+
+    assert action["result"]["status"] == "menu_opened"
+
+
 def test_runtime_requests_rollback_when_after_ocr_has_risk_term(tmp_path):
     before = tmp_path / "english.png"
     after = tmp_path / "after_risk.png"
@@ -237,6 +286,44 @@ def test_runtime_requests_rollback_when_after_ocr_has_risk_term(tmp_path):
     assert effect["rollback_reason"] == "after_ocr_risk_terms:payment"
     assert rollback["reason"] == "after_ocr_risk_terms:payment"
     assert rollback["sequence"][:3] == ["esc", "alt_left", "backspace"]
+
+
+def test_runtime_does_not_rollback_after_action_only_for_sparse_ocr_text(tmp_path):
+    before = tmp_path / "english.png"
+    after = tmp_path / "after_sparse.png"
+    before.write_bytes(b"before-image")
+    after.write_bytes(b"after-sparse-image")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=SparseAfterOcrProvider(),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    runtime._capture_after_image = lambda run_id, action_index, before_image: str(after)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(before))
+
+    action = runtime.execute_action(run.run_id)[0]
+    effect = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "effect.jsonl")[0]
+
+    assert action["result"]["status"] == "ui_changed"
+    assert effect["status"] == "ui_changed"
+    assert "rollback_reason" not in effect
+    assert not (tmp_path / "runs" / run.run_id / "meta" / "rollback.jsonl").exists()
 
 
 def test_runtime_lists_actions_without_evaluating_or_clicking(tmp_path):
@@ -390,6 +477,157 @@ def test_runtime_does_not_real_click_rejected_images(tmp_path):
     assert clicks == []
 
 
+def test_runtime_uses_latest_accepted_image_when_newest_frame_is_near_duplicate(tmp_path):
+    accepted = tmp_path / "accepted.png"
+    duplicate = tmp_path / "duplicate.png"
+    accepted.write_bytes(b"same-frame")
+    duplicate.write_bytes(b"same-frame")
+    clicks: list[tuple[int, int]] = []
+    runtime = _runtime_with_controlled_clicks(tmp_path, clicks)
+    run = runtime.create_run(
+        V3TaskConfig(
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    first = runtime.ingest_image(run.run_id, str(accepted))
+    newest = runtime.ingest_image(run.run_id, str(duplicate))
+
+    actions = runtime.actions_for_run(run.run_id)
+
+    assert first.bucket == "accepted"
+    assert newest.bucket == "rejected"
+    assert newest.reject_reason == "near_duplicate"
+    assert actions[0]["result"]["executed"] is True
+    assert actions[0]["before_image"].endswith("accepted.png")
+    assert actions[0]["result"]["reason"] != "image_bucket_rejected"
+    assert clicks == [(30, 20)]
+
+
+def test_pc_app_action_selection_skips_top_tab_and_uses_safe_toolbar_label(tmp_path):
+    image = tmp_path / "sumatra_toolbar.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="Home", bbox=[52, 15, 96, 36], confidence=0.95),
+                OcrTextBox(text="Find:", bbox=[372, 42, 443, 63], confidence=0.95),
+            ]
+        ),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                target_client_rect=(0, 28, 1200, 900),
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    action = runtime.actions_for_run(run.run_id)[0]
+
+    assert action["label"] == "find"
+    assert action["result"]["executed"] is True
+    assert clicks == [(400, 52)]
+
+
+def test_pc_app_document_body_candidate_is_content_area_and_not_clickable(tmp_path):
+    image = tmp_path / "sumatra_body.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(
+                    text="Sample paragraph 12: OCR should detect stable English text and menu states.",
+                    bbox=[248, 485, 915, 505],
+                    confidence=0.99,
+                )
+            ]
+        ),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                target_client_rect=(0, 28, 1200, 900),
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    candidates = runtime.candidates(run.run_id)
+    action = runtime.actions_for_run(run.run_id)[0]
+    audited_candidates = _read_jsonl(tmp_path / "runs" / run.run_id / "meta" / "candidates.jsonl")[-1]["candidates"]
+
+    assert record.bucket == "accepted"
+    assert candidates[0]["candidate_region_type"] == "content_area"
+    assert candidates[0]["blocked"] is True
+    assert candidates[0]["block_reason"] == "content_area_not_clickable"
+    assert "ocr_box" in audited_candidates[0]["candidate_source"]
+    assert audited_candidates[0]["text"].startswith("Sample paragraph")
+    assert audited_candidates[0]["score"] == candidates[0]["final_score"]
+    assert audited_candidates[0]["blocked_reason"] == "content_area_not_clickable"
+    assert action["result"]["executed"] is False
+    assert action["result"]["reason"] == "content_area_not_clickable"
+    assert action["candidate_region_type"] == "content_area"
+    assert action["blocked_reason"] == "content_area_not_clickable"
+    assert clicks == []
+
+
+def test_pc_app_unsafe_chrome_candidate_is_blocked_and_audited(tmp_path):
+    image = tmp_path / "sumatra_print.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Print", bbox=[10, 42, 48, 64], confidence=0.95)]),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    candidates = runtime.candidates(run.run_id)
+
+    print_candidate = next(candidate for candidate in candidates if candidate["label"] == "Print")
+    assert print_candidate["candidate_region_type"] == "unsafe_chrome"
+    assert print_candidate["blocked"] is True
+    assert print_candidate["block_reason"] == "unsafe_chrome"
+
+
 def test_pc_app_candidates_include_safe_ui_chrome_labels(tmp_path):
     image = tmp_path / "notepadpp.png"
     image.write_bytes(b"not-empty")
@@ -443,6 +681,43 @@ def test_pc_app_candidates_split_combined_safe_menu_bar_text(tmp_path):
     labels = {candidate["label"] for candidate in runtime.candidates(run.run_id)}
 
     assert {"文件", "编辑", "搜索", "视图"}.issubset(labels)
+
+
+def test_pc_app_candidates_do_not_split_document_body_menu_words(tmp_path):
+    image = tmp_path / "sumatra_body.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(
+                    text="Safe menus for exploration: File, View, Go To, Zoom",
+                    bbox=[343, 179, 851, 193],
+                    confidence=0.99,
+                ),
+                OcrTextBox(text="V3 SumatraPDF English OCR Sample", bbox=[342, 112, 677, 132], confidence=0.99),
+            ]
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    labels = {candidate["label"] for candidate in runtime.candidates(run.run_id)}
+
+    assert "file" not in labels
+    assert "view" not in labels
+    assert "go to" not in labels
+    assert "zoom" not in labels
+    body_candidate = next(candidate for candidate in runtime.candidates(run.run_id) if candidate["label"].startswith("Safe menus"))
+    assert body_candidate["candidate_region_type"] == "content_area"
+    assert body_candidate["blocked"] is True
 
 
 def _runtime_with_controlled_clicks(tmp_path, clicks: list[tuple[int, int]]) -> V3Runtime:
