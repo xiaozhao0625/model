@@ -90,8 +90,14 @@ def test_notepadplusplus_frame_pump_scripts_capture_window_bbox():
     smoke_text = smoke_script.read_text(encoding="utf-8")
 
     assert "ImageGrab.grab(bbox=" in start_text
+    assert "ImageGrab.grab(window=hwnd)" in start_text
     assert "GetWindowRect" in start_text
     assert "notepadplusplus_frame_pump.pid" in start_text
+    assert "notepadplusplus_frame_pump_capture.json" in start_text
+    assert "capture_reason" in start_text
+    assert "action_id" in start_text
+    assert "ui_state_hint" in start_text
+    assert ".with_suffix(\".json\")" in start_text
     assert 'strftime("%Y%m%d_%H%M%S")' in start_text
     assert "frame_{stamp}_" in start_text
     assert "Stop-Process" in stop_text

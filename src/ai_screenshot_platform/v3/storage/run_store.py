@@ -101,6 +101,14 @@ class V3RunStore:
     def summary(self, run_id: str, ocr_ready: bool, model_ready: bool, safety_gate_ready: bool) -> V3Summary:
         record = self.get_run(run_id)
         events = self.list_events(run_id)
+        images = self.list_images(run_id)
+        actions = self.list_meta_jsonl(run_id, "actions.jsonl")
+        accepted_images = [image for image in images if image.bucket == "accepted"]
+        accepted_by_capture_reason = _count_meta_values(accepted_images, "capture_reason", "periodic")
+        accepted_by_ui_state_hint = _count_meta_values(accepted_images, "ui_state_hint", "unknown")
+        failed = _folder_watch_metric(self._run_dir(run_id), "failed", 0)
+        quarantined = _folder_watch_metric(self._run_dir(run_id), "quarantined", 0)
+        action_status_counts = _count_action_statuses(actions)
         auto_ready = (
             ocr_ready
             and model_ready
@@ -112,6 +120,22 @@ class V3RunStore:
             run_id=run_id,
             status=record.status,
             counts=record.counts,
+            processed=len(images),
+            accepted=sum(1 for image in images if image.bucket == "accepted"),
+            rejected=sum(1 for image in images if image.bucket == "rejected"),
+            failed=failed,
+            quarantined=quarantined,
+            near_duplicate_count=sum(1 for image in images if image.reject_reason == "near_duplicate"),
+            accepted_by_capture_reason=accepted_by_capture_reason,
+            accepted_by_ui_state_hint=accepted_by_ui_state_hint,
+            auto_click_count=sum(1 for action in actions if _action_executed(action)),
+            menu_opened_count=action_status_counts.get("menu_opened", 0),
+            dialog_opened_count=action_status_counts.get("dialog_opened", 0),
+            navigation_success_count=action_status_counts.get("navigation_success", 0),
+            no_effect_count=action_status_counts.get("no_effect", 0),
+            blocked_count=action_status_counts.get("blocked", 0) + action_status_counts.get("stopped", 0),
+            rollback_count=action_status_counts.get("rollback_requested", 0) + action_status_counts.get("rollback", 0),
+            risk_hit_count=action_status_counts.get("risk_hit", 0),
             observe_only=record.config.observe_only,
             auto_click_ready=auto_ready,
             model_ready=model_ready,
@@ -157,3 +181,40 @@ def _default_v3_runs_root() -> Path:
         return Path("runs/v3")
     root = Path(app_shot_runs)
     return root if root.name.lower() == "v3" else root / "v3"
+
+
+def _count_meta_values(images: list[V3ImageRecord], key: str, default: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for image in images:
+        value = str(image.meta.get(key) or default)
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _folder_watch_metric(run_dir: Path, key: str, default: int) -> int:
+    path = run_dir / "meta" / "folder_watch_summary.json"
+    if not path.is_file():
+        return default
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
+    value = payload.get(key, default)
+    return value if isinstance(value, int) else default
+
+
+def _count_action_statuses(actions: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for action in actions:
+        result = action.get("result", {})
+        if not isinstance(result, dict):
+            continue
+        status = result.get("status")
+        if isinstance(status, str):
+            counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _action_executed(action: dict[str, object]) -> bool:
+    result = action.get("result", {})
+    return isinstance(result, dict) and result.get("executed") is True

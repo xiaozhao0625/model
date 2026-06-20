@@ -11,6 +11,33 @@ RunStatus = Literal["created", "running", "paused", "stopped", "completed", "fai
 AppType = Literal["software", "pc_app", "game", "web", "auto"]
 CaptureSource = Literal["obs", "folder_watch", "window"]
 SafetyMode = Literal["strict", "review", "off"]
+CaptureReason = Literal[
+    "periodic",
+    "before_action",
+    "after_action",
+    "rollback_after",
+    "menu_state",
+    "dialog_state",
+]
+UiStateHint = Literal[
+    "editor",
+    "menu_file",
+    "menu_edit",
+    "menu_search",
+    "menu_view",
+    "menu_settings",
+    "menu_encoding",
+    "menu_language",
+    "menu_tools",
+    "menu_macro",
+    "menu_plugins",
+    "menu_window",
+    "menu_help",
+    "dialog_find",
+    "dialog_replace",
+    "dialog_preferences",
+    "unknown",
+]
 
 
 def utc_now() -> str:
@@ -42,6 +69,9 @@ class V3RunCreateRequest(BaseModel):
 
 class V3ImageIngestRequest(BaseModel):
     image_path: str
+    capture_reason: CaptureReason = "periodic"
+    action_id: str | None = None
+    ui_state_hint: UiStateHint = "unknown"
 
 
 class V3ActionAuditRequest(BaseModel):
@@ -153,6 +183,22 @@ class V3Summary(BaseModel):
     run_id: str
     status: RunStatus
     counts: dict[str, int]
+    processed: int = 0
+    accepted: int = 0
+    rejected: int = 0
+    failed: int = 0
+    quarantined: int = 0
+    near_duplicate_count: int = 0
+    accepted_by_capture_reason: dict[str, int] = Field(default_factory=dict)
+    accepted_by_ui_state_hint: dict[str, int] = Field(default_factory=dict)
+    auto_click_count: int = 0
+    menu_opened_count: int = 0
+    dialog_opened_count: int = 0
+    navigation_success_count: int = 0
+    no_effect_count: int = 0
+    blocked_count: int = 0
+    rollback_count: int = 0
+    risk_hit_count: int = 0
     observe_only: bool
     auto_click_ready: bool
     model_ready: bool

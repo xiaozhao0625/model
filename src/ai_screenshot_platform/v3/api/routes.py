@@ -63,7 +63,17 @@ def create_v3_router() -> APIRouter:
 
     @router.post("/runs/{run_id}/images/ingest")
     def ingest_image(run_id: str, payload: V3ImageIngestRequest, request: Request):
-        return v3_ok(get_runtime(request).ingest_image(run_id, payload.image_path).model_dump())
+        return v3_ok(
+            get_runtime(request)
+            .ingest_image(
+                run_id,
+                payload.image_path,
+                capture_reason=payload.capture_reason,
+                action_id=payload.action_id,
+                ui_state_hint=payload.ui_state_hint,
+            )
+            .model_dump()
+        )
 
     @router.get("/runs/{run_id}/ocr-status")
     def ocr_status(run_id: str, request: Request):

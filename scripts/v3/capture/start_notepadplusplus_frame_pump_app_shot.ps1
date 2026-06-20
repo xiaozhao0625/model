@@ -2,6 +2,7 @@ param(
   [string]$AppShotHome = "D:\work\app-shot",
   [string]$OutputDir = "",
   [string]$WindowTitlePattern = "Notepad\+\+",
+  [string]$MetadataFile = "",
   [double]$IntervalSeconds = 1.0,
   [int]$DurationSeconds = 0
 )
@@ -31,6 +32,9 @@ $PumpRoot = Join-Path $AppShotHome "cache\frame-pump"
 $PidFile = Join-Path $PumpRoot "notepadplusplus_frame_pump.pid"
 $LogFile = Join-Path $PumpRoot "notepadplusplus_frame_pump.log"
 $RunnerPath = Join-Path $PumpRoot "notepadplusplus_frame_pump.py"
+if ([string]::IsNullOrWhiteSpace($MetadataFile)) {
+  $MetadataFile = Join-Path $PumpRoot "notepadplusplus_frame_pump_capture.json"
+}
 New-Item -ItemType Directory -Force -Path $PumpRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
@@ -98,18 +102,51 @@ def _write_jsonl(path: Path, payload: dict[str, object]) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+def _capture_metadata(path: Path) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "capture_reason": "periodic",
+        "action_id": None,
+        "ui_state_hint": "editor",
+    }
+    if not path.is_file():
+        return metadata
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return metadata
+    if isinstance(payload, dict):
+        metadata["capture_reason"] = str(payload.get("capture_reason") or "periodic")
+        action_id = payload.get("action_id")
+        metadata["action_id"] = str(action_id) if action_id is not None else None
+        metadata["ui_state_hint"] = str(payload.get("ui_state_hint") or "unknown")
+        remaining = int(payload.get("remaining_frames") or payload.get("frames") or 1)
+    else:
+        remaining = 1
+    if remaining <= 1:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    else:
+        payload["remaining_frames"] = remaining - 1
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return metadata
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--window-title-pattern", required=True)
     parser.add_argument("--interval-seconds", type=float, default=1.0)
     parser.add_argument("--duration-seconds", type=int, default=0)
+    parser.add_argument("--metadata-file", required=True)
     parser.add_argument("--pid-file", required=True)
     parser.add_argument("--log-file", required=True)
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    metadata_file = Path(args.metadata_file)
     pid_file = Path(args.pid_file)
     log_file = Path(args.log_file)
     pid_file.write_text(str(ctypes.windll.kernel32.GetCurrentProcessId()), encoding="utf-8")
@@ -139,8 +176,17 @@ def main() -> int:
             frame_index += 1
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = output_dir / f"frame_{stamp}_{frame_index:06d}.png"
-            ImageGrab.grab(bbox=bbox).save(path)
-            _write_jsonl(log_file, {"event": "frame_saved", "path": str(path), "title": title, "bbox": bbox})
+            try:
+                ImageGrab.grab(window=hwnd).save(path)
+                capture_mode = "window_hwnd"
+            except TypeError:
+                ImageGrab.grab(bbox=bbox).save(path)
+                capture_mode = "screen_bbox_fallback"
+            metadata = _capture_metadata(metadata_file)
+            metadata.update({"title": title, "bbox": list(bbox), "capture_mode": capture_mode})
+            sidecar_path = path.with_suffix(".json")
+            sidecar_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+            _write_jsonl(log_file, {"event": "frame_saved", "path": str(path), "sidecar": str(sidecar_path), **metadata})
             time.sleep(args.interval_seconds)
     finally:
         try:
@@ -161,6 +207,7 @@ $arguments = @(
   "--window-title-pattern", $WindowTitlePattern,
   "--interval-seconds", ([string]$IntervalSeconds),
   "--duration-seconds", ([string]$DurationSeconds),
+  "--metadata-file", $MetadataFile,
   "--pid-file", $PidFile,
   "--log-file", $LogFile
 )
@@ -177,4 +224,5 @@ if (!(Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
   pid_file = $PidFile
   log_file = $LogFile
   runner = $RunnerPath
+  metadata_file = $MetadataFile
 } | ConvertTo-Json

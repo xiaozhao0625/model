@@ -166,3 +166,52 @@ def test_v3_api_records_external_action_audit(tmp_path):
         assert listed[0]["label"] == "File"
         assert listed[0]["result"]["status"] == "menu_opened"
         assert summary["counts"]["actions"] == 1
+
+
+def test_v3_api_summary_includes_action_capture_breakdowns(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image = tmp_path / "menu.png"
+    image.write_bytes(b"same-frame")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "app_type": "pc_app",
+                    "target_language": "en",
+                    "must_have_text": True,
+                }
+            },
+        ).json()["data"]
+        run_id = created["run_id"]
+        client.post(
+            f"/api/v3/runs/{run_id}/images/ingest",
+            json={"image_path": str(image), "capture_reason": "periodic", "ui_state_hint": "editor"},
+        )
+        client.post(
+            f"/api/v3/runs/{run_id}/images/ingest",
+            json={"image_path": str(image), "capture_reason": "after_action", "action_id": "action:file", "ui_state_hint": "menu_file"},
+        )
+        client.post(
+            f"/api/v3/runs/{run_id}/actions/record",
+            json={
+                "action": {
+                    "label": "File",
+                    "source_candidate_id": "ocr_box:File:1:2:3:4",
+                    "before_image": "before.png",
+                    "after_image": "after.png",
+                    "result": {"executed": True, "status": "menu_opened", "reason": "computer_use_click"},
+                    "safety_result": {"allowed": True, "reason": "allowed"},
+                }
+            },
+        )
+
+        summary = client.get(f"/api/v3/runs/{run_id}/summary").json()["data"]
+
+        assert summary["processed"] == 2
+        assert summary["near_duplicate_count"] == 0
+        assert summary["accepted_by_capture_reason"] == {"periodic": 1, "after_action": 1}
+        assert summary["accepted_by_ui_state_hint"] == {"editor": 1, "menu_file": 1}
+        assert summary["auto_click_count"] == 1
+        assert summary["menu_opened_count"] == 1

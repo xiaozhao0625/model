@@ -20,6 +20,7 @@ from ai_screenshot_platform.v3.quality.duplicate_filter import DuplicateFilter
 from ai_screenshot_platform.v3.quality.image_quality import basic_image_quality
 from ai_screenshot_platform.v3.schemas import (
     ModelRequest,
+    OcrResult,
     V3Health,
     V3ImageRecord,
     V3RunRecord,
@@ -45,6 +46,8 @@ class V3Runtime:
         self.ocr_provider = ocr_provider
         self.duplicates = DuplicateFilter()
         self.actions = action_loop or ActionLoop()
+        self._action_duplicate_preserve_counts: dict[tuple[str, str, str], int] = {}
+        self._ocr_by_sha: dict[str, OcrResult] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -84,7 +87,14 @@ class V3Runtime:
     def events(self, run_id: str):
         return self.store.list_events(run_id)
 
-    def ingest_image(self, run_id: str, image_path: str) -> V3ImageRecord:
+    def ingest_image(
+        self,
+        run_id: str,
+        image_path: str,
+        capture_reason: str = "periodic",
+        action_id: str | None = None,
+        ui_state_hint: str = "unknown",
+    ) -> V3ImageRecord:
         record = self.get_run(run_id)
         path = Path(image_path)
         quality = basic_image_quality(path)
@@ -97,13 +107,32 @@ class V3Runtime:
         if not quality["accepted"]:
             bucket = "rejected"
             reject_reason = str(quality["reason"])
-        elif not unique:
+        duplicate_preserved = False
+        if quality["accepted"] and not unique:
+            duplicate_preserved = self._should_preserve_action_duplicate(run_id, capture_reason, action_id, ui_state_hint)
+        if not quality["accepted"]:
+            bucket = "rejected"
+            reject_reason = str(quality["reason"])
+        elif not unique and not duplicate_preserved:
             bucket = "rejected"
             reject_reason = "near_duplicate"
-        meta: dict[str, object] = {"capture_source": record.config.capture_source, "quality": quality}
+        meta: dict[str, object] = {
+            "capture_source": record.config.capture_source,
+            "capture_reason": capture_reason,
+            "action_id": action_id,
+            "ui_state_hint": ui_state_hint,
+            "duplicate_preserved": duplicate_preserved,
+            "quality": quality,
+        }
         if bucket == "pending" and record.config.enable_ocr:
-            ocr_result = self._recognize_for_target(str(path), record.config.target_language)
+            if duplicate_preserved and digest and digest in self._ocr_by_sha:
+                ocr_result = self._ocr_by_sha[digest]
+            else:
+                ocr_result = self._recognize_for_target(str(path), record.config.target_language)
+                if digest and ocr_result.status == "ok":
+                    self._ocr_by_sha[digest] = ocr_result
             meta["ocr"] = ocr_result.model_dump()
+            self.store.append_meta_jsonl(run_id, "ocr.jsonl", meta["ocr"])
             if ocr_result.status != "ok":
                 bucket = "manual_review"
                 reject_reason = ocr_result.error or ocr_result.status
@@ -136,6 +165,8 @@ class V3Runtime:
                 elif record.config.must_have_text:
                     bucket = "rejected"
                     reject_reason = "wrong_language"
+        if bucket == "accepted" and duplicate_preserved:
+            self._mark_action_duplicate_preserved(run_id, capture_reason, action_id, ui_state_hint)
         image = V3ImageRecord(
             image_id=path.stem,
             path=str(path),
@@ -145,6 +176,34 @@ class V3Runtime:
             meta=meta,
         )
         return self.store.add_image(run_id, image)
+
+    def _should_preserve_action_duplicate(
+        self,
+        run_id: str,
+        capture_reason: str,
+        action_id: str | None,
+        ui_state_hint: str,
+    ) -> bool:
+        if capture_reason not in {"before_action", "after_action", "rollback_after", "menu_state", "dialog_state"}:
+            return False
+        if not action_id:
+            return False
+        if ui_state_hint in {"unknown", "editor"}:
+            return False
+        key = (run_id, action_id, ui_state_hint)
+        return self._action_duplicate_preserve_counts.get(key, 0) < 3
+
+    def _mark_action_duplicate_preserved(
+        self,
+        run_id: str,
+        capture_reason: str,
+        action_id: str | None,
+        ui_state_hint: str,
+    ) -> None:
+        if not self._should_preserve_action_duplicate(run_id, capture_reason, action_id, ui_state_hint):
+            return
+        key = (run_id, str(action_id), ui_state_hint)
+        self._action_duplicate_preserve_counts[key] = self._action_duplicate_preserve_counts.get(key, 0) + 1
 
     def _recognize_for_target(self, image_path: str, target_language: str):
         provider = self._active_ocr_provider()
