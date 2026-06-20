@@ -28,6 +28,10 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/capture/start_sumatrapdf_frame_pump_app_shot.ps1",
         "scripts/v3/capture/stop_sumatrapdf_frame_pump_app_shot.ps1",
         "scripts/v3/capture/smoke_sumatrapdf_frame_pump_app_shot.ps1",
+        "scripts/v3/capture/run_winmerge_real_capture_app_shot.ps1",
+        "scripts/v3/capture/start_winmerge_frame_pump_app_shot.ps1",
+        "scripts/v3/capture/stop_winmerge_frame_pump_app_shot.ps1",
+        "scripts/v3/capture/smoke_winmerge_frame_pump_app_shot.ps1",
     ]
 
     for script in expected:
@@ -217,3 +221,41 @@ def test_notepadplusplus_frame_pump_smoke_starts_missing_target_window():
     assert "Start-Process" in text
     assert "started_by_smoke" in text
     assert "CloseMainWindow" in text
+
+
+def test_winmerge_real_capture_script_creates_fixture_and_blocks_destructive_actions():
+    text = (REPO_ROOT / "scripts/v3/capture/run_winmerge_real_capture_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "WinMergeU.exe" in text
+    assert "WinMerge.exe" in text
+    assert "test-files\\winmerge\\left.txt" in text
+    assert "test-files\\winmerge\\right.txt" in text
+    assert "winmerge_real_auto_explore_sample" in text
+    assert "max_actions=20" in text
+    assert "target_accepted_min=50" in text
+    assert "Save Left" in text
+    assert "Save Right" in text
+    assert "Save Merged" in text
+    assert "winmerge_mojibake_menu_map" in text
+    assert "menu_view" in text
+    assert "menu_tools" in text
+    assert "SendKeys" not in text
+
+
+def test_winmerge_frame_pump_scripts_have_heartbeat_and_atomic_sidecars():
+    start = (REPO_ROOT / "scripts/v3/capture/start_winmerge_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    stop = (REPO_ROOT / "scripts/v3/capture/stop_winmerge_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    smoke = (REPO_ROOT / "scripts/v3/capture/smoke_winmerge_frame_pump_app_shot.ps1").read_text(encoding="utf-8")
+    runner_text = start + stop + smoke
+
+    assert "frame_pump_heartbeat.json" in runner_text
+    assert "winmerge_frame_pump.pid" in runner_text
+    assert "winmerge_frame_" in start
+    assert "window_title" in start
+    assert "frame_path" in start
+    assert "capture_reason" in start
+    assert "action_id" in start
+    assert "ui_state_hint" in start
+    assert ".tmp" in start
+    assert "MinFrames" in smoke
+    assert "SendKeys" not in runner_text

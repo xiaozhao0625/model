@@ -765,7 +765,7 @@ def _classify_candidate_region(candidate: FusedCandidate, app_type: str) -> Fuse
         candidate.blocked_reason = "unsafe_chrome"
         candidate.risk_penalty = max(candidate.risk_penalty, 1.0)
         return candidate
-    if _is_sumatra_ui_chrome_label(normalized) or y2 <= 95:
+    if _is_pc_app_ui_chrome_label(normalized) or y2 <= 95:
         candidate.candidate_region_type = "ui_chrome"
         return candidate
     if _looks_like_document_body_text(label, candidate.bbox):
@@ -781,8 +781,8 @@ def _classify_candidate_region(candidate: FusedCandidate, app_type: str) -> Fuse
     return candidate
 
 
-def _is_sumatra_ui_chrome_label(normalized: str) -> bool:
-    return normalized in _SUMATRA_UI_CHROME_LABELS
+def _is_pc_app_ui_chrome_label(normalized: str) -> bool:
+    return normalized in _PC_APP_UI_CHROME_LABELS
 
 
 def _is_unsafe_pc_app_label(normalized: str) -> bool:
@@ -797,11 +797,22 @@ def _looks_like_document_body_text(text: str, bbox: list[int]) -> bool:
     return y1 >= 120 and (x2 - x1) >= 120
 
 
-_SUMATRA_UI_CHROME_LABELS = {
+_PC_APP_UI_CHROME_LABELS = {
     "file",
+    "edit",
     "view",
     "go to",
     "goto",
+    "merge",
+    "navigate",
+    "tools",
+    "compare",
+    "differences",
+    "difference",
+    "next difference",
+    "previous difference",
+    "first difference",
+    "last difference",
     "zoom",
     "favorites",
     "settings",
@@ -827,17 +838,24 @@ _SUMATRA_UI_CHROME_LABELS = {
     "about",
     "options",
     "preferences",
+    "refresh",
+    "reload",
     "?",
 }
 
 
 _UNSAFE_PC_APP_LABELS = {
     "print",
+    "save",
     "save as",
+    "save left",
+    "save right",
+    "save merged",
     "exit",
     "quit",
     "open",
     "open file",
+    "delete",
     "plugins admin",
     "minimize",
     "maximize",
@@ -851,6 +869,13 @@ _UNSAFE_PC_APP_LABEL_TERMS = {
     "www.",
     ".com",
     "@",
+    "save left",
+    "save right",
+    "save merged",
+    "save as",
+    "delete",
+    "print",
+    "external command",
 }
 
 
@@ -859,6 +884,15 @@ _SAFE_PC_APP_UI_LABELS = {
     "edit",
     "search",
     "view",
+    "merge",
+    "navigate",
+    "compare",
+    "differences",
+    "difference",
+    "next difference",
+    "previous difference",
+    "first difference",
+    "last difference",
     "go to",
     "goto",
     "zoom",
@@ -867,6 +901,9 @@ _SAFE_PC_APP_UI_LABELS = {
     "language",
     "settings",
     "tools",
+    "options",
+    "refresh",
+    "reload",
     "macro",
     "plugins",
     "window",

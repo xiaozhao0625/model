@@ -720,6 +720,85 @@ def test_pc_app_candidates_do_not_split_document_body_menu_words(tmp_path):
     assert body_candidate["blocked"] is True
 
 
+def test_pc_app_winmerge_diff_body_is_content_area_and_not_clickable(tmp_path):
+    image = tmp_path / "winmerge_diff.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="File Edit View Merge Tools Help", bbox=[6, 34, 290, 55], confidence=0.95),
+                OcrTextBox(
+                    text="line 4: this sentence exists only in the right comparison file",
+                    bbox=[510, 248, 1010, 268],
+                    confidence=0.95,
+                ),
+            ]
+        ),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                target_client_rect=(0, 28, 1200, 900),
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=1,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    candidates = runtime.candidates(run.run_id)
+    body_candidate = next(candidate for candidate in candidates if candidate["label"].startswith("line 4"))
+    action = runtime.actions_for_run(run.run_id)[0]
+
+    assert body_candidate["candidate_region_type"] == "content_area"
+    assert body_candidate["blocked_reason"] == "content_area_not_clickable"
+    assert action["candidate_region_type"] == "ui_chrome"
+    assert action["result"]["executed"] is True
+    assert clicks
+
+
+def test_pc_app_winmerge_save_variants_are_unsafe_chrome(tmp_path):
+    image = tmp_path / "winmerge_save.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider(
+            [
+                OcrTextBox(text="Save Left", bbox=[32, 58, 112, 76], confidence=0.95),
+                OcrTextBox(text="Save Right", bbox=[32, 82, 120, 100], confidence=0.95),
+                OcrTextBox(text="Save Merged", bbox=[32, 106, 140, 124], confidence=0.95),
+            ]
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    candidates = runtime.candidates(run.run_id)
+    unsafe = {candidate["label"]: candidate for candidate in candidates}
+
+    assert unsafe["Save Left"]["candidate_region_type"] == "unsafe_chrome"
+    assert unsafe["Save Right"]["candidate_region_type"] == "unsafe_chrome"
+    assert unsafe["Save Merged"]["candidate_region_type"] == "unsafe_chrome"
+
+
 def _runtime_with_controlled_clicks(tmp_path, clicks: list[tuple[int, int]]) -> V3Runtime:
     ocr_provider = StaticOcrProvider(
         [
