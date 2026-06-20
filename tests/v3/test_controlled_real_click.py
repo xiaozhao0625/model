@@ -799,6 +799,44 @@ def test_pc_app_winmerge_save_variants_are_unsafe_chrome(tmp_path):
     assert unsafe["Save Merged"]["candidate_region_type"] == "unsafe_chrome"
 
 
+def test_pc_app_revisits_safe_ui_chrome_after_unique_labels_are_exhausted(tmp_path):
+    image = tmp_path / "menu.png"
+    image.write_bytes(b"not-empty")
+    clicks: list[tuple[int, int]] = []
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="File", bbox=[32, 40, 58, 58], confidence=0.95)]),
+        action_loop=ActionLoop(
+            executor=ClickExecutor(
+                allow_real_click=True,
+                target_client_rect=(0, 28, 800, 600),
+                click_backend=lambda x, y: clicks.append((x, y)),
+            )
+        ),
+    )
+    run = runtime.create_run(
+        V3TaskConfig(
+            app_type="pc_app",
+            target_language="en",
+            must_have_text=True,
+            save_root=str(tmp_path / "runs"),
+            enable_auto_click=True,
+            observe_only=False,
+            max_actions=2,
+        )
+    )
+    runtime.ingest_image(run.run_id, str(image))
+
+    first = runtime.execute_action(run.run_id)[0]
+    second = runtime.execute_action(run.run_id)[0]
+
+    assert first["result"]["executed"] is True
+    assert second["result"]["executed"] is True
+    assert first["candidate_region_type"] == "ui_chrome"
+    assert second["candidate_region_type"] == "ui_chrome"
+    assert len(clicks) == 2
+
+
 def _runtime_with_controlled_clicks(tmp_path, clicks: list[tuple[int, int]]) -> V3Runtime:
     ocr_provider = StaticOcrProvider(
         [

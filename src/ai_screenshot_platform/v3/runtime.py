@@ -416,17 +416,18 @@ class V3Runtime:
             and not candidate.risk_flags
             and candidate.risk_penalty <= 0
             and (app_type != "pc_app" or candidate.candidate_region_type == "ui_chrome")
-            and candidate.label.strip().casefold() not in clicked_labels
             and _candidate_inside_action_area(candidate, app_type)
         ]
+        unclicked_safe = [candidate for candidate in safe if candidate.label.strip().casefold() not in clicked_labels]
         priority_labels = _SAFE_CLICK_LABELS if app_type == "pc_app" else _GENERIC_SAFE_CLICK_LABELS
-        for label in priority_labels:
-            for candidate in safe:
-                if candidate.source == "ocr_box" and candidate.label.strip().casefold() == label:
+        for pool in (unclicked_safe, safe):
+            for label in priority_labels:
+                for candidate in pool:
+                    if candidate.source == "ocr_box" and candidate.label.strip().casefold() == label:
+                        return candidate
+            for candidate in pool:
+                if candidate.source == "ocr_box":
                     return candidate
-        for candidate in safe:
-            if candidate.source == "ocr_box":
-                return candidate
         return None
 
     def _build_action_audit(

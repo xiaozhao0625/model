@@ -32,6 +32,7 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/capture/start_winmerge_frame_pump_app_shot.ps1",
         "scripts/v3/capture/stop_winmerge_frame_pump_app_shot.ps1",
         "scripts/v3/capture/smoke_winmerge_frame_pump_app_shot.ps1",
+        "scripts/v3/report/build_batch_capture_report_app_shot.ps1",
     ]
 
     for script in expected:
@@ -259,3 +260,23 @@ def test_winmerge_frame_pump_scripts_have_heartbeat_and_atomic_sidecars():
     assert ".tmp" in start
     assert "MinFrames" in smoke
     assert "SendKeys" not in runner_text
+
+
+def test_batch_capture_report_script_summarizes_quality_and_safety_contract():
+    text = (REPO_ROOT / "scripts/v3/report/build_batch_capture_report_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "v3_batch_capture_report.json" in text
+    assert "v3_batch_capture_report.md" in text
+    assert "accepted_by_ui_state_hint" in text
+    assert "reject_reason_distribution" in text
+    assert "action_count" in text
+    assert "blocked_count" in text
+    assert "risk_hit_count" in text
+    assert "misclicked_titlebar_or_system_button" in text
+    assert "dangerous_action_triggered" in text
+    assert "accepted_target_met" in text
+    assert "recommend_larger_scale" in text
+    assert "summary.json" in text
+    assert "meta\\actions.jsonl" in text
+    assert "meta\\candidates.jsonl" in text
+    assert "SendKeys" not in text
