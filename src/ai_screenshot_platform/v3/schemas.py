@@ -21,10 +21,14 @@ CaptureReason = Literal[
 ]
 UiStateHint = Literal[
     "editor",
+    "main_view",
     "menu_file",
     "menu_edit",
     "menu_search",
     "menu_view",
+    "menu_goto",
+    "menu_zoom",
+    "menu_favorites",
     "menu_settings",
     "menu_encoding",
     "menu_language",
@@ -33,6 +37,8 @@ UiStateHint = Literal[
     "menu_plugins",
     "menu_window",
     "menu_help",
+    "dialog_about",
+    "dialog_settings",
     "dialog_find",
     "dialog_replace",
     "dialog_preferences",
@@ -103,6 +109,9 @@ class V3ImageRecord(BaseModel):
     path: str
     bucket: Literal["pending", "accepted", "rejected", "deleted", "manual_review"] = "pending"
     sha256: str | None = None
+    content_hash: str | None = None
+    valid: bool = True
+    near_duplicate: bool = False
     reject_reason: str | None = None
     created_at: str = Field(default_factory=utc_now)
     meta: dict[str, object] = Field(default_factory=dict)
@@ -189,6 +198,7 @@ class V3Summary(BaseModel):
     failed: int = 0
     quarantined: int = 0
     near_duplicate_count: int = 0
+    reject_reason_distribution: dict[str, int] = Field(default_factory=dict)
     accepted_by_capture_reason: dict[str, int] = Field(default_factory=dict)
     accepted_by_ui_state_hint: dict[str, int] = Field(default_factory=dict)
     auto_click_count: int = 0
@@ -201,8 +211,13 @@ class V3Summary(BaseModel):
     risk_hit_count: int = 0
     observe_only: bool
     auto_click_ready: bool
+    full_auto_capture_ready: bool = False
     model_ready: bool
     ocr_ready: bool
+    ocr_gpu_ready: bool = False
+    ocr_performance_ready: bool = False
+    ocr_production_ready: bool = False
+    readiness_blockers: list[str] = Field(default_factory=list)
     safety_gate_ready: bool
     latest_event: V3Event | None = None
 
@@ -220,6 +235,11 @@ class V3Health(BaseModel):
     ocr: list[ProviderHealth]
     models: list[ProviderHealth]
     complete_auto_mode_ready: bool
+    full_auto_capture_ready: bool = False
+    ocr_gpu_ready: bool = False
+    ocr_performance_ready: bool = False
+    ocr_production_ready: bool = False
+    readiness_blockers: list[str] = Field(default_factory=list)
     defaults: V3TaskConfig
 
 

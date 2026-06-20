@@ -9,6 +9,10 @@ def test_v3_api_create_start_summary(tmp_path):
     with TestClient(create_app(settings)) as client:
         health = client.get("/api/v3/health").json()
         assert health["ok"] is True
+        data = health["data"]
+        assert data["ocr_production_ready"] is False
+        assert data["full_auto_capture_ready"] is False
+        assert data["readiness_blockers"]
         created = client.post("/api/v3/runs", json={"config": {"save_root": str(tmp_path / "v3")}}).json()["data"]
         started = client.post(f"/api/v3/runs/{created['run_id']}/start").json()["data"]
         summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
@@ -215,3 +219,32 @@ def test_v3_api_summary_includes_action_capture_breakdowns(tmp_path):
         assert summary["accepted_by_ui_state_hint"] == {"editor": 1, "menu_file": 1}
         assert summary["auto_click_count"] == 1
         assert summary["menu_opened_count"] == 1
+
+
+def test_v3_api_summary_exposes_reject_distribution_and_production_gate(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    blank = tmp_path / "blank.png"
+    blank.write_bytes(b"not-empty")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "target_language": "en",
+                    "must_have_text": True,
+                    "enable_auto_click": True,
+                    "observe_only": False,
+                }
+            },
+        ).json()["data"]
+        run_id = created["run_id"]
+        client.post(f"/api/v3/runs/{run_id}/images/ingest", json={"image_path": str(blank)})
+        client.post(f"/api/v3/runs/{run_id}/images/ingest", json={"image_path": str(blank)})
+
+        summary = client.get(f"/api/v3/runs/{run_id}/summary").json()["data"]
+
+        assert summary["reject_reason_distribution"]["near_duplicate"] == 1
+        assert summary["ocr_production_ready"] is False
+        assert summary["full_auto_capture_ready"] is False
+        assert "ocr_gpu_not_ready" in summary["readiness_blockers"]

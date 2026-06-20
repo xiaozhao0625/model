@@ -2,6 +2,7 @@ from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.runtime import V3Runtime
 from ai_screenshot_platform.v3.schemas import OcrResult, OcrTextBox, ProviderHealth, V3TaskConfig
 from ai_screenshot_platform.v3.storage.run_store import V3RunStore
+from PIL import Image
 
 
 class StaticOcrProvider(OcrProvider):
@@ -47,6 +48,25 @@ def test_ingest_rejects_image_without_required_text(tmp_path):
     assert record.reject_reason == "no_text"
 
 
+def test_ingest_rejects_black_and_white_screen_images(tmp_path):
+    black = tmp_path / "black.png"
+    white = tmp_path / "white.png"
+    Image.new("RGB", (320, 200), (0, 0, 0)).save(black)
+    Image.new("RGB", (320, 200), (255, 255, 255)).save(white)
+    runtime = V3Runtime(store=V3RunStore(tmp_path / "runs"), ocr_provider=StaticOcrProvider([]))
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    black_record = runtime.ingest_image(run.run_id, str(black))
+    white_record = runtime.ingest_image(run.run_id, str(white))
+
+    assert black_record.bucket == "rejected"
+    assert black_record.reject_reason == "black_screen"
+    assert black_record.valid is False
+    assert white_record.bucket == "rejected"
+    assert white_record.reject_reason == "white_screen"
+    assert white_record.valid is False
+
+
 def test_ingest_rejects_wrong_language_text(tmp_path):
     image = tmp_path / "wrong.png"
     image.write_bytes(b"not-empty")
@@ -60,6 +80,36 @@ def test_ingest_rejects_wrong_language_text(tmp_path):
 
     assert record.bucket == "rejected"
     assert record.reject_reason == "wrong_language"
+
+
+def test_ingest_rejects_low_ocr_confidence_target_text(tmp_path):
+    image = tmp_path / "low_confidence.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Start", bbox=[1, 2, 3, 4], confidence=0.31)]),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "rejected"
+    assert record.reject_reason == "low_ocr_confidence"
+
+
+def test_ingest_rejects_unsafe_text(tmp_path):
+    image = tmp_path / "unsafe.png"
+    image.write_bytes(b"not-empty")
+    runtime = V3Runtime(
+        store=V3RunStore(tmp_path / "runs"),
+        ocr_provider=StaticOcrProvider([OcrTextBox(text="Password required", bbox=[1, 2, 3, 4], confidence=0.95)]),
+    )
+    run = runtime.create_run(V3TaskConfig(target_language="en", must_have_text=True, save_root=str(tmp_path / "runs")))
+
+    record = runtime.ingest_image(run.run_id, str(image))
+
+    assert record.bucket == "rejected"
+    assert record.reject_reason == "unsafe_text"
 
 
 def test_ingest_rejects_mixed_language_text(tmp_path):

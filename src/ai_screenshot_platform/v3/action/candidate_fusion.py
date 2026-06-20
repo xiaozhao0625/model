@@ -16,7 +16,7 @@ def fuse_candidates(
         model_score = candidate.confidence if _is_ui_model_source(candidate.source) else 0.0
         layout_score = 0.5
         history_score = history_scores.get(candidate.label, 0.0)
-        risks = risk_terms_in_text(candidate.label)
+        risks = [*risk_terms_in_text(candidate.label), *_action_risk_terms_in_label(candidate.label)]
         risk_penalty = 1.0 if risks or candidate.risk_flags else 0.0
         score = 0.35 * ocr_score + 0.45 * model_score + 0.10 * layout_score + 0.10 * history_score - risk_penalty
         fused = FusedCandidate(
@@ -36,3 +36,23 @@ def fuse_candidates(
 
 def _is_ui_model_source(source: str) -> bool:
     return "model" in source or source in {"showui", "omniparser"}
+
+
+_ACTION_RISK_TERMS = {
+    "print",
+    "save",
+    "save as",
+    "open",
+    "open file",
+    "exit",
+    "quit",
+    "close",
+    "plugins admin",
+    "external link",
+    "website",
+}
+
+
+def _action_risk_terms_in_label(label: str) -> list[str]:
+    lowered = label.casefold()
+    return sorted(term for term in _ACTION_RISK_TERMS if term in lowered)

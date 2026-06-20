@@ -77,7 +77,7 @@ export interface RunLogEntry {
 
 export interface V3TaskConfig {
   app_name: string;
-  app_type: "software" | "game" | "web" | "auto";
+  app_type: "software" | "pc_app" | "game" | "web" | "auto";
   target_language: string;
   capture_source: "obs" | "folder_watch" | "window";
   capture_interval_ms: number;
@@ -107,6 +107,11 @@ export interface V3Health {
   ocr: V3ProviderHealth[];
   models: V3ProviderHealth[];
   complete_auto_mode_ready: boolean;
+  full_auto_capture_ready: boolean;
+  ocr_gpu_ready: boolean;
+  ocr_performance_ready: boolean;
+  ocr_production_ready: boolean;
+  readiness_blockers: string[];
   defaults: V3TaskConfig;
 }
 
@@ -124,10 +129,22 @@ export interface V3Summary {
   run_id: string;
   status: V3RunRecord["status"];
   counts: Record<string, number>;
+  processed?: number;
+  accepted?: number;
+  rejected?: number;
+  failed?: number;
+  quarantined?: number;
+  near_duplicate_count?: number;
+  reject_reason_distribution?: Record<string, number>;
   observe_only: boolean;
   auto_click_ready: boolean;
+  full_auto_capture_ready: boolean;
   model_ready: boolean;
   ocr_ready: boolean;
+  ocr_gpu_ready: boolean;
+  ocr_performance_ready: boolean;
+  ocr_production_ready: boolean;
+  readiness_blockers: string[];
   safety_gate_ready: boolean;
 }
 

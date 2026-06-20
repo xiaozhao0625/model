@@ -11,7 +11,7 @@ export function V3DashboardRoute() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [summary, setSummary] = useState<V3Summary | null>(null);
   const [actions, setActions] = useState<V3ActionRecord[]>([]);
-  const [message, setMessage] = useState("V3 observe_only 默认开启，真实点击默认关闭。");
+  const [message, setMessage] = useState("V3 observe_only is enabled by default; real click is disabled by default.");
 
   async function load(nextSelectedRunId = selectedRunId) {
     const [nextHealth, nextDefaults, nextRuns] = await Promise.all([apiClient.getV3Health(), apiClient.getV3Defaults(), apiClient.listV3Runs()]);
@@ -46,7 +46,7 @@ export function V3DashboardRoute() {
       enable_auto_click: false
     };
     const run = await apiClient.createV3Run({ config });
-    setMessage(`已创建 observe_only run：${run.run_id}`);
+    setMessage(`Created observe_only run: ${run.run_id}`);
     await load(run.run_id);
   }
 
@@ -59,32 +59,36 @@ export function V3DashboardRoute() {
 
   return (
     <div>
-      <PageHeader title="V3 OBS-OCR 通用采集器" description="本地闭环运行视图：采集、OCR、候选、安全门、动作审计。" />
+      <PageHeader title="V3 OBS-OCR Console" description="Local capture, OCR, candidates, safety gate, and action audit." />
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card title="运行状态" eyebrow="V3">
+        <Card title="Runtime State" eyebrow="V3">
           <div className="grid gap-3 md:grid-cols-3">
-            <Metric label="V3 状态" value={health?.status || "loading"} />
-            <Metric label="完整自动模式" value={health?.complete_auto_mode_ready ? "ready" : "not_ready"} />
-            <Metric label="任务数" value={String(runs.length)} />
+            <Metric label="V3 status" value={health?.status || "loading"} />
+            <Metric label="OCR GPU" value={health?.ocr_gpu_ready ? "ready" : "not_ready"} />
+            <Metric label="OCR performance" value={health?.ocr_performance_ready ? "ready" : "not_ready"} />
+            <Metric label="OCR production" value={health?.ocr_production_ready ? "ready" : "not_ready"} />
+            <Metric label="Full auto" value={health?.full_auto_capture_ready ? "ready" : "not_ready"} />
+            <Metric label="Runs" value={String(runs.length)} />
           </div>
+          <Blockers blockers={health?.readiness_blockers || []} />
           <button className="mt-4 rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100 hover:bg-blue-500/10" onClick={() => void createObserveOnlyRun()}>
-            创建 observe_only 任务
+            Create observe_only run
           </button>
           <p className="mt-3 text-sm text-slate-400">{message}</p>
         </Card>
 
-        <Card title="模型与 OCR" eyebrow="providers">
+        <Card title="Models And OCR" eyebrow="providers">
           <ProviderList title="OCR" providers={health?.ocr || []} />
           <div className="mt-4">
-            <ProviderList title="UI 模型" providers={health?.models || []} />
+            <ProviderList title="UI model" providers={health?.models || []} />
           </div>
         </Card>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <Card title="最近 V3 Runs" eyebrow="runs">
+        <Card title="Recent V3 Runs" eyebrow="runs">
           <div className="grid gap-2">
-            {runs.length === 0 ? <p className="text-sm text-slate-500">暂无 V3 run。</p> : null}
+            {runs.length === 0 ? <p className="text-sm text-slate-500">No V3 runs yet.</p> : null}
             {runs.map((run) => (
               <button
                 key={run.run_id}
@@ -104,13 +108,19 @@ export function V3DashboardRoute() {
 
         <Card title="Action Audit" eyebrow={selectedRunId || "no run selected"}>
           {summary ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              <Metric label="accepted" value={String(summary.counts.accepted || 0)} />
-              <Metric label="rejected" value={String(summary.counts.rejected || 0)} />
-              <Metric label="actions" value={String(summary.counts.actions || actions.length)} />
-            </div>
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Metric label="accepted" value={String(summary.counts.accepted || 0)} />
+                <Metric label="rejected" value={String(summary.counts.rejected || 0)} />
+                <Metric label="actions" value={String(summary.counts.actions || actions.length)} />
+                <Metric label="OCR production" value={summary.ocr_production_ready ? "ready" : "not_ready"} />
+                <Metric label="Full auto" value={summary.full_auto_capture_ready ? "ready" : "not_ready"} />
+                <Metric label="near duplicate" value={String(summary.near_duplicate_count || 0)} />
+              </div>
+              <Blockers blockers={summary.readiness_blockers || []} />
+            </>
           ) : (
-            <p className="text-sm text-slate-500">选择一个 V3 run 查看动作审计。</p>
+            <p className="text-sm text-slate-500">Select a V3 run to inspect action audit.</p>
           )}
           {latestAction ? (
             <div className="mt-4 grid gap-2 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300">
@@ -123,7 +133,7 @@ export function V3DashboardRoute() {
               <AuditRow label="after_image" value={latestAction.after_image || "-"} />
             </div>
           ) : (
-            <p className="mt-4 text-sm text-slate-500">当前 run 暂无 action 审计。</p>
+            <p className="mt-4 text-sm text-slate-500">No action audit for this run yet.</p>
           )}
         </Card>
       </div>
@@ -166,6 +176,13 @@ function AuditRow({ label, value }: { label: string; value: string }) {
       <span className="break-all font-mono text-xs text-slate-300">{value}</span>
     </div>
   );
+}
+
+function Blockers({ blockers }: { blockers: string[] }) {
+  if (!blockers.length) {
+    return null;
+  }
+  return <p className="mt-3 break-words font-mono text-xs text-amber-300">{blockers.join(", ")}</p>;
 }
 
 function fallbackDefaults(): V3TaskConfig {

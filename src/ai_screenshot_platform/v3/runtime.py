@@ -78,8 +78,17 @@ class V3Runtime:
     def summary(self, run_id: str) -> V3Summary:
         health = self.health()
         ocr_ready = any(item.status == "ready" for item in health.ocr)
-        model_ready = health.complete_auto_mode_ready
-        return self.store.summary(run_id, ocr_ready=ocr_ready, model_ready=model_ready, safety_gate_ready=True)
+        model_ready = any(item.provider == "showui" and item.status == "ready" and item.enabled for item in health.models)
+        return self.store.summary(
+            run_id,
+            ocr_ready=ocr_ready,
+            model_ready=model_ready,
+            safety_gate_ready=True,
+            ocr_gpu_ready=health.ocr_gpu_ready,
+            ocr_performance_ready=health.ocr_performance_ready,
+            ocr_production_ready=health.ocr_production_ready,
+            readiness_blockers=health.readiness_blockers,
+        )
 
     def images(self, run_id: str) -> list[V3ImageRecord]:
         return self.store.list_images(run_id)
@@ -99,7 +108,7 @@ class V3Runtime:
         path = Path(image_path)
         quality = basic_image_quality(path)
         unique = False
-        digest: str | None = None
+        digest: str | None = _file_sha256(str(path))
         if quality["accepted"]:
             unique, digest = self.duplicates.check(path)
         bucket = "pending"
@@ -149,7 +158,16 @@ class V3Runtime:
                     for _, result in language_evaluations
                     if result.reason in {"wrong_language", "mixed_language"}
                 ]
-                if accepted_boxes:
+                risk_hits = sorted({risk for box in accepted_boxes for risk in risk_terms_in_text(box.text)})
+                safe_accepted_boxes = [box for box in accepted_boxes if not risk_terms_in_text(box.text)]
+                if accepted_boxes and risk_hits and not safe_accepted_boxes:
+                    bucket = "rejected"
+                    reject_reason = "unsafe_text"
+                    meta["risk_hits"] = risk_hits
+                elif accepted_boxes and max((box.confidence for box in safe_accepted_boxes or accepted_boxes), default=0.0) < 0.5:
+                    bucket = "rejected"
+                    reject_reason = "low_ocr_confidence"
+                elif accepted_boxes:
                     if rejected_language_results and not _pc_app_target_language_dominates(
                         record.config.app_type,
                         ocr_result.text_boxes,
@@ -172,6 +190,9 @@ class V3Runtime:
             path=str(path),
             bucket=bucket,  # type: ignore[arg-type]
             sha256=digest,
+            content_hash=digest,
+            valid=bool(quality["accepted"]),
+            near_duplicate=bool(quality["accepted"] and not unique),
             reject_reason=reject_reason,
             meta=meta,
         )
@@ -471,6 +492,10 @@ _SAFE_CLICK_LABELS = [
     "edit",
     "search",
     "view",
+    "go to",
+    "goto",
+    "zoom",
+    "favorites",
     "encoding",
     "language",
     "settings",
@@ -479,6 +504,7 @@ _SAFE_CLICK_LABELS = [
     "plugins",
     "window",
     "help",
+    "about",
     "文件",
     "编辑",
     "搜索",
@@ -595,6 +621,10 @@ _SAFE_PC_APP_UI_LABELS = {
     "edit",
     "search",
     "view",
+    "go to",
+    "goto",
+    "zoom",
+    "favorites",
     "encoding",
     "language",
     "settings",
@@ -603,6 +633,12 @@ _SAFE_PC_APP_UI_LABELS = {
     "plugins",
     "window",
     "help",
+    "about",
+    "fit page",
+    "fit width",
+    "single page",
+    "continuous",
+    "bookmarks",
     "?",
     "preferences",
     "find",

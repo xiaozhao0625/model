@@ -98,7 +98,17 @@ class V3RunStore:
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    def summary(self, run_id: str, ocr_ready: bool, model_ready: bool, safety_gate_ready: bool) -> V3Summary:
+    def summary(
+        self,
+        run_id: str,
+        ocr_ready: bool,
+        model_ready: bool,
+        safety_gate_ready: bool,
+        ocr_gpu_ready: bool = False,
+        ocr_performance_ready: bool = False,
+        ocr_production_ready: bool | None = None,
+        readiness_blockers: list[str] | None = None,
+    ) -> V3Summary:
         record = self.get_run(run_id)
         events = self.list_events(run_id)
         images = self.list_images(run_id)
@@ -116,6 +126,8 @@ class V3RunStore:
             and not record.config.observe_only
             and record.config.enable_auto_click
         )
+        production_ready = ocr_production_ready if ocr_production_ready is not None else ocr_gpu_ready and ocr_performance_ready
+        full_auto_ready = auto_ready and production_ready
         summary = V3Summary(
             run_id=run_id,
             status=record.status,
@@ -126,6 +138,7 @@ class V3RunStore:
             failed=failed,
             quarantined=quarantined,
             near_duplicate_count=sum(1 for image in images if image.reject_reason == "near_duplicate"),
+            reject_reason_distribution=_count_reject_reasons(images),
             accepted_by_capture_reason=accepted_by_capture_reason,
             accepted_by_ui_state_hint=accepted_by_ui_state_hint,
             auto_click_count=sum(1 for action in actions if _action_executed(action)),
@@ -138,8 +151,13 @@ class V3RunStore:
             risk_hit_count=action_status_counts.get("risk_hit", 0),
             observe_only=record.config.observe_only,
             auto_click_ready=auto_ready,
+            full_auto_capture_ready=full_auto_ready,
             model_ready=model_ready,
             ocr_ready=ocr_ready,
+            ocr_gpu_ready=ocr_gpu_ready,
+            ocr_performance_ready=ocr_performance_ready,
+            ocr_production_ready=production_ready,
+            readiness_blockers=readiness_blockers or [],
             safety_gate_ready=safety_gate_ready,
             latest_event=events[-1] if events else None,
         )
@@ -188,6 +206,16 @@ def _count_meta_values(images: list[V3ImageRecord], key: str, default: str) -> d
     for image in images:
         value = str(image.meta.get(key) or default)
         counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _count_reject_reasons(images: list[V3ImageRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for image in images:
+        if image.bucket != "rejected":
+            continue
+        reason = image.reject_reason or "unknown"
+        counts[reason] = counts.get(reason, 0) + 1
     return counts
 
 

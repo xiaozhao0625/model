@@ -86,12 +86,12 @@ for (const key of [
 }
 
 const sidebar = read("src/components/layout/sidebar.tsx");
-for (const label of ["质量报告", "OCR 状态", "行为包候选", "工具健康", "V3 采集器"]) {
-  assert(sidebar.includes(label), `missing sidebar label ${label}`);
+for (const routeName of ["quality-reports", "ocr-status", "behavior-candidates", "tool-health", "v3"]) {
+  assert(sidebar.includes(routeName), `missing sidebar route ${routeName}`);
 }
 
 const v3 = read("src/routes/v3-dashboard.tsx");
-for (const phrase of ["observe_only", "完整自动模式", "创建 observe_only 任务", "模型与 OCR", "Action Audit", "blocked reason", "before_image", "after_image"]) {
+for (const phrase of ["observe_only", "OCR GPU", "OCR performance", "OCR production", "Full auto", "Models And OCR", "Action Audit", "blocked reason", "before_image", "after_image"]) {
   assert(v3.includes(phrase), `missing v3 phrase ${phrase}`);
 }
 

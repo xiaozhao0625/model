@@ -14,7 +14,9 @@ $env:APP_SHOT_ENABLE_PADDLEOCR = "1"
 New-Item -ItemType Directory -Force -Path (Join-Path $AppShotHome "test-images") | Out-Null
 New-Item -ItemType Directory -Force -Path $env:PADDLE_PDX_CACHE_HOME | Out-Null
 
-$Python = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
+$GpuPython = Join-Path $AppShotHome "venvs\v3-gpu\Scripts\python.exe"
+$CpuPython = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
+$Python = if (Test-Path -LiteralPath $GpuPython) { $GpuPython } else { $CpuPython }
 if (!(Test-Path -LiteralPath $Python)) {
   throw "Python venv not found: $Python"
 }

@@ -15,6 +15,8 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/model/start_showui_server_app_shot.ps1",
         "scripts/v3/model/check_paddle_device_app_shot.ps1",
         "scripts/v3/model/install_paddle_gpu_app_shot.ps1",
+        "scripts/v3/model/check_ocr_gpu_performance_app_shot.ps1",
+        "scripts/v3/model/smoke_paddle_gpu_ocr_app_shot.ps1",
         "scripts/v3/model/smoke_showui_inference_app_shot.ps1",
     ]
 
@@ -65,3 +67,35 @@ def test_showui_check_reports_explicit_enable_flag():
 
     assert "APP_SHOT_ENABLE_SHOWUI" in text
     assert "weights_present_but_disabled" in text
+
+
+def test_gpu_paddle_install_script_uses_isolated_v3_gpu_venv():
+    text = (REPO_ROOT / "scripts/v3/model/install_paddle_gpu_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "venvs\\v3-gpu" in text
+    assert "pip freeze" in text
+    assert "paddlepaddle-gpu" in text
+    assert "is_compiled_with_cuda" in text
+
+
+def test_ocr_gpu_performance_script_reports_readiness_json():
+    text = (REPO_ROOT / "scripts/v3/model/check_ocr_gpu_performance_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "ocr_gpu_ready" in text
+    assert "ocr_performance_ready" in text
+    assert "ocr_production_ready" in text
+    assert "full_auto_capture_ready" in text
+    assert "full_frame_ms" in text
+    assert "roi_ms" in text
+    assert "scaled_ms" in text
+    assert "cache_hit_ms" in text
+
+
+def test_gpu_ocr_smoke_covers_multilingual_and_real_window_targets():
+    text = (REPO_ROOT / "scripts/v3/model/smoke_paddle_gpu_ocr_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "is_compiled_with_cuda" in text
+    assert "english" in text
+    assert "japanese" in text
+    assert "korean" in text
+    assert "notepadplusplus" in text.lower()

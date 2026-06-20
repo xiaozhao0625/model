@@ -37,11 +37,13 @@ class PaddleOcrProvider(OcrProvider):
                 reason="paddleocr_not_installed",
                 details={"error": self._error},
             )
+        details = _paddle_runtime_details()
         return ProviderHealth(
             provider=self.provider_name,
             status="ready",
             enabled=self._enabled,
             reason="enabled" if self._enabled else "available_but_disabled_by_default",
+            details=details,
         )
 
     def recognize(self, image_path: str) -> OcrResult:
@@ -98,6 +100,22 @@ def _configure_paddle_cache_env() -> None:
     app_shot_home = os.environ.get("APP_SHOT_HOME")
     if app_shot_home:
         os.environ.setdefault("PADDLE_HOME", str(os.path.join(app_shot_home, "cache", "paddle")))
+
+
+def _paddle_runtime_details() -> dict[str, object]:
+    try:
+        import paddle  # type: ignore
+
+        compiled_cuda = bool(paddle.is_compiled_with_cuda())
+        device = str(paddle.get_device())
+        return {
+            "paddle_version": str(getattr(paddle, "__version__", "unknown")),
+            "compiled_cuda": compiled_cuda,
+            "device": device,
+            "gpu_device": device.startswith("gpu") or device.startswith("cuda"),
+        }
+    except Exception as exc:
+        return {"runtime_error": repr(exc), "compiled_cuda": False, "gpu_device": False}
 
 
 def _paddle_lang_for_target(target_language: str) -> str:

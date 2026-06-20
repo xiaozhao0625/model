@@ -31,10 +31,13 @@ $env:DATA_ROOT = Join-Path $env:APP_SHOT_RUNS "master"
 $env:DATABASE_URL = "sqlite:///$($env:DATA_ROOT)\master.db"
 $env:APP_SHOT_ENABLE_PADDLEOCR = "1"
 $env:APP_SHOT_ENABLE_SHOWUI = "1"
+$env:APP_SHOT_OCR_PERFORMANCE_REPORT = Join-Path $AppShotHome "cache\ocr_gpu_performance.json"
 New-Item -ItemType Directory -Force -Path $env:DATA_ROOT | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $env:APP_SHOT_RUNS "v3") | Out-Null
 
-$Python = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
+$GpuPython = Join-Path $AppShotHome "venvs\v3-gpu\Scripts\python.exe"
+$CpuPython = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
+$Python = if (Test-Path -LiteralPath $GpuPython) { $GpuPython } else { $CpuPython }
 if (!(Test-Path -LiteralPath $Python)) {
   throw "Python venv not found: $Python"
 }
