@@ -119,6 +119,7 @@ def test_runtime_real_click_uses_safe_ocr_candidate_and_writes_audit(tmp_path):
 
     assert actions[0]["result"]["executed"] is True
     assert actions[0]["result"]["clicked"] == [30, 20]
+    assert actions[0]["result"]["click_backend"] == "custom_backend"
     assert actions[0]["source_candidate_id"] == "ocr_box:Start:20:10:40:30"
     assert actions[0]["safety_result"]["reason"] == "allowed"
     assert actions[0]["result"]["status"] == "no_effect"
@@ -133,6 +134,7 @@ def test_runtime_real_click_uses_safe_ocr_candidate_and_writes_audit(tmp_path):
     assert action_entry["label"] == "Start"
     assert action_entry["before_image"].endswith("english.png")
     assert action_entry["after_image"].endswith("english.png")
+    assert action_entry["result"]["click_backend"] == "custom_backend"
 
 
 def test_runtime_records_no_effect_when_after_image_hash_matches(tmp_path):

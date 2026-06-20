@@ -217,6 +217,14 @@ class V3Summary(BaseModel):
     ocr_gpu_ready: bool = False
     ocr_performance_ready: bool = False
     ocr_production_ready: bool = False
+    input_gateway_ready: bool = False
+    cursor_read_ready: bool = False
+    mouse_click_ready: bool = False
+    same_desktop_session_ready: bool = False
+    same_integrity_ready: bool = False
+    interactive_desktop_ready: bool = False
+    click_backend: str = "dry_run_backend"
+    input_gateway_blockers: list[str] = Field(default_factory=list)
     readiness_blockers: list[str] = Field(default_factory=list)
     safety_gate_ready: bool
     latest_event: V3Event | None = None
@@ -230,6 +238,19 @@ class ProviderHealth(BaseModel):
     details: dict[str, object] = Field(default_factory=dict)
 
 
+class InputGatewayHealth(BaseModel):
+    input_gateway_ready: bool = False
+    cursor_read_ready: bool = False
+    mouse_click_ready: bool = False
+    same_desktop_session_ready: bool = False
+    same_integrity_ready: bool = False
+    interactive_desktop_ready: bool = False
+    click_backend: Literal["computer_use_backend", "win32_sendinput_backend", "pyautogui_backend", "dry_run_backend"] = "dry_run_backend"
+    blockers: list[str] = Field(default_factory=list)
+    diagnosis_path: str | None = None
+    details: dict[str, object] = Field(default_factory=dict)
+
+
 class V3Health(BaseModel):
     status: Literal["ready", "degraded"] = "degraded"
     ocr: list[ProviderHealth]
@@ -239,6 +260,15 @@ class V3Health(BaseModel):
     ocr_gpu_ready: bool = False
     ocr_performance_ready: bool = False
     ocr_production_ready: bool = False
+    input_gateway_ready: bool = False
+    cursor_read_ready: bool = False
+    mouse_click_ready: bool = False
+    same_desktop_session_ready: bool = False
+    same_integrity_ready: bool = False
+    interactive_desktop_ready: bool = False
+    click_backend: str = "dry_run_backend"
+    input_gateway_blockers: list[str] = Field(default_factory=list)
+    input_gateway_diagnosis_path: str | None = None
     readiness_blockers: list[str] = Field(default_factory=list)
     defaults: V3TaskConfig
 

@@ -111,6 +111,15 @@ export interface V3Health {
   ocr_gpu_ready: boolean;
   ocr_performance_ready: boolean;
   ocr_production_ready: boolean;
+  input_gateway_ready: boolean;
+  cursor_read_ready: boolean;
+  mouse_click_ready: boolean;
+  same_desktop_session_ready: boolean;
+  same_integrity_ready: boolean;
+  interactive_desktop_ready: boolean;
+  click_backend: string;
+  input_gateway_blockers: string[];
+  input_gateway_diagnosis_path?: string | null;
   readiness_blockers: string[];
   defaults: V3TaskConfig;
 }
@@ -144,6 +153,14 @@ export interface V3Summary {
   ocr_gpu_ready: boolean;
   ocr_performance_ready: boolean;
   ocr_production_ready: boolean;
+  input_gateway_ready: boolean;
+  cursor_read_ready: boolean;
+  mouse_click_ready: boolean;
+  same_desktop_session_ready: boolean;
+  same_integrity_ready: boolean;
+  interactive_desktop_ready: boolean;
+  click_backend: string;
+  input_gateway_blockers: string[];
   readiness_blockers: string[];
   safety_gate_ready: boolean;
 }
@@ -156,6 +173,7 @@ export interface V3ActionRecord {
     status?: string;
     clicked?: number[];
     rollback_reason?: string;
+    click_backend?: string;
   };
   label?: string | null;
   source_candidate_id?: string | null;

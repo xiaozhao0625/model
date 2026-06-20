@@ -67,10 +67,17 @@ export function V3DashboardRoute() {
             <Metric label="OCR GPU" value={health?.ocr_gpu_ready ? "ready" : "not_ready"} />
             <Metric label="OCR performance" value={health?.ocr_performance_ready ? "ready" : "not_ready"} />
             <Metric label="OCR production" value={health?.ocr_production_ready ? "ready" : "not_ready"} />
+            <Metric label="Input gateway" value={health?.input_gateway_ready ? "ready" : "not_ready"} />
+            <Metric label="Cursor read" value={health?.cursor_read_ready ? "ready" : "not_ready"} />
+            <Metric label="Mouse click" value={health?.mouse_click_ready ? "ready" : "not_ready"} />
+            <Metric label="Desktop session" value={health?.same_desktop_session_ready ? "ready" : "not_ready"} />
+            <Metric label="Integrity" value={health?.same_integrity_ready ? "ready" : "not_ready"} />
+            <Metric label="Interactive desktop" value={health?.interactive_desktop_ready ? "ready" : "not_ready"} />
+            <Metric label="Click backend" value={health?.click_backend || "unknown"} />
             <Metric label="Full auto" value={health?.full_auto_capture_ready ? "ready" : "not_ready"} />
             <Metric label="Runs" value={String(runs.length)} />
           </div>
-          <Blockers blockers={health?.readiness_blockers || []} />
+          <Blockers blockers={[...(health?.readiness_blockers || []), ...(health?.input_gateway_blockers || [])]} />
           <button className="mt-4 rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100 hover:bg-blue-500/10" onClick={() => void createObserveOnlyRun()}>
             Create observe_only run
           </button>
@@ -114,10 +121,12 @@ export function V3DashboardRoute() {
                 <Metric label="rejected" value={String(summary.counts.rejected || 0)} />
                 <Metric label="actions" value={String(summary.counts.actions || actions.length)} />
                 <Metric label="OCR production" value={summary.ocr_production_ready ? "ready" : "not_ready"} />
+                <Metric label="Input gateway" value={summary.input_gateway_ready ? "ready" : "not_ready"} />
+                <Metric label="Click backend" value={summary.click_backend || "unknown"} />
                 <Metric label="Full auto" value={summary.full_auto_capture_ready ? "ready" : "not_ready"} />
                 <Metric label="near duplicate" value={String(summary.near_duplicate_count || 0)} />
               </div>
-              <Blockers blockers={summary.readiness_blockers || []} />
+              <Blockers blockers={[...(summary.readiness_blockers || []), ...(summary.input_gateway_blockers || [])]} />
             </>
           ) : (
             <p className="text-sm text-slate-500">Select a V3 run to inspect action audit.</p>
@@ -127,6 +136,7 @@ export function V3DashboardRoute() {
               <AuditRow label="label" value={latestAction.label || "-"} />
               <AuditRow label="status" value={latestAction.result?.status || "-"} />
               <AuditRow label="reason" value={latestAction.result?.reason || "-"} />
+              <AuditRow label="click_backend" value={latestAction.result?.click_backend || "-"} />
               <AuditRow label="blocked reason" value={String(latestAction.safety_result?.reason || latestAction.result?.rollback_reason || "-")} />
               <AuditRow label="source_candidate_id" value={latestAction.source_candidate_id || "-"} />
               <AuditRow label="before_image" value={latestAction.before_image || "-"} />

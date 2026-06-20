@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
+from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.action.rollback import rollback_plan
 from ai_screenshot_platform.v3.action.action_loop import ActionLoop
 from ai_screenshot_platform.v3.action.candidate_fusion import fuse_candidates
@@ -52,6 +53,9 @@ class V3Runtime:
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
 
+    def action_health(self) -> dict[str, object]:
+        return load_input_gateway_readiness().model_dump()
+
     def defaults(self) -> V3TaskConfig:
         return V3TaskConfig()
 
@@ -87,6 +91,14 @@ class V3Runtime:
             ocr_gpu_ready=health.ocr_gpu_ready,
             ocr_performance_ready=health.ocr_performance_ready,
             ocr_production_ready=health.ocr_production_ready,
+            input_gateway_ready=health.input_gateway_ready,
+            cursor_read_ready=health.cursor_read_ready,
+            mouse_click_ready=health.mouse_click_ready,
+            same_desktop_session_ready=health.same_desktop_session_ready,
+            same_integrity_ready=health.same_integrity_ready,
+            interactive_desktop_ready=health.interactive_desktop_ready,
+            click_backend=health.click_backend,
+            input_gateway_blockers=health.input_gateway_blockers,
             readiness_blockers=health.readiness_blockers,
         )
 
@@ -420,6 +432,7 @@ class V3Runtime:
         action["safety_result"] = action.get("decision", {})
         action["before_image"] = before_image
         action["after_image"] = after_image
+        action["click_backend"] = result.get("click_backend")
         return action
 
     def _evaluate_click_effect(self, run_id: str, before_image: str, after_image: str, target_language: str) -> dict[str, object]:

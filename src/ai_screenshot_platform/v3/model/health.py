@@ -7,6 +7,7 @@ from pathlib import Path
 from ai_screenshot_platform.v3.model.registry import UiModelRegistry
 from ai_screenshot_platform.v3.ocr.mock_provider import MockOcrProvider
 from ai_screenshot_platform.v3.ocr.paddle_provider import PaddleOcrProvider
+from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.schemas import ProviderHealth, V3Health, V3TaskConfig
 
 
@@ -18,9 +19,23 @@ def build_v3_health(model_registry: UiModelRegistry | None = None) -> V3Health:
     showui_ready = any(item.provider == "showui" and item.status == "ready" and item.enabled for item in models)
     safety_ready = True
     ocr_readiness = _ocr_production_readiness(ocr)
-    full_auto_ready = ocr_ready and showui_ready and safety_ready and ocr_readiness["ocr_production_ready"]
+    input_gateway = load_input_gateway_readiness()
+    readiness_blockers = [*ocr_readiness["readiness_blockers"]]
+    if not input_gateway.input_gateway_ready:
+        readiness_blockers.extend(input_gateway.blockers)
+    full_auto_ready = (
+        ocr_ready
+        and showui_ready
+        and safety_ready
+        and ocr_readiness["ocr_production_ready"]
+        and input_gateway.input_gateway_ready
+    )
     return V3Health(
-        status="ready" if ocr_ready and safety_ready and ocr_readiness["ocr_production_ready"] else "degraded",
+        status=(
+            "ready"
+            if ocr_ready and safety_ready and ocr_readiness["ocr_production_ready"] and input_gateway.input_gateway_ready
+            else "degraded"
+        ),
         ocr=ocr,
         models=models,
         complete_auto_mode_ready=full_auto_ready,
@@ -28,7 +43,16 @@ def build_v3_health(model_registry: UiModelRegistry | None = None) -> V3Health:
         ocr_gpu_ready=ocr_readiness["ocr_gpu_ready"],
         ocr_performance_ready=ocr_readiness["ocr_performance_ready"],
         ocr_production_ready=ocr_readiness["ocr_production_ready"],
-        readiness_blockers=ocr_readiness["readiness_blockers"],
+        input_gateway_ready=input_gateway.input_gateway_ready,
+        cursor_read_ready=input_gateway.cursor_read_ready,
+        mouse_click_ready=input_gateway.mouse_click_ready,
+        same_desktop_session_ready=input_gateway.same_desktop_session_ready,
+        same_integrity_ready=input_gateway.same_integrity_ready,
+        interactive_desktop_ready=input_gateway.interactive_desktop_ready,
+        click_backend=input_gateway.click_backend,
+        input_gateway_blockers=input_gateway.blockers,
+        input_gateway_diagnosis_path=input_gateway.diagnosis_path,
+        readiness_blockers=readiness_blockers,
         defaults=V3TaskConfig(),
     )
 

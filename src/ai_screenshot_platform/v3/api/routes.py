@@ -103,6 +103,10 @@ def create_v3_router() -> APIRouter:
     def record_action(run_id: str, payload: V3ActionAuditRequest, request: Request):
         return v3_ok(get_runtime(request).record_action_audit(run_id, payload.action))
 
+    @router.get("/action/health")
+    def action_health(request: Request):
+        return v3_ok(get_runtime(request).action_health())
+
     @router.get("/runs/{run_id}/events")
     def events(run_id: str, request: Request):
         return v3_ok([event.model_dump() for event in get_runtime(request).events(run_id)])

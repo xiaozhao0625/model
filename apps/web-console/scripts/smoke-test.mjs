@@ -91,7 +91,7 @@ for (const routeName of ["quality-reports", "ocr-status", "behavior-candidates",
 }
 
 const v3 = read("src/routes/v3-dashboard.tsx");
-for (const phrase of ["observe_only", "OCR GPU", "OCR performance", "OCR production", "Full auto", "Models And OCR", "Action Audit", "blocked reason", "before_image", "after_image"]) {
+for (const phrase of ["observe_only", "OCR GPU", "OCR performance", "OCR production", "Input gateway", "Cursor read", "Mouse click", "Click backend", "Full auto", "Models And OCR", "Action Audit", "blocked reason", "click_backend", "before_image", "after_image"]) {
   assert(v3.includes(phrase), `missing v3 phrase ${phrase}`);
 }
 

@@ -18,6 +18,8 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/model/check_ocr_gpu_performance_app_shot.ps1",
         "scripts/v3/model/smoke_paddle_gpu_ocr_app_shot.ps1",
         "scripts/v3/model/smoke_showui_inference_app_shot.ps1",
+        "scripts/v3/action/diagnose_input_gateway_app_shot.ps1",
+        "scripts/v3/action/smoke_input_gateway_app_shot.ps1",
     ]
 
     for script in expected:
@@ -99,3 +101,25 @@ def test_gpu_ocr_smoke_covers_multilingual_and_real_window_targets():
     assert "japanese" in text
     assert "korean" in text
     assert "notepadplusplus" in text.lower()
+
+
+def test_input_gateway_diagnosis_script_reports_audited_readiness_json():
+    text = (REPO_ROOT / "scripts/v3/action/diagnose_input_gateway_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "input_gateway_diagnosis.json" in text
+    assert "GetCursorPos" in text
+    assert "SetCursorPos" in text
+    assert "SendInput" in text
+    assert "pyautogui" in text
+    assert "integrity" in text
+    assert "interactive_desktop" in text
+    assert "input_gateway_ready" in text
+
+
+def test_input_gateway_smoke_requires_audited_backend_and_no_sendkeys():
+    text = (REPO_ROOT / "scripts/v3/action/smoke_input_gateway_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "click_backend" in text
+    assert "actions.jsonl" in text
+    assert "risk button" in text
+    assert "SendKeys" not in text

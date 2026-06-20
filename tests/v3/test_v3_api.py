@@ -4,15 +4,26 @@ from ai_screenshot_platform.master.api.app import create_app
 from ai_screenshot_platform.master.core.config import MasterSettings
 
 
-def test_v3_api_create_start_summary(tmp_path):
+def test_v3_api_create_start_summary(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_INPUT_GATEWAY_DIAGNOSIS", str(tmp_path / "missing_input_gateway.json"))
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     with TestClient(create_app(settings)) as client:
         health = client.get("/api/v3/health").json()
         assert health["ok"] is True
         data = health["data"]
         assert data["ocr_production_ready"] is False
+        assert data["input_gateway_ready"] is False
+        assert data["cursor_read_ready"] is False
+        assert data["mouse_click_ready"] is False
+        assert data["same_desktop_session_ready"] is False
+        assert data["same_integrity_ready"] is False
+        assert data["interactive_desktop_ready"] is False
+        assert data["input_gateway_blockers"]
         assert data["full_auto_capture_ready"] is False
         assert data["readiness_blockers"]
+        action_health = client.get("/api/v3/action/health").json()["data"]
+        assert action_health["input_gateway_ready"] is False
+        assert action_health["click_backend"] == "dry_run_backend"
         created = client.post("/api/v3/runs", json={"config": {"save_root": str(tmp_path / "v3")}}).json()["data"]
         started = client.post(f"/api/v3/runs/{created['run_id']}/start").json()["data"]
         summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
