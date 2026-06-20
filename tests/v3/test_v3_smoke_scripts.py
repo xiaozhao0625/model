@@ -78,3 +78,23 @@ def test_local_html_controlled_click_smoke_requires_explicit_arm():
     assert "app_shot_env.ps1" in script
     assert "ImageGrab.grab(bbox=" in script
     assert "click_backend=offset_click" in script
+
+
+def test_notepadplusplus_frame_pump_scripts_capture_window_bbox():
+    start_script = REPO_ROOT / "scripts/v3/capture/start_notepadplusplus_frame_pump_app_shot.ps1"
+    stop_script = REPO_ROOT / "scripts/v3/capture/stop_notepadplusplus_frame_pump_app_shot.ps1"
+    smoke_script = REPO_ROOT / "scripts/v3/capture/smoke_frame_pump_app_shot.ps1"
+
+    start_text = start_script.read_text(encoding="utf-8")
+    stop_text = stop_script.read_text(encoding="utf-8")
+    smoke_text = smoke_script.read_text(encoding="utf-8")
+
+    assert "ImageGrab.grab(bbox=" in start_text
+    assert "GetWindowRect" in start_text
+    assert "notepadplusplus_frame_pump.pid" in start_text
+    assert 'strftime("%Y%m%d_%H%M%S")' in start_text
+    assert "frame_{stamp}_" in start_text
+    assert "Stop-Process" in stop_text
+    assert "MinFrames" in smoke_text
+    assert "start_notepadplusplus_frame_pump_app_shot.ps1" in smoke_text
+    assert "stop_notepadplusplus_frame_pump_app_shot.ps1" in smoke_text
