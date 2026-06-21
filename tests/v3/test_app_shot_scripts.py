@@ -439,6 +439,8 @@ def test_single_node_deploy_and_self_check_scripts_document_no_redis_requirement
     assert "/api/v3/runs" in api_smoke
     assert "/api/v3/runs/$runId/summary" in api_smoke
     assert "/api/v3/runs/$runId/actions" in api_smoke
+    assert "/api/v3/runs/$runId/images" in api_smoke
+    assert "/api/v3/runs/$runId/open-folder" in api_smoke
     assert "/api/v3/config/defaults" in api_smoke
     assert "Redis：当前 V3 单机模式不需要安装" in docs
     assert "game_mode_ready=false" in docs

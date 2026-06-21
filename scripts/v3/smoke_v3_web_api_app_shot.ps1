@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ReportsRoot = Join-Path $AppShotHome "reports"
 New-Item -ItemType Directory -Force -Path $ReportsRoot | Out-Null
+$env:APP_SHOT_DISABLE_OPEN_FOLDER = "1"
 
 $Endpoints = @(
   "/api/v3/health",
@@ -46,7 +47,9 @@ try {
     $runId = $runs[0].run_id
     $RunDetailEndpoints = @(
       "/api/v3/runs/$runId/summary",
-      "/api/v3/runs/$runId/actions"
+      "/api/v3/runs/$runId/actions",
+      "/api/v3/runs/$runId/images",
+      "/api/v3/runs/$runId/open-folder"
     )
   }
 } catch {
@@ -62,7 +65,9 @@ try {
 foreach ($endpoint in $RunDetailEndpoints) {
   $url = "$BaseUrl$endpoint"
   try {
-    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+    $method = if ($endpoint.EndsWith("/open-folder")) { "POST" } else { "GET" }
+    $smokeUrl = if ($endpoint.EndsWith("/open-folder")) { "$url`?dry_run=1" } else { $url }
+    $response = Invoke-WebRequest -Uri $smokeUrl -Method $method -UseBasicParsing -TimeoutSec 10
     $Results += [pscustomobject]@{
       endpoint = $endpoint
       ok = $response.StatusCode -ge 200 -and $response.StatusCode -lt 300

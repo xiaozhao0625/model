@@ -13,6 +13,8 @@ import type {
   UploadRecord,
   V3Health,
   V3ActionRecord,
+  V3ImageRecord,
+  V3OpenPathResult,
   V3RunRecord,
   V3Summary,
   V3TaskConfig,
@@ -71,6 +73,11 @@ export interface ApiClient {
   stopV3Run(runId: string): Promise<V3RunRecord>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
+  getV3Images(runId: string): Promise<V3ImageRecord[]>;
+  getV3ImagePreviewUrl(runId: string, imageId: string): string;
+  getV3ImageThumbnailUrl(runId: string, imageId: string): string;
+  revealV3Image(runId: string, imageId: string): Promise<V3OpenPathResult>;
+  openV3RunFolder(runId: string): Promise<V3OpenPathResult>;
   isUsingMockFallback(): boolean;
 }
 
@@ -255,7 +262,10 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
           max_actions: 5,
           safety_mode: "strict",
           observe_only: true,
-          must_have_text: false
+          must_have_text: false,
+          game_mode: "menu",
+          allow_no_text_gameplay: false,
+          max_game_actions: 5
         }
       }),
     getV3Defaults: () => request("/api/v3/config/defaults", mockV3Defaults()),
@@ -289,6 +299,17 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         safety_gate_ready: true
       }),
     getV3Actions: (runId) => request(`/api/v3/runs/${runId}/actions`, []),
+    getV3Images: (runId) => request(`/api/v3/runs/${runId}/images`, []),
+    getV3ImagePreviewUrl: (runId, imageId) => `${root}/api/v3/runs/${runId}/images/${imageId}/preview`,
+    getV3ImageThumbnailUrl: (runId, imageId) => `${root}/api/v3/runs/${runId}/images/${imageId}/thumbnail`,
+    revealV3Image: (runId, imageId) =>
+      request(
+        `/api/v3/runs/${runId}/images/${imageId}/reveal`,
+        { status: "unavailable", path: "", folder: "" },
+        { method: "POST", body: JSON.stringify({}) }
+      ),
+    openV3RunFolder: (runId) =>
+      request(`/api/v3/runs/${runId}/open-folder`, { status: "unavailable", path: "" }, { method: "POST", body: JSON.stringify({}) }),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }
@@ -312,7 +333,10 @@ function mockV3Defaults(): V3TaskConfig {
     max_actions: 5,
     safety_mode: "strict",
     observe_only: true,
-    must_have_text: false
+    must_have_text: false,
+    game_mode: "menu",
+    allow_no_text_gameplay: false,
+    max_game_actions: 5
   };
 }
 

@@ -11,14 +11,20 @@ import { RunsRoute } from "./routes/runs";
 import { SettingsRoute } from "./routes/settings";
 import { ToolHealthRoute } from "./routes/tool-health";
 import { UploadRoute } from "./routes/upload";
+import { V3ActionsRoute } from "./routes/v3-actions";
 import { V3DashboardRoute } from "./routes/v3-dashboard";
+import { V3CurrentRunRoute } from "./routes/v3-current-run";
+import { V3GalleryRoute } from "./routes/v3-gallery";
+import { V3GameRoute } from "./routes/v3-game";
+import { V3NewCaptureRoute } from "./routes/v3-new-capture";
+import { V3ReportsRoute } from "./routes/v3-reports";
 import { WorkersRoute } from "./routes/workers";
 
 export function AppRoutes() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<DashboardRoute />} />
+        <Route path="/" element={<Navigate to="/v3" replace />} />
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/apps" element={<AppsRoute />} />
         <Route path="/runs" element={<RunsRoute />} />
@@ -31,8 +37,16 @@ export function AppRoutes() {
         <Route path="/behavior-candidates" element={<BehaviorCandidatesRoute />} />
         <Route path="/tool-health" element={<ToolHealthRoute />} />
         <Route path="/v3" element={<V3DashboardRoute />} />
+        <Route path="/v3/new" element={<V3NewCaptureRoute />} />
+        <Route path="/v3/current" element={<V3CurrentRunRoute />} />
+        <Route path="/v3/gallery" element={<V3GalleryRoute />} />
+        <Route path="/v3/actions" element={<V3ActionsRoute />} />
+        <Route path="/v3/runs/:runId/gallery" element={<V3GalleryRoute />} />
+        <Route path="/v3/runs/:runId/actions" element={<V3ActionsRoute />} />
+        <Route path="/v3/game" element={<V3GameRoute />} />
+        <Route path="/v3/reports" element={<V3ReportsRoute />} />
         <Route path="/settings" element={<SettingsRoute />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/v3" replace />} />
       </Routes>
     </AppShell>
   );

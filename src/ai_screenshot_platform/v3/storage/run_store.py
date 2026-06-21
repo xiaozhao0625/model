@@ -77,6 +77,10 @@ class V3RunStore:
             return []
         return [V3Event.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
+    def run_dir(self, run_id: str) -> Path:
+        self.get_run(run_id)
+        return self._run_dir(run_id)
+
     def write_artifact(self, run_id: str, name: str, payload: object) -> Path:
         path = self._run_dir(run_id) / name
         path.parent.mkdir(parents=True, exist_ok=True)

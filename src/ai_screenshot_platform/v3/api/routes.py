@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, FastAPI, Request
+import os
+import subprocess
+from pathlib import Path
+
+from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from ai_screenshot_platform.v3.runtime import V3Runtime
 from ai_screenshot_platform.v3.schemas import ModelRequest, V3ActionAuditRequest, V3ImageIngestRequest, V3RunCreateRequest
@@ -59,7 +64,25 @@ def create_v3_router() -> APIRouter:
 
     @router.get("/runs/{run_id}/images")
     def images(run_id: str, request: Request):
-        return v3_ok([image.model_dump() for image in get_runtime(request).images(run_id)])
+        return v3_ok([_image_payload(image) for image in get_runtime(request).images(run_id)])
+
+    @router.get("/runs/{run_id}/images/{image_id}/thumbnail")
+    def image_thumbnail(run_id: str, image_id: str, request: Request):
+        image = _find_image(get_runtime(request), run_id, image_id)
+        return FileResponse(_image_file(image), media_type="image/png")
+
+    @router.get("/runs/{run_id}/images/{image_id}/preview")
+    def image_preview(run_id: str, image_id: str, request: Request):
+        image = _find_image(get_runtime(request), run_id, image_id)
+        return FileResponse(_image_file(image), media_type="image/png")
+
+    @router.post("/runs/{run_id}/images/{image_id}/reveal")
+    def reveal_image(run_id: str, image_id: str, request: Request, dry_run: bool = False):
+        image = _find_image(get_runtime(request), run_id, image_id)
+        path = _image_file(image)
+        folder = path.parent
+        status = "dry_run" if dry_run else _open_in_file_manager(folder, select_path=path)
+        return v3_ok({"status": status, "path": str(path), "folder": str(folder)})
 
     @router.post("/runs/{run_id}/images/ingest")
     def ingest_image(run_id: str, payload: V3ImageIngestRequest, request: Request):
@@ -112,10 +135,11 @@ def create_v3_router() -> APIRouter:
         return v3_ok([event.model_dump() for event in get_runtime(request).events(run_id)])
 
     @router.post("/runs/{run_id}/open-folder")
-    def open_folder(run_id: str, request: Request):
+    def open_folder(run_id: str, request: Request, dry_run: bool = False):
         runtime = get_runtime(request)
-        run = runtime.get_run(run_id)
-        return v3_ok({"status": "not_opened_in_api", "path": f"{run.config.save_root}/{run.run_id}"})
+        path = runtime.store.run_dir(run_id).resolve()
+        status = "dry_run" if dry_run else _open_in_file_manager(path)
+        return v3_ok({"status": status, "path": str(path)})
 
     @router.post("/runs/{run_id}/delete-rejected")
     def delete_rejected(run_id: str, request: Request):
@@ -147,3 +171,41 @@ def create_v3_router() -> APIRouter:
 
 def register_v3_routes(app: FastAPI) -> None:
     app.include_router(create_v3_router())
+
+
+def _image_payload(image) -> dict[str, object]:
+    payload = image.model_dump()
+    path = Path(image.path).resolve()
+    payload["absolute_path"] = str(path)
+    payload["folder"] = str(path.parent)
+    return payload
+
+
+def _find_image(runtime: V3Runtime, run_id: str, image_id: str):
+    for image in runtime.images(run_id):
+        if image.image_id == image_id:
+            return image
+    raise HTTPException(status_code=404, detail=f"image not found: {image_id}")
+
+
+def _image_file(image) -> Path:
+    path = Path(image.path).resolve()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"image file not found: {path}")
+    return path
+
+
+def _open_in_file_manager(folder: Path, select_path: Path | None = None) -> str:
+    if os.environ.get("APP_SHOT_DISABLE_OPEN_FOLDER") == "1":
+        return "disabled_by_env"
+    try:
+        if os.name == "nt":
+            if select_path is not None:
+                subprocess.Popen(["explorer", f"/select,{select_path}"])
+            else:
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            return "opened"
+        subprocess.Popen(["xdg-open", str(folder)])
+        return "opened"
+    except Exception as exc:  # pragma: no cover - OS integration varies.
+        return f"open_failed:{exc}"

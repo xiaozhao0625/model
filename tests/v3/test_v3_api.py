@@ -61,6 +61,32 @@ def test_v3_api_accepts_pc_app_type_and_twenty_actions(tmp_path):
         assert config["max_actions"] == 20
 
 
+def test_v3_api_accepts_pc_game_config_fields(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v3/runs",
+            json={
+                "config": {
+                    "save_root": str(tmp_path / "v3"),
+                    "app_type": "pc_game",
+                    "game_mode": "gameplay",
+                    "allow_no_text_gameplay": True,
+                    "enable_game_explorer": False,
+                    "max_game_actions": 12,
+                }
+            },
+        )
+
+        assert response.status_code == 200
+        config = response.json()["data"]["config"]
+        assert config["app_type"] == "pc_game"
+        assert config["game_mode"] == "gameplay"
+        assert config["allow_no_text_gameplay"] is True
+        assert config["enable_game_explorer"] is False
+        assert config["max_game_actions"] == 12
+
+
 def test_v3_api_ingests_image_into_run(tmp_path):
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     image = tmp_path / "start_button.png"
@@ -84,6 +110,40 @@ def test_v3_api_ingests_image_into_run(tmp_path):
 
         assert ingested["path"] == str(image)
         assert ingested["bucket"] == "accepted"
+
+
+def test_v3_api_serves_image_preview_thumbnail_and_reveal_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_DISABLE_OPEN_FOLDER", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image = tmp_path / "accepted.png"
+    image.write_bytes(b"png-bytes")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/runs",
+            json={"config": {"save_root": str(tmp_path / "v3"), "target_language": "en"}},
+        ).json()["data"]
+        run_id = created["run_id"]
+        ingested = client.post(f"/api/v3/runs/{run_id}/images/ingest", json={"image_path": str(image)}).json()["data"]
+        image_id = ingested["image_id"]
+
+        images = client.get(f"/api/v3/runs/{run_id}/images").json()["data"]
+        preview = client.get(f"/api/v3/runs/{run_id}/images/{image_id}/preview")
+        thumbnail = client.get(f"/api/v3/runs/{run_id}/images/{image_id}/thumbnail")
+        reveal = client.post(f"/api/v3/runs/{run_id}/images/{image_id}/reveal").json()["data"]
+        open_folder = client.post(f"/api/v3/runs/{run_id}/open-folder").json()["data"]
+
+        assert images[0]["image_id"] == image_id
+        assert images[0]["absolute_path"] == str(image.resolve())
+        assert preview.status_code == 200
+        assert thumbnail.status_code == 200
+        assert preview.content == b"png-bytes"
+        assert thumbnail.content == b"png-bytes"
+        assert reveal["path"] == str(image.resolve())
+        assert reveal["folder"] == str(tmp_path.resolve())
+        assert reveal["status"] == "disabled_by_env"
+        assert open_folder["path"].endswith(run_id)
+        assert open_folder["path"][1:3] == ":\\"
+        assert open_folder["status"] == "disabled_by_env"
 
 
 def test_v3_api_get_actions_is_read_only(tmp_path):

@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 
 RunStatus = Literal["created", "running", "paused", "stopped", "completed", "failed"]
-AppType = Literal["software", "pc_app", "game", "web", "auto"]
+AppType = Literal["software", "pc_app", "pc_game", "game", "web", "auto"]
+GameMode = Literal["menu", "gameplay", "auto"]
 CaptureSource = Literal["obs", "folder_watch", "window"]
 SafetyMode = Literal["strict", "review", "off"]
 CaptureReason = Literal[
@@ -68,6 +69,9 @@ class V3TaskConfig(BaseModel):
     safety_mode: SafetyMode = "strict"
     observe_only: bool = True
     must_have_text: bool = False
+    game_mode: GameMode = "menu"
+    allow_no_text_gameplay: bool = False
+    max_game_actions: int = Field(default=5, ge=1, le=30)
 
 
 class V3RunCreateRequest(BaseModel):

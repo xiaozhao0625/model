@@ -77,7 +77,7 @@ export interface RunLogEntry {
 
 export interface V3TaskConfig {
   app_name: string;
-  app_type: "software" | "pc_app" | "game" | "web" | "auto";
+  app_type: "software" | "pc_app" | "pc_game" | "game" | "web" | "auto";
   target_language: string;
   capture_source: "obs" | "folder_watch" | "window";
   capture_interval_ms: number;
@@ -92,6 +92,9 @@ export interface V3TaskConfig {
   safety_mode: "strict" | "review" | "off";
   observe_only: boolean;
   must_have_text: boolean;
+  game_mode: "menu" | "gameplay" | "auto";
+  allow_no_text_gameplay: boolean;
+  max_game_actions: number;
 }
 
 export interface V3ProviderHealth {
@@ -190,6 +193,28 @@ export interface V3ActionRecord {
   safety_result?: Record<string, unknown>;
   before_image?: string | null;
   after_image?: string | null;
+}
+
+export interface V3ImageRecord {
+  image_id: string;
+  path: string;
+  absolute_path?: string;
+  folder?: string;
+  bucket: "pending" | "accepted" | "rejected" | "deleted" | "manual_review";
+  sha256?: string | null;
+  content_hash?: string | null;
+  valid: boolean;
+  near_duplicate: boolean;
+  reject_reason?: string | null;
+  created_at: string;
+  meta: Record<string, unknown>;
+  duplicate_decision: Record<string, unknown>;
+}
+
+export interface V3OpenPathResult {
+  status: string;
+  path: string;
+  folder?: string;
 }
 
 export interface MetaEntry {
