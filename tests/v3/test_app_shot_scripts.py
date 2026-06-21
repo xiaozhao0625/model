@@ -446,3 +446,35 @@ def test_single_node_deploy_and_self_check_scripts_document_no_redis_requirement
     assert "game_mode_ready=false" in docs
     assert "enable_game_explorer=false" in docs
     assert "自动登录" in docs
+
+
+def test_portable_move_repair_and_start_scripts_are_drive_agnostic():
+    repair = (REPO_ROOT / "scripts/v3/portable/repair_after_move_app_shot.ps1").read_text(encoding="utf-8")
+    start = (REPO_ROOT / "scripts/v3/portable/start_app_shot_v3.ps1").read_text(encoding="utf-8")
+
+    assert "Resolve-AppShotHome" in repair
+    assert "Resolve-AppShotHome" in start
+    assert "$PSScriptRoot" in repair
+    assert "$PSScriptRoot" in start
+    assert "D:\\work\\app-shot" not in repair
+    assert "D:\\work\\app-shot" not in start
+
+    assert "app_shot_env.ps1" in repair
+    assert "APP_SHOT_HOME" in repair
+    assert "venvs\\v3-gpu" in repair
+    assert "venvs\\v3" in repair
+    assert "node_modules" in repair
+    assert "models" in repair
+    assert "tools" in repair
+    assert "v3_portable_repair_report.json" in repair
+    assert "ConvertTo-Json" in repair
+    assert "缺失或不可用" in repair
+
+    assert "repair_after_move_app_shot.ps1" in start
+    assert "start_v3_backend_app_shot.ps1" in start
+    assert "start_v3_web_app_shot.ps1" in start
+    assert "Get-NetTCPConnection" in start
+    assert "Start-Process" in start
+    assert "http://127.0.0.1:5173/v3" in start
+    assert "v3_portable_start_report.json" in start
+    assert "APP_SHOT_PORTABLE_SKIP_REPAIR" in start
