@@ -1,3 +1,5 @@
+import json
+import subprocess
 from pathlib import Path
 
 
@@ -33,6 +35,7 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/capture/stop_winmerge_frame_pump_app_shot.ps1",
         "scripts/v3/capture/smoke_winmerge_frame_pump_app_shot.ps1",
         "scripts/v3/report/build_batch_capture_report_app_shot.ps1",
+        "scripts/v3/report/explain_duplicate_decisions_app_shot.ps1",
     ]
 
     for script in expected:
@@ -276,7 +279,114 @@ def test_batch_capture_report_script_summarizes_quality_and_safety_contract():
     assert "dangerous_action_triggered" in text
     assert "accepted_target_met" in text
     assert "recommend_larger_scale" in text
+    assert "exact_duplicate_count" in text
+    assert "action_representative_accepted_count" in text
+    assert "visual_difference_accepted_count" in text
+    assert "periodic_static_rejected_count" in text
+    assert "duplicate_policy_summary" in text
     assert "summary.json" in text
     assert "meta\\actions.jsonl" in text
     assert "meta\\candidates.jsonl" in text
     assert "SendKeys" not in text
+
+
+def test_duplicate_explain_report_script_generates_json_and_markdown(tmp_path):
+    app_home = tmp_path / "app-shot"
+    run_id = "v3_test_duplicate_report"
+    run_dir = app_home / "runs" / "v3" / run_id
+    meta_dir = run_dir / "meta"
+    meta_dir.mkdir(parents=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "processed": 3,
+                "accepted": 2,
+                "rejected": 1,
+                "near_duplicate_count": 1,
+                "accepted_by_ui_state_hint": {"main_view": 1, "menu_file": 1},
+                "accepted_by_capture_reason": {"periodic": 1, "after_action": 1},
+                "reject_reason_distribution": {"near_duplicate": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    image_rows = [
+        {
+            "image_id": "frame_1",
+            "path": "frame_1.png",
+            "bucket": "accepted",
+            "content_hash": "sha:1",
+            "reject_reason": None,
+            "meta": {"capture_reason": "periodic", "ui_state_hint": "main_view", "action_id": None},
+            "duplicate_decision": {
+                "duplicate_decision_reason": "first_frame_for_ui_state",
+                "similarity_score": 0.0,
+                "compared_with_image_id": None,
+            },
+        },
+        {
+            "image_id": "frame_2",
+            "path": "frame_2.png",
+            "bucket": "accepted",
+            "content_hash": "sha:1",
+            "reject_reason": None,
+            "meta": {"capture_reason": "after_action", "ui_state_hint": "menu_file", "action_id": "action:1"},
+            "duplicate_decision": {
+                "duplicate_decision_reason": "after_action_representative_accepted",
+                "similarity_score": 1.0,
+                "compared_with_image_id": "frame_1",
+                "accepted_as_action_representative": True,
+                "representative_group_key": "action:1|menu_file",
+                "representative_index": 1,
+                "representative_limit": 3,
+            },
+        },
+        {
+            "image_id": "frame_3",
+            "path": "frame_3.png",
+            "bucket": "rejected",
+            "content_hash": "sha:1",
+            "reject_reason": "near_duplicate",
+            "meta": {"capture_reason": "periodic", "ui_state_hint": "main_view", "action_id": None},
+            "duplicate_decision": {
+                "duplicate_decision_reason": "periodic_static_frame_rejected",
+                "similarity_score": 1.0,
+                "duplicate_threshold": 1.0,
+                "compared_with_image_id": "frame_1",
+            },
+        },
+    ]
+    (run_dir / "images.jsonl").write_text("\n".join(json.dumps(row) for row in image_rows), encoding="utf-8")
+    for name in ["actions.jsonl", "candidates.jsonl", "ocr.jsonl", "rollback.jsonl"]:
+        (meta_dir / name).write_text("", encoding="utf-8")
+    (meta_dir / "folder_watch_summary.json").write_text("{}", encoding="utf-8")
+
+    script = REPO_ROOT / "scripts/v3/report/explain_duplicate_decisions_app_shot.ps1"
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-AppShotHome",
+            str(app_home),
+            "-RunId",
+            run_id,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report_json = app_home / "reports" / f"duplicate_explain_{run_id}.json"
+    report_md = app_home / "reports" / f"duplicate_explain_{run_id}.md"
+    report = json.loads(report_json.read_text(encoding="utf-8-sig"))
+    assert report["run_id"] == run_id
+    assert report["near_duplicate_count"] == 1
+    assert report["action_representative_accepted_count"] == 1
+    assert report["periodic_static_rejected_count"] == 1
+    assert "accepted samples" in report_md.read_text(encoding="utf-8-sig").lower()

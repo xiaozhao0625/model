@@ -126,6 +126,16 @@ export function V3DashboardRoute() {
                 <Metric label="Full auto" value={summary.full_auto_capture_ready ? "ready" : "not_ready"} />
                 <Metric label="near duplicate" value={String(summary.near_duplicate_count || 0)} />
               </div>
+              <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <h3 className="text-sm font-semibold text-slate-200">Duplicate Summary</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <Metric label="exact duplicate" value={String(summary.exact_duplicate_count || 0)} />
+                  <Metric label="action representative" value={String(summary.action_representative_accepted_count || 0)} />
+                  <Metric label="periodic static rejected" value={String(summary.periodic_static_rejected_count || 0)} />
+                </div>
+                <AuditRow label="accepted_by_ui_state_hint" value={formatRecord(summary.accepted_by_ui_state_hint)} />
+                <AuditRow label="duplicate explanation report" value={summary.duplicate_explanation_report_path || "-"} />
+              </div>
               <Blockers blockers={[...(summary.readiness_blockers || []), ...(summary.input_gateway_blockers || [])]} />
             </>
           ) : (
@@ -186,6 +196,15 @@ function AuditRow({ label, value }: { label: string; value: string }) {
       <span className="break-all font-mono text-xs text-slate-300">{value}</span>
     </div>
   );
+}
+
+function formatRecord(record?: Record<string, number>) {
+  if (!record || Object.keys(record).length === 0) {
+    return "-";
+  }
+  return Object.entries(record)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
 }
 
 function Blockers({ blockers }: { blockers: string[] }) {

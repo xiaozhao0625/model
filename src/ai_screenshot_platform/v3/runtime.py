@@ -49,6 +49,7 @@ class V3Runtime:
         self.actions = action_loop or ActionLoop()
         self._action_duplicate_preserve_counts: dict[tuple[str, str, str], int] = {}
         self._ocr_by_sha: dict[str, OcrResult] = {}
+        self._duplicate_seen_by_sha: dict[str, dict[str, str]] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -123,12 +124,25 @@ class V3Runtime:
         digest: str | None = _file_sha256(str(path))
         if quality["accepted"]:
             unique, digest = self.duplicates.check(path)
+        compared_with = self._duplicate_seen_by_sha.get(digest or "")
+        existing_images = self.store.list_images(run_id)
+        existing_state_count = sum(
+            1
+            for image in existing_images
+            if image.bucket == "accepted" and str(image.meta.get("ui_state_hint") or "unknown") == ui_state_hint
+        )
         bucket = "pending"
         reject_reason = None
         if not quality["accepted"]:
             bucket = "rejected"
             reject_reason = str(quality["reason"])
         duplicate_preserved = False
+        representative_limit = 3
+        representative_group_key = f"{action_id}|{ui_state_hint}" if action_id else None
+        representative_index = None
+        if action_id and capture_reason in {"before_action", "after_action", "rollback_after", "menu_state", "dialog_state"}:
+            key = (run_id, str(action_id), ui_state_hint)
+            representative_index = self._action_duplicate_preserve_counts.get(key, 0) + 1
         if quality["accepted"] and not unique:
             duplicate_preserved = self._should_preserve_action_duplicate(run_id, capture_reason, action_id, ui_state_hint)
         if not quality["accepted"]:
@@ -145,9 +159,11 @@ class V3Runtime:
             "duplicate_preserved": duplicate_preserved,
             "quality": quality,
         }
+        ocr_cache_hit = False
         if bucket == "pending" and record.config.enable_ocr:
             if duplicate_preserved and digest and digest in self._ocr_by_sha:
                 ocr_result = self._ocr_by_sha[digest]
+                ocr_cache_hit = True
             else:
                 ocr_result = self._recognize_for_target(str(path), record.config.target_language)
                 if digest and ocr_result.status == "ok":
@@ -197,6 +213,22 @@ class V3Runtime:
                     reject_reason = "wrong_language"
         if bucket == "accepted" and duplicate_preserved:
             self._mark_action_duplicate_preserved(run_id, capture_reason, action_id, ui_state_hint)
+        duplicate_decision = _build_duplicate_decision(
+            content_hash=digest,
+            exact_duplicate=bool(quality["accepted"] and not unique),
+            compared_with=compared_with,
+            capture_reason=capture_reason,
+            ui_state_hint=ui_state_hint,
+            action_id=action_id,
+            accepted_as_action_representative=bool(bucket == "accepted" and duplicate_preserved),
+            representative_group_key=representative_group_key,
+            representative_index=representative_index,
+            representative_limit=representative_limit,
+            bucket=bucket,
+            reject_reason=reject_reason,
+            ocr_cache_hit=ocr_cache_hit,
+            existing_state_count=existing_state_count,
+        )
         image = V3ImageRecord(
             image_id=path.stem,
             path=str(path),
@@ -205,9 +237,18 @@ class V3Runtime:
             content_hash=digest,
             valid=bool(quality["accepted"]),
             near_duplicate=bool(quality["accepted"] and not unique),
+            duplicate_decision=duplicate_decision,
             reject_reason=reject_reason,
             meta=meta,
         )
+        if quality["accepted"] and unique and digest:
+            self._duplicate_seen_by_sha[digest] = {
+                "image_id": image.image_id,
+                "path": image.path,
+                "capture_reason": capture_reason,
+                "action_id": str(action_id or ""),
+                "ui_state_hint": ui_state_hint,
+            }
         return self.store.add_image(run_id, image)
 
     def _should_preserve_action_duplicate(
@@ -990,3 +1031,86 @@ def _file_sha256(path: str) -> str | None:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _build_duplicate_decision(
+    *,
+    content_hash: str | None,
+    exact_duplicate: bool,
+    compared_with: dict[str, str] | None,
+    capture_reason: str,
+    ui_state_hint: str,
+    action_id: str | None,
+    accepted_as_action_representative: bool,
+    representative_group_key: str | None,
+    representative_index: int | None,
+    representative_limit: int,
+    bucket: str,
+    reject_reason: str | None,
+    ocr_cache_hit: bool,
+    existing_state_count: int,
+) -> dict[str, object]:
+    reason = _duplicate_decision_reason(
+        exact_duplicate=exact_duplicate,
+        capture_reason=capture_reason,
+        bucket=bucket,
+        reject_reason=reject_reason,
+        accepted_as_action_representative=accepted_as_action_representative,
+        ocr_cache_hit=ocr_cache_hit,
+        existing_state_count=existing_state_count,
+        compared_capture_reason=compared_with.get("capture_reason") if compared_with else None,
+    )
+    return {
+        "content_hash": content_hash,
+        "exact_duplicate": exact_duplicate,
+        "near_duplicate": exact_duplicate,
+        "duplicate_algorithm": "sha256_exact",
+        "similarity_score": 1.0 if exact_duplicate else 0.0,
+        "duplicate_threshold": 1.0,
+        "compared_with_image_id": compared_with.get("image_id") if compared_with else None,
+        "compared_with_image_path": compared_with.get("path") if compared_with else None,
+        "capture_reason": capture_reason,
+        "ui_state_hint": ui_state_hint,
+        "action_id": action_id,
+        "accepted_as_action_representative": accepted_as_action_representative,
+        "representative_group_key": representative_group_key,
+        "representative_index": representative_index,
+        "representative_limit": representative_limit,
+        "duplicate_decision_reason": reason,
+    }
+
+
+def _duplicate_decision_reason(
+    *,
+    exact_duplicate: bool,
+    capture_reason: str,
+    bucket: str,
+    reject_reason: str | None,
+    accepted_as_action_representative: bool,
+    ocr_cache_hit: bool,
+    existing_state_count: int,
+    compared_capture_reason: str | None,
+) -> str:
+    if bucket == "accepted" and exact_duplicate and accepted_as_action_representative:
+        if ocr_cache_hit and compared_capture_reason == capture_reason:
+            return "ocr_cache_hit_same_hash"
+        if capture_reason == "menu_state":
+            return "menu_state_representative_accepted"
+        if capture_reason == "dialog_state":
+            return "dialog_state_representative_accepted"
+        return "after_action_representative_accepted"
+    if bucket == "accepted" and not exact_duplicate:
+        if existing_state_count == 0:
+            return "first_frame_for_ui_state"
+        return "visual_difference_accepted"
+    if bucket == "rejected" and exact_duplicate:
+        if reject_reason == "near_duplicate" and capture_reason == "periodic":
+            return "periodic_static_frame_rejected"
+        if reject_reason == "near_duplicate":
+            return "near_duplicate_rejected"
+        return "exact_duplicate_rejected"
+    if bucket == "rejected" and reject_reason:
+        return str(reject_reason)
+    if exact_duplicate:
+        return "near_duplicate_rejected"
+    return "visual_difference_accepted"

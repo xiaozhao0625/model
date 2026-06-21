@@ -113,6 +113,7 @@ class V3ImageRecord(BaseModel):
     content_hash: str | None = None
     valid: bool = True
     near_duplicate: bool = False
+    duplicate_decision: dict[str, object] = Field(default_factory=dict)
     reject_reason: str | None = None
     created_at: str = Field(default_factory=utc_now)
     meta: dict[str, object] = Field(default_factory=dict)
@@ -204,6 +205,14 @@ class V3Summary(BaseModel):
     manual_review_count: int = 0
     action_state_count: int = 0
     near_duplicate_count: int = 0
+    exact_duplicate_count: int = 0
+    action_representative_accepted_count: int = 0
+    visual_difference_accepted_count: int = 0
+    menu_state_accepted_count: int = 0
+    dialog_state_accepted_count: int = 0
+    periodic_static_rejected_count: int = 0
+    duplicate_policy_summary: dict[str, object] = Field(default_factory=dict)
+    duplicate_explanation_report_path: str | None = None
     frame_pump_restart_count: int = 0
     frame_pump_heartbeat: dict[str, object] = Field(default_factory=dict)
     content_area_blocked_count: int = 0

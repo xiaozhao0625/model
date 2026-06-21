@@ -124,6 +124,7 @@ class V3RunStore:
         accepted_images = [image for image in images if image.bucket == "accepted"]
         accepted_by_capture_reason = _count_meta_values(accepted_images, "capture_reason", "periodic")
         accepted_by_ui_state_hint = _count_meta_values(accepted_images, "ui_state_hint", "unknown")
+        duplicate_summary = _duplicate_summary(images)
         failed = _folder_watch_metric(self._run_dir(run_id), "failed", 0)
         quarantined = _folder_watch_metric(self._run_dir(run_id), "quarantined", 0)
         action_state_count = _folder_watch_metric(self._run_dir(run_id), "action_state_count", 0)
@@ -152,6 +153,14 @@ class V3RunStore:
             manual_review_count=sum(1 for image in images if image.bucket == "manual_review"),
             action_state_count=action_state_count,
             near_duplicate_count=sum(1 for image in images if image.reject_reason == "near_duplicate"),
+            exact_duplicate_count=duplicate_summary["exact_duplicate_count"],
+            action_representative_accepted_count=duplicate_summary["action_representative_accepted_count"],
+            visual_difference_accepted_count=duplicate_summary["visual_difference_accepted_count"],
+            menu_state_accepted_count=duplicate_summary["menu_state_accepted_count"],
+            dialog_state_accepted_count=duplicate_summary["dialog_state_accepted_count"],
+            periodic_static_rejected_count=duplicate_summary["periodic_static_rejected_count"],
+            duplicate_policy_summary=duplicate_summary["duplicate_policy_summary"],
+            duplicate_explanation_report_path=str(self.root.parent.parent / "reports" / f"duplicate_explain_{run_id}.md"),
             frame_pump_restart_count=frame_pump_restart_count,
             frame_pump_heartbeat=frame_pump_heartbeat,
             content_area_blocked_count=region_counts["content_area_blocked"],
@@ -244,6 +253,35 @@ def _count_reject_reasons(images: list[V3ImageRecord]) -> dict[str, int]:
         reason = image.reject_reason or "unknown"
         counts[reason] = counts.get(reason, 0) + 1
     return counts
+
+
+def _duplicate_summary(images: list[V3ImageRecord]) -> dict[str, object]:
+    reasons = [_duplicate_decision_reason(image) for image in images]
+    return {
+        "exact_duplicate_count": sum(1 for image in images if bool(image.duplicate_decision.get("exact_duplicate"))),
+        "action_representative_accepted_count": sum(
+            1
+            for image in images
+            if image.bucket == "accepted" and bool(image.duplicate_decision.get("accepted_as_action_representative"))
+        ),
+        "visual_difference_accepted_count": sum(1 for image, reason in zip(images, reasons) if image.bucket == "accepted" and reason == "visual_difference_accepted"),
+        "menu_state_accepted_count": sum(1 for image, reason in zip(images, reasons) if image.bucket == "accepted" and "menu_state" in reason),
+        "dialog_state_accepted_count": sum(1 for image, reason in zip(images, reasons) if image.bucket == "accepted" and "dialog_state" in reason),
+        "periodic_static_rejected_count": sum(1 for reason in reasons if reason == "periodic_static_frame_rejected"),
+        "duplicate_policy_summary": {
+            "duplicate_algorithm": "sha256_exact",
+            "duplicate_threshold": 1.0,
+            "near_duplicate_enabled": True,
+            "periodic_static_frames": "rejected",
+            "action_representative_limit": 3,
+        },
+    }
+
+
+def _duplicate_decision_reason(image: V3ImageRecord) -> str:
+    decision = image.duplicate_decision or {}
+    reason = decision.get("duplicate_decision_reason")
+    return str(reason or image.reject_reason or "unknown")
 
 
 def _folder_watch_metric(run_dir: Path, key: str, default: int) -> int:

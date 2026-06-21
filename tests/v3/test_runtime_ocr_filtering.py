@@ -239,6 +239,17 @@ def test_action_after_capture_preserves_limited_duplicate_menu_state(tmp_path):
     assert capped.reject_reason == "near_duplicate"
     assert preserved_1.meta["capture_reason"] == "after_action"
     assert preserved_1.meta["ui_state_hint"] == "menu_file"
+    assert periodic_duplicate.duplicate_decision["exact_duplicate"] is True
+    assert periodic_duplicate.duplicate_decision["near_duplicate"] is True
+    assert periodic_duplicate.duplicate_decision["duplicate_algorithm"] == "sha256_exact"
+    assert periodic_duplicate.duplicate_decision["duplicate_decision_reason"] == "periodic_static_frame_rejected"
+    assert periodic_duplicate.duplicate_decision["compared_with_image_id"] == first.image_id
+    assert preserved_1.duplicate_decision["accepted_as_action_representative"] is True
+    assert preserved_1.duplicate_decision["duplicate_decision_reason"] == "after_action_representative_accepted"
+    assert preserved_1.duplicate_decision["representative_index"] == 1
+    assert preserved_1.duplicate_decision["representative_limit"] == 3
+    assert capped.duplicate_decision["representative_index"] == 4
+    assert capped.duplicate_decision["representative_limit"] == 3
 
 
 def test_preserved_action_duplicate_reuses_cached_ocr_result(tmp_path):
@@ -273,4 +284,5 @@ def test_preserved_action_duplicate_reuses_cached_ocr_result(tmp_path):
     assert first.bucket == "accepted"
     assert preserved_duplicate.bucket == "accepted"
     assert preserved_duplicate.meta["ocr"]["provider"] == "static"
+    assert preserved_duplicate.duplicate_decision["duplicate_decision_reason"] == "ocr_cache_hit_same_hash"
     assert ocr_provider.calls == 1

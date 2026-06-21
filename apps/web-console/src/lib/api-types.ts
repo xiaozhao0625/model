@@ -144,7 +144,17 @@ export interface V3Summary {
   failed?: number;
   quarantined?: number;
   near_duplicate_count?: number;
+  exact_duplicate_count?: number;
+  action_representative_accepted_count?: number;
+  visual_difference_accepted_count?: number;
+  menu_state_accepted_count?: number;
+  dialog_state_accepted_count?: number;
+  periodic_static_rejected_count?: number;
+  duplicate_policy_summary?: Record<string, unknown>;
+  duplicate_explanation_report_path?: string | null;
   reject_reason_distribution?: Record<string, number>;
+  accepted_by_ui_state_hint?: Record<string, number>;
+  accepted_by_capture_reason?: Record<string, number>;
   observe_only: boolean;
   auto_click_ready: boolean;
   full_auto_capture_ready: boolean;

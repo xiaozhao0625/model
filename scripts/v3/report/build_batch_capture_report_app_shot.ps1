@@ -119,6 +119,94 @@ function Test-ContainsAnyTerm {
   return $false
 }
 
+function Get-DuplicateDecisionReason {
+  param($Image)
+  if ($Image.PSObject.Properties.Name -contains "duplicate_decision" -and $null -ne $Image.duplicate_decision) {
+    if ($Image.duplicate_decision.PSObject.Properties.Name -contains "duplicate_decision_reason" -and $Image.duplicate_decision.duplicate_decision_reason) {
+      return [string]$Image.duplicate_decision.duplicate_decision_reason
+    }
+  }
+  $captureReason = "periodic"
+  if ($Image.PSObject.Properties.Name -contains "meta" -and $null -ne $Image.meta -and $Image.meta.PSObject.Properties.Name -contains "capture_reason") {
+    $captureReason = [string]$Image.meta.capture_reason
+  }
+  if (($Image.PSObject.Properties.Name -contains "reject_reason") -and $Image.reject_reason -eq "near_duplicate" -and $captureReason -eq "periodic") {
+    return "periodic_static_frame_rejected"
+  }
+  if (($Image.PSObject.Properties.Name -contains "reject_reason") -and $Image.reject_reason -eq "near_duplicate") {
+    return "near_duplicate_rejected"
+  }
+  if (($Image.PSObject.Properties.Name -contains "bucket") -and $Image.bucket -eq "accepted" -and $captureReason -eq "menu_state") {
+    return "menu_state_representative_accepted"
+  }
+  if (($Image.PSObject.Properties.Name -contains "bucket") -and $Image.bucket -eq "accepted" -and $captureReason -eq "dialog_state") {
+    return "dialog_state_representative_accepted"
+  }
+  if (($Image.PSObject.Properties.Name -contains "bucket") -and $Image.bucket -eq "accepted" -and $captureReason -in @("after_action", "before_action", "rollback_after")) {
+    return "after_action_representative_accepted"
+  }
+  if (($Image.PSObject.Properties.Name -contains "bucket") -and $Image.bucket -eq "accepted") {
+    return "visual_difference_accepted"
+  }
+  if ($Image.PSObject.Properties.Name -contains "reject_reason" -and $Image.reject_reason) {
+    return [string]$Image.reject_reason
+  }
+  return "unknown"
+}
+
+function Get-DuplicateSummary {
+  param([object[]]$Images)
+  $exact = 0
+  $actionRep = 0
+  $visual = 0
+  $menu = 0
+  $dialog = 0
+  $periodic = 0
+  foreach ($image in $Images) {
+    $decision = if ($image.PSObject.Properties.Name -contains "duplicate_decision") { $image.duplicate_decision } else { $null }
+    if ($decision -and $decision.PSObject.Properties.Name -contains "exact_duplicate" -and $decision.exact_duplicate) {
+      $exact += 1
+    } elseif ($image.PSObject.Properties.Name -contains "near_duplicate" -and $image.near_duplicate) {
+      $exact += 1
+    }
+    $reason = Get-DuplicateDecisionReason -Image $image
+    if (
+      ($decision -and $decision.PSObject.Properties.Name -contains "accepted_as_action_representative" -and $decision.accepted_as_action_representative) -or
+      ($reason -in @("after_action_representative_accepted", "menu_state_representative_accepted", "dialog_state_representative_accepted", "ocr_cache_hit_same_hash"))
+    ) {
+      $actionRep += 1
+    }
+    if ($reason -eq "visual_difference_accepted") {
+      $visual += 1
+    }
+    if ($reason -eq "menu_state_representative_accepted") {
+      $menu += 1
+    }
+    if ($reason -eq "dialog_state_representative_accepted") {
+      $dialog += 1
+    }
+    if ($reason -eq "periodic_static_frame_rejected") {
+      $periodic += 1
+    }
+  }
+  return [pscustomobject]@{
+    exact_duplicate_count = $exact
+    near_duplicate_count = @($Images | Where-Object { $_.reject_reason -eq "near_duplicate" }).Count
+    action_representative_accepted_count = $actionRep
+    visual_difference_accepted_count = $visual
+    menu_state_accepted_count = $menu
+    dialog_state_accepted_count = $dialog
+    periodic_static_rejected_count = $periodic
+    duplicate_policy_summary = @{
+      duplicate_algorithm = "sha256_exact"
+      duplicate_threshold = 1.0
+      near_duplicate_enabled = $true
+      periodic_static_frames = "rejected"
+      action_representative_limit = 3
+    }
+  }
+}
+
 if ($RunIds.Count -eq 0) {
   $RunIds = Get-ChildItem -Path $RunsRoot -Directory |
     Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "summary.json") } |
@@ -150,6 +238,7 @@ foreach ($runId in $RunIds) {
   $summaryPath = Join-Path $runDir "summary.json"
   $actionsPath = Join-Path $runDir "meta\actions.jsonl"
   $candidatesPath = Join-Path $runDir "meta\candidates.jsonl"
+  $imagesPath = Join-Path $runDir "images.jsonl"
   $summary = Read-JsonFile -Path $summaryPath
   if ($null -eq $summary) {
     throw "Missing or invalid summary.json for run $runId"
@@ -157,6 +246,8 @@ foreach ($runId in $RunIds) {
 
   $actions = Read-JsonLines -Path $actionsPath
   $candidates = Read-JsonLines -Path $candidatesPath
+  $images = Read-JsonLines -Path $imagesPath
+  $duplicateSummary = Get-DuplicateSummary -Images $images
   $executedActions = @($actions | Where-Object { Test-ExecutedAction -Action $_ })
   $blockedActions = @($actions | Where-Object {
       ($_.PSObject.Properties.Name -contains "blocked_reason" -and $null -ne $_.blocked_reason -and ([string]$_.blocked_reason).Length -gt 0) -or
@@ -214,6 +305,14 @@ foreach ($runId in $RunIds) {
     action_count = $actionCount
     blocked_count = $blockedCount
     risk_hit_count = $riskHitCount
+    exact_duplicate_count = $duplicateSummary.exact_duplicate_count
+    near_duplicate_count = $duplicateSummary.near_duplicate_count
+    action_representative_accepted_count = $duplicateSummary.action_representative_accepted_count
+    visual_difference_accepted_count = $duplicateSummary.visual_difference_accepted_count
+    menu_state_accepted_count = $duplicateSummary.menu_state_accepted_count
+    dialog_state_accepted_count = $duplicateSummary.dialog_state_accepted_count
+    periodic_static_rejected_count = $duplicateSummary.periodic_static_rejected_count
+    duplicate_policy_summary = $duplicateSummary.duplicate_policy_summary
     misclicked_titlebar_or_system_button = $misclicked
     dangerous_action_triggered = $danger
     accepted_target_met = $acceptedTargetMet
@@ -245,12 +344,12 @@ $md.Add("- Generated: $($report.generated_at)")
 $md.Add("- Accepted target: $AcceptedTarget")
 $md.Add("- Runs: $($rows.Count)")
 $md.Add("")
-$md.Add("| Software | Run | Processed | Accepted | Rejected | Failed | Quarantined | Actions | Blocked | Risk | Target | Larger scale |")
-$md.Add("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
+$md.Add("| Software | Run | Processed | Accepted | Rejected | Failed | Quarantined | Actions | Near dup | Action reps | Static rejected | Blocked | Risk | Target | Larger scale |")
+$md.Add("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
 foreach ($row in $rows) {
   $target = if ($row.accepted_target_met) { "yes" } else { "no" }
   $larger = if ($row.recommend_larger_scale) { "yes" } else { "no" }
-  $md.Add("| $($row.software_name) | $($row.run_id) | $($row.processed) | $($row.accepted) | $($row.rejected) | $($row.failed) | $($row.quarantined) | $($row.action_count) | $($row.blocked_count) | $($row.risk_hit_count) | $target | $larger |")
+  $md.Add("| $($row.software_name) | $($row.run_id) | $($row.processed) | $($row.accepted) | $($row.rejected) | $($row.failed) | $($row.quarantined) | $($row.action_count) | $($row.near_duplicate_count) | $($row.action_representative_accepted_count) | $($row.periodic_static_rejected_count) | $($row.blocked_count) | $($row.risk_hit_count) | $target | $larger |")
 }
 $md.Add("")
 $md.Add("## UI State Coverage")
