@@ -19,7 +19,14 @@ if (!(Test-Path -LiteralPath (Join-Path $WebRoot "package.json"))) {
   throw "web console package.json not found: $WebRoot"
 }
 
+$PortInUse = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+if ($PortInUse) {
+  throw "port_in_use: frontend port $Port is occupied. V3 web console uses fixed port 5173 and will not auto-switch."
+}
+Write-Host "Redis is not required for V3 single-node web console."
+Write-Host "V3 web console: http://localhost:$Port/v3"
+
 New-Item -ItemType Directory -Force -Path $env:npm_config_cache | Out-Null
 Set-Location $WebRoot
 npm config set cache $env:npm_config_cache
-npm run dev -- --host $HostName --port $Port
+npm run dev -- --host $HostName --port $Port --strictPort

@@ -7,13 +7,18 @@ const settings = [
   ["DATA_ROOT", "runs/master"],
   ["MODEL_ROOT", "models/"],
   ["当前模式", import.meta.env.MODE || "development"],
-  ["拓扑名称", "single_node_dev"]
+  ["部署类型", "single_node_dev"],
+  ["前端端口", "5173"],
+  ["前端地址", "http://localhost:5173/v3"],
+  ["Redis", "当前 V3 单机模式不需要安装"],
+  ["PostgreSQL", "当前 V3 单机模式不需要安装"],
+  ["Docker", "当前 V3 单机模式不需要安装"]
 ];
 
 export function SettingsRoute() {
   return (
     <div>
-      <PageHeader title="系统设置" description="只读环境配置视图。P8 不写入配置，也不启动服务。" />
+      <PageHeader title="系统设置" description="只读环境配置视图。V3 单机模式不依赖 Redis、PostgreSQL 或 Docker。" />
       <Card title="运行配置" eyebrow="只读">
         <div className="grid gap-3">
           {settings.map(([key, value]) => (

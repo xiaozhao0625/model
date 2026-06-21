@@ -37,10 +37,20 @@ New-Item -ItemType Directory -Force -Path (Join-Path $env:APP_SHOT_RUNS "v3") | 
 
 $GpuPython = Join-Path $AppShotHome "venvs\v3-gpu\Scripts\python.exe"
 $CpuPython = Join-Path $AppShotHome "venvs\v3\Scripts\python.exe"
-$Python = if (Test-Path -LiteralPath $GpuPython) { $GpuPython } else { $CpuPython }
-if (!(Test-Path -LiteralPath $Python)) {
-  throw "Python venv not found: $Python"
+$PythonCandidates = @($GpuPython, $CpuPython) | Where-Object { Test-Path -LiteralPath $_ }
+$Python = $null
+foreach ($candidate in $PythonCandidates) {
+  & $candidate -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('uvicorn') else 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $Python = $candidate
+    break
+  }
+}
+if ([string]::IsNullOrWhiteSpace($Python) -or !(Test-Path -LiteralPath $Python)) {
+  throw "Python venv with uvicorn not found. Checked: $($PythonCandidates -join ', ')"
 }
 
 Set-Location $ProjectRoot
+Write-Host "V3 backend Python: $Python"
+Write-Host "Redis/PostgreSQL/Docker are not required for V3 single-node mode."
 & $Python -m uvicorn ai_screenshot_platform.master.api.app:create_app --factory --host $HostName --port $Port

@@ -36,6 +36,12 @@ def test_app_shot_scripts_are_present_and_path_scoped():
         "scripts/v3/capture/smoke_winmerge_frame_pump_app_shot.ps1",
         "scripts/v3/report/build_batch_capture_report_app_shot.ps1",
         "scripts/v3/report/explain_duplicate_decisions_app_shot.ps1",
+        "scripts/v3/smoke_v3_web_api_app_shot.ps1",
+        "scripts/v3/diagnose/v3_self_check_app_shot.ps1",
+        "scripts/v3/deploy/setup_v3_app_shot_node.ps1",
+        "scripts/v3/start/start_v3_backend_app_shot.ps1",
+        "scripts/v3/start/start_v3_web_app_shot.ps1",
+        "scripts/v3/start/start_v3_all_app_shot.ps1",
     ]
 
     for script in expected:
@@ -390,3 +396,51 @@ def test_duplicate_explain_report_script_generates_json_and_markdown(tmp_path):
     assert report["action_representative_accepted_count"] == 1
     assert report["periodic_static_rejected_count"] == 1
     assert "accepted samples" in report_md.read_text(encoding="utf-8-sig").lower()
+
+
+def test_v3_web_start_scripts_pin_port_5173_and_do_not_auto_switch():
+    root_script = (REPO_ROOT / "scripts/v3/start_v3_web_app_shot.ps1").read_text(encoding="utf-8")
+    start_script = (REPO_ROOT / "scripts/v3/start/start_v3_web_app_shot.ps1").read_text(encoding="utf-8")
+    vite_config = (REPO_ROOT / "apps/web-console/vite.config.ts").read_text(encoding="utf-8")
+
+    combined = root_script + start_script + vite_config
+    assert "5173" in combined
+    assert "--port $Port" in root_script
+    assert "--strictPort" in root_script
+    assert "Test-NetConnection" in start_script or "Get-NetTCPConnection" in start_script
+    assert "port_in_use" in start_script
+    assert "Redis is not required" in start_script
+
+
+def test_v3_backend_start_script_requires_uvicorn_before_selecting_python():
+    script = (REPO_ROOT / "scripts/v3/start_v3_backend_app_shot.ps1").read_text(encoding="utf-8")
+
+    assert "venvs\\v3-gpu" in script
+    assert "venvs\\v3" in script
+    assert "find_spec('uvicorn')" in script
+    assert "Python venv with uvicorn not found" in script
+    assert "Redis/PostgreSQL/Docker are not required" in script
+
+
+def test_single_node_deploy_and_self_check_scripts_document_no_redis_requirement():
+    deploy = (REPO_ROOT / "scripts/v3/deploy/setup_v3_app_shot_node.ps1").read_text(encoding="utf-8")
+    self_check = (REPO_ROOT / "scripts/v3/diagnose/v3_self_check_app_shot.ps1").read_text(encoding="utf-8")
+    api_smoke = (REPO_ROOT / "scripts/v3/smoke_v3_web_api_app_shot.ps1").read_text(encoding="utf-8")
+    docs = (REPO_ROOT / "docs/V3_新电脑单机部署与游戏采集准备.md").read_text(encoding="utf-8")
+
+    assert "v3_deploy_report.json" in deploy
+    assert "v3_self_check_report.json" in self_check
+    assert "Redis" in deploy and "not required" in deploy
+    assert "PostgreSQL" in deploy and "not required" in deploy
+    assert "Docker" in deploy and "not required" in deploy
+    assert "/api/v3/health" in api_smoke
+    assert "/api/v3/action/health" in api_smoke
+    assert "/api/v3/model/health" in api_smoke
+    assert "/api/v3/runs" in api_smoke
+    assert "/api/v3/runs/$runId/summary" in api_smoke
+    assert "/api/v3/runs/$runId/actions" in api_smoke
+    assert "/api/v3/config/defaults" in api_smoke
+    assert "Redis：当前 V3 单机模式不需要安装" in docs
+    assert "game_mode_ready=false" in docs
+    assert "enable_game_explorer=false" in docs
+    assert "自动登录" in docs

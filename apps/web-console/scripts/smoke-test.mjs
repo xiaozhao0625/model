@@ -13,6 +13,7 @@ const requiredFiles = [
   "src/lib/theme.ts",
   "src/lib/api-client.ts",
   "src/lib/mock-data.ts",
+  "src/lib/labels.ts",
   "src/routes/dashboard.tsx",
   "src/routes/apps.tsx",
   "src/routes/runs.tsx",
@@ -90,8 +91,13 @@ for (const routeName of ["quality-reports", "ocr-status", "behavior-candidates",
   assert(sidebar.includes(routeName), `missing sidebar route ${routeName}`);
 }
 
+const labels = read("src/lib/labels.ts");
+for (const phrase of ["合格", "拒绝", "近重复", "无文字", "输入网关就绪", "完整自动采集就绪", "OCR 生产就绪", "ShowUI 就绪"]) {
+  assert(labels.includes(phrase), `missing label phrase ${phrase}`);
+}
+
 const v3 = read("src/routes/v3-dashboard.tsx");
-for (const phrase of ["observe_only", "OCR GPU", "OCR performance", "OCR production", "Input gateway", "Cursor read", "Mouse click", "Click backend", "Full auto", "Models And OCR", "Action Audit", "blocked reason", "click_backend", "before_image", "after_image", "Duplicate Summary", "duplicate explanation report", "accepted_by_ui_state_hint", "action representative"]) {
+for (const phrase of ["仅观察", "OCR GPU 就绪", "OCR 性能就绪", "OCR 生产就绪", "输入网关就绪", "光标读取", "鼠标点击", "点击后端", "完整自动采集", "模型与 OCR", "动作审计", "阻断原因", "click_backend", "before_image", "after_image", "重复帧摘要", "重复帧解释报告", "accepted_by_ui_state_hint", "动作代表帧"]) {
   assert(v3.includes(phrase), `missing v3 phrase ${phrase}`);
 }
 
