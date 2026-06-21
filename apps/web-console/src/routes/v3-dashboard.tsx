@@ -6,7 +6,7 @@ import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 import { apiClient } from "../lib/api-client";
 import type { V3Health, V3RunRecord, V3Summary } from "../lib/api-types";
-import { labelStatus } from "../lib/labels";
+import { labelField, labelStatus } from "../lib/labels";
 
 export function V3DashboardRoute() {
   const [health, setHealth] = useState<V3Health | null>(null);
@@ -15,11 +15,16 @@ export function V3DashboardRoute() {
   const [message, setMessage] = useState("前端已连接 V3 单机采集接口。");
 
   async function load() {
-    const [nextHealth, nextRuns] = await Promise.all([apiClient.getV3Health(), apiClient.listV3Runs()]);
-    setHealth(nextHealth);
-    setRuns(nextRuns);
-    const latest = nextRuns[0];
-    setSummary(latest ? await apiClient.getV3Summary(latest.run_id) : null);
+    try {
+      const [nextHealth, nextRuns] = await Promise.all([apiClient.getV3Health(), apiClient.listV3Runs()]);
+      setHealth(nextHealth);
+      setRuns(nextRuns);
+      const latest = nextRuns[0];
+      setSummary(latest ? await apiClient.getV3Summary(latest.run_id) : null);
+      setMessage("前端已连接 V3 单机采集接口。");
+    } catch (error) {
+      setMessage(`接口不可用或返回异常：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   useEffect(() => {
@@ -71,12 +76,12 @@ export function V3DashboardRoute() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Metric label="目标语言" tech="target_language" value={latestRun.config.target_language} />
                 <Metric label="类型" tech="app_type" value={latestRun.config.app_type} />
-                <Metric label="processed" value={String(summary?.processed ?? 0)} />
-                <Metric label="accepted" value={String(summary?.accepted ?? latestRun.counts.accepted ?? 0)} />
-                <Metric label="rejected" value={String(summary?.rejected ?? latestRun.counts.rejected ?? 0)} />
-                <Metric label="failed" value={String(summary?.failed ?? 0)} />
-                <Metric label="quarantined" value={String(summary?.quarantined ?? 0)} />
-                <Metric label="action_count" value={String(latestRun.counts.actions ?? 0)} />
+                <Metric label={labelField("processed")} tech="processed" value={String(summary?.processed ?? 0)} />
+                <Metric label={labelField("accepted")} tech="accepted" value={String(summary?.accepted ?? latestRun.counts.accepted ?? 0)} />
+                <Metric label={labelField("rejected")} tech="rejected" value={String(summary?.rejected ?? latestRun.counts.rejected ?? 0)} />
+                <Metric label={labelField("failed")} tech="failed" value={String(summary?.failed ?? 0)} />
+                <Metric label={labelField("quarantined")} tech="quarantined" value={String(summary?.quarantined ?? 0)} />
+                <Metric label={labelField("action_count")} tech="action_count" value={String(latestRun.counts.actions ?? 0)} />
               </div>
             </div>
           ) : (
@@ -110,7 +115,7 @@ export function V3DashboardRoute() {
                 <span className="break-all font-mono text-xs text-blue-200">{run.run_id}</span>
                 <span className="text-sm text-slate-300">{run.config.app_name}</span>
                 <span className="text-sm text-slate-400">{run.config.app_type}</span>
-                <span className="text-sm text-slate-400">合格 {accepted} / 拒绝 {rejected}</span>
+                <span className="text-sm text-slate-400">合格 {accepted} / 已拒绝 {rejected}</span>
                 <span className={passed ? "text-sm text-emerald-300" : "text-sm text-amber-300"}>{passed ? "通过" : "观察"}</span>
                 <Link className="text-sm text-blue-300 hover:text-blue-200" to={`/v3/runs/${run.run_id}/gallery`}>
                   查看结果

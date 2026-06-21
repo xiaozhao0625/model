@@ -178,6 +178,7 @@ def _image_payload(image) -> dict[str, object]:
     path = Path(image.path).resolve()
     payload["absolute_path"] = str(path)
     payload["folder"] = str(path.parent)
+    payload["file_exists"] = path.is_file()
     return payload
 
 

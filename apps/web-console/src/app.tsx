@@ -45,6 +45,7 @@ export function AppRoutes() {
         <Route path="/v3/runs/:runId/actions" element={<V3ActionsRoute />} />
         <Route path="/v3/game" element={<V3GameRoute />} />
         <Route path="/v3/reports" element={<V3ReportsRoute />} />
+        <Route path="/v3/status" element={<ToolHealthRoute />} />
         <Route path="/settings" element={<SettingsRoute />} />
         <Route path="*" element={<Navigate to="/v3" replace />} />
       </Routes>

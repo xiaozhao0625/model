@@ -2,14 +2,14 @@ import { Activity, Archive, FolderOpen, Gamepad2, Gauge, Images, ListPlus, Scrol
 import { NavLink } from "react-router-dom";
 
 const primaryNavItems = [
-  { to: "/v3", label: "V3 控制台", icon: Wand2 },
-  { to: "/v3/new", label: "新建采集任务", icon: ListPlus },
-  { to: "/v3/current", label: "当前运行", icon: Gauge },
-  { to: "/v3/gallery", label: "采集结果图库", icon: Images },
-  { to: "/v3/actions", label: "运行详情 / 审计", icon: ScrollText },
+  { to: "/v3", label: "控制台", icon: Wand2 },
+  { to: "/v3/new", label: "新建采集", icon: ListPlus },
+  { to: "/v3/current", label: "当前任务", icon: Gauge },
+  { to: "/v3/gallery", label: "采集结果", icon: Images },
+  { to: "/v3/actions", label: "运行审计", icon: ScrollText },
   { to: "/v3/game", label: "游戏采集", icon: Gamepad2 },
   { to: "/v3/reports", label: "报告中心", icon: Archive },
-  { to: "/tool-health", label: "工具与模型健康", icon: Stethoscope },
+  { to: "/v3/status", label: "系统状态", icon: Stethoscope },
   { to: "/settings", label: "设置", icon: Settings }
 ];
 
@@ -45,7 +45,7 @@ export function Sidebar() {
       <details className="mt-5 rounded-lg border border-slate-800 bg-slate-950 p-2">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 text-xs font-medium text-slate-400">
           <FolderOpen size={14} />
-          高级/旧平台
+          高级调试
         </summary>
         <div className="mt-2 space-y-1">
           {legacyNavItems.map((item) => (

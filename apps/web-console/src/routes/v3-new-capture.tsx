@@ -14,34 +14,46 @@ export function V3NewCaptureRoute() {
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
 
   useEffect(() => {
-    void apiClient.getV3Defaults().then((defaults) =>
-      setConfig({
-        ...defaults,
-        app_type: "pc_app",
-        target_language: "en",
-        observe_only: true,
-        enable_auto_click: false,
-        must_have_text: true,
-        max_images: 300,
-        max_actions: 20
-      })
-    );
+    void apiClient
+      .getV3Defaults()
+      .then((defaults) =>
+        setConfig({
+          ...defaults,
+          app_type: "pc_app",
+          target_language: "en",
+          observe_only: true,
+          enable_auto_click: false,
+          must_have_text: true,
+          max_images: 300,
+          max_actions: 20
+        })
+      )
+      .catch((error) => setMessage(`接口不可用或返回异常：${error instanceof Error ? error.message : String(error)}`));
   }, []);
 
   async function createRun() {
     if (!config) return;
-    const run = await apiClient.createV3Run({ config });
-    setCreatedRunId(run.run_id);
-    setMessage(`已创建采集任务：${run.run_id}`);
+    try {
+      const run = await apiClient.createV3Run({ config });
+      setCreatedRunId(run.run_id);
+      setMessage(`已创建采集任务：${run.run_id}`);
+    } catch (error) {
+      setMessage(`接口不可用或返回异常：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   if (!config) {
-    return <PageHeader title="新建采集任务" description="正在读取 V3 默认配置。" />;
+    return (
+      <div>
+        <PageHeader title="新建采集" description="正在读取 V3 默认配置。" />
+        <p className="text-sm text-slate-400">{message}</p>
+      </div>
+    );
   }
 
   return (
     <div>
-      <PageHeader title="新建采集任务" description="创建软件采集任务，OBS/folder_watch 输入目录固定使用 D:\\work\\app-shot\\obs-output。" />
+      <PageHeader title="新建采集" description="创建软件采集任务，OBS/folder_watch 输入目录固定使用 D:\\work\\app-shot\\obs-output。" />
       <Card title="软件采集配置" eyebrow="pc_app">
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="软件名称">
@@ -60,8 +72,8 @@ export function V3NewCaptureRoute() {
           <Field label="最大动作数">
             <input className={inputClass} type="number" value={config.max_actions} onChange={(event) => setConfig({ ...config, max_actions: Number(event.target.value) })} />
           </Field>
-          <Toggle label="enable_auto_click" checked={config.enable_auto_click} onChange={(value) => setConfig({ ...config, enable_auto_click: value, observe_only: !value })} />
-          <Toggle label="must_have_text" checked={config.must_have_text} onChange={(value) => setConfig({ ...config, must_have_text: value })} />
+          <Toggle label="允许自动点击（enable_auto_click）" checked={config.enable_auto_click} onChange={(value) => setConfig({ ...config, enable_auto_click: value, observe_only: !value })} />
+          <Toggle label="必须有文字（must_have_text）" checked={config.must_have_text} onChange={(value) => setConfig({ ...config, must_have_text: value })} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100" onClick={() => void createRun()}>

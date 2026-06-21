@@ -8,25 +8,25 @@ const reports = [
     title: "运行摘要",
     tech: "summary.json",
     path: "D:\\work\\app-shot\\runs\\v3\\<run_id>\\summary.json",
-    stats: "processed / accepted / rejected / failed / quarantined / action_count"
+    stats: "已处理、合格、已拒绝、失败、隔离、动作数量（processed / accepted / rejected / failed / quarantined / action_count）"
   },
   {
     title: "重复帧解释报告",
     tech: "duplicate explanation report",
     path: "D:\\work\\app-shot\\reports\\duplicate_explain_<run_id>.md",
-    stats: "exact_duplicate_count / near_duplicate_count / action_representative_accepted_count"
+    stats: "精确重复、近重复、动作代表帧数量（exact_duplicate_count / near_duplicate_count / action_representative_accepted_count）"
   },
   {
     title: "批量采集报告",
     tech: "batch capture report",
     path: "D:\\work\\app-shot\\reports\\v3_batch_capture_report.md",
-    stats: "每个软件 accepted/rejected/action_count/风险结论"
+    stats: "每个软件的合格、已拒绝、动作数量和风险结论（accepted / rejected / action_count）"
   },
   {
     title: "系统自检报告",
     tech: "self check report",
     path: "D:\\work\\app-shot\\reports\\v3_self_check_report.md",
-    stats: "PaddleOCR GPU / ShowUI / input gateway / full_auto_capture_ready"
+    stats: "PaddleOCR GPU、ShowUI、输入网关和完整自动采集就绪状态（full_auto_capture_ready）"
   }
 ];
 

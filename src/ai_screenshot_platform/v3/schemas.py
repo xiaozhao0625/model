@@ -294,6 +294,9 @@ class V3Health(BaseModel):
     input_gateway_blockers: list[str] = Field(default_factory=list)
     input_gateway_diagnosis_path: str | None = None
     readiness_blockers: list[str] = Field(default_factory=list)
+    ocr_performance: dict[str, object] = Field(default_factory=dict)
+    frame_pump: dict[str, object] = Field(default_factory=dict)
+    power_policy: dict[str, object] = Field(default_factory=dict)
     defaults: V3TaskConfig
 
 

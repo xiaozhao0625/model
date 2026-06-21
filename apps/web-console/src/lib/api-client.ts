@@ -65,6 +65,8 @@ export interface ApiClient {
   rollbackBehaviorCandidate(candidatePackId: string): Promise<BehaviorCandidateRecord>;
   getToolHealth(): Promise<ToolHealthRecord>;
   getV3Health(): Promise<V3Health>;
+  getV3ModelHealth(): Promise<V3Health>;
+  getV3ActionHealth(): Promise<Record<string, unknown>>;
   getV3Defaults(): Promise<V3TaskConfig>;
   listV3Runs(): Promise<V3RunRecord[]>;
   createV3Run(payload: { config: V3TaskConfig }): Promise<V3RunRecord>;
@@ -81,7 +83,7 @@ export interface ApiClient {
   isUsingMockFallback(): boolean;
 }
 
-const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "http://localhost:8000";
+const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "";
 
 export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fetch): ApiClient {
   let usingMockFallback = false;
@@ -106,6 +108,21 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
       // mock fallback keeps the console usable when the local Master API is offline.
       return fallback;
     }
+  }
+
+  async function requestV3<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const response = await fetcher(`${root}${path}`, {
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options
+    });
+    if (!response.ok) {
+      throw new Error(`${options.fallbackLabel || path} failed with ${response.status}`);
+    }
+    const envelope = (await response.json()) as ApiEnvelope<T>;
+    if (!envelope.ok || envelope.data === undefined) {
+      throw new Error(envelope.error || `${options.fallbackLabel || path} returned an error`);
+    }
+    return envelope.data;
   }
 
   return {
@@ -226,90 +243,27 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
         { method: "POST", body: JSON.stringify({}) }
       ),
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
-    getV3Health: () =>
-      request("/api/v3/health", {
-        status: "degraded",
-        ocr: [],
-        models: [],
-        complete_auto_mode_ready: false,
-        full_auto_capture_ready: false,
-        ocr_gpu_ready: false,
-        ocr_performance_ready: false,
-        ocr_production_ready: false,
-        input_gateway_ready: false,
-        cursor_read_ready: false,
-        mouse_click_ready: false,
-        same_desktop_session_ready: false,
-        same_integrity_ready: false,
-        interactive_desktop_ready: false,
-        click_backend: "dry_run_backend",
-        input_gateway_blockers: ["api_offline"],
-        input_gateway_diagnosis_path: null,
-        readiness_blockers: ["api_offline"],
-        defaults: {
-          app_name: "manual_target",
-          app_type: "auto",
-          target_language: "zh",
-          capture_source: "folder_watch",
-          capture_interval_ms: 1000,
-          save_root: "runs/v3",
-          enable_ocr: true,
-          enable_ui_model: true,
-          enable_auto_click: false,
-          enable_game_explorer: false,
-          delete_rejected: false,
-          max_images: 100,
-          max_actions: 5,
-          safety_mode: "strict",
-          observe_only: true,
-          must_have_text: false,
-          game_mode: "menu",
-          allow_no_text_gameplay: false,
-          max_game_actions: 5
-        }
-      }),
-    getV3Defaults: () => request("/api/v3/config/defaults", mockV3Defaults()),
-    listV3Runs: () => request("/api/v3/runs", []),
-    createV3Run: (payload) => request("/api/v3/runs", mockV3Run(payload.config), { method: "POST", body: JSON.stringify(payload) }),
-    startV3Run: (runId) => request(`/api/v3/runs/${runId}/start`, mockV3Run(mockV3Defaults(), runId, "running"), { method: "POST" }),
-    pauseV3Run: (runId) => request(`/api/v3/runs/${runId}/pause`, mockV3Run(mockV3Defaults(), runId, "paused"), { method: "POST" }),
-    stopV3Run: (runId) => request(`/api/v3/runs/${runId}/stop`, mockV3Run(mockV3Defaults(), runId, "stopped"), { method: "POST" }),
-    getV3Summary: (runId) =>
-      request(`/api/v3/runs/${runId}/summary`, {
-        run_id: runId,
-        status: "created",
-        counts: {},
-        observe_only: true,
-        auto_click_ready: false,
-        full_auto_capture_ready: false,
-        model_ready: false,
-        ocr_ready: true,
-        ocr_gpu_ready: false,
-        ocr_performance_ready: false,
-        ocr_production_ready: false,
-        input_gateway_ready: false,
-        cursor_read_ready: false,
-        mouse_click_ready: false,
-        same_desktop_session_ready: false,
-        same_integrity_ready: false,
-        interactive_desktop_ready: false,
-        click_backend: "dry_run_backend",
-        input_gateway_blockers: ["api_offline"],
-        readiness_blockers: ["api_offline"],
-        safety_gate_ready: true
-      }),
-    getV3Actions: (runId) => request(`/api/v3/runs/${runId}/actions`, []),
-    getV3Images: (runId) => request(`/api/v3/runs/${runId}/images`, []),
+    getV3Health: () => requestV3<V3Health>("/api/v3/health"),
+    getV3ModelHealth: () => requestV3<V3Health>("/api/v3/model/health"),
+    getV3ActionHealth: () => requestV3<Record<string, unknown>>("/api/v3/action/health"),
+    getV3Defaults: () => requestV3<V3TaskConfig>("/api/v3/config/defaults"),
+    listV3Runs: () => requestV3<V3RunRecord[]>("/api/v3/runs"),
+    createV3Run: (payload) => requestV3<V3RunRecord>("/api/v3/runs", { method: "POST", body: JSON.stringify(payload) }),
+    startV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/start`, { method: "POST" }),
+    pauseV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/pause`, { method: "POST" }),
+    stopV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/stop`, { method: "POST" }),
+    getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
+    getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),
+    getV3Images: (runId) => requestV3<V3ImageRecord[]>(`/api/v3/runs/${runId}/images`),
     getV3ImagePreviewUrl: (runId, imageId) => `${root}/api/v3/runs/${runId}/images/${imageId}/preview`,
     getV3ImageThumbnailUrl: (runId, imageId) => `${root}/api/v3/runs/${runId}/images/${imageId}/thumbnail`,
     revealV3Image: (runId, imageId) =>
-      request(
+      requestV3<V3OpenPathResult>(
         `/api/v3/runs/${runId}/images/${imageId}/reveal`,
-        { status: "unavailable", path: "", folder: "" },
         { method: "POST", body: JSON.stringify({}) }
       ),
     openV3RunFolder: (runId) =>
-      request(`/api/v3/runs/${runId}/open-folder`, { status: "unavailable", path: "" }, { method: "POST", body: JSON.stringify({}) }),
+      requestV3<V3OpenPathResult>(`/api/v3/runs/${runId}/open-folder`, { method: "POST", body: JSON.stringify({}) }),
     isUsingMockFallback: () => usingMockFallback || mockUploads.length > 0
   };
 }

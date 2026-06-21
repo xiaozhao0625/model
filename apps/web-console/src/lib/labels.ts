@@ -1,6 +1,6 @@
 export const statusLabels: Record<string, string> = {
   accepted: "合格",
-  rejected: "拒绝",
+  rejected: "已拒绝",
   manual_review: "待人工审核",
   deleted: "已删除",
   pending: "待处理",
@@ -58,7 +58,33 @@ export const fieldLabels: Record<string, string> = {
   action_audit: "动作审计",
   candidates: "候选点",
   images: "截图",
-  reports: "报告"
+  reports: "报告",
+  processed: "已处理",
+  accepted: "合格",
+  rejected: "已拒绝",
+  failed: "失败",
+  quarantined: "隔离",
+  action_count: "动作数量",
+  before_image: "点击前截图",
+  after_image: "点击后截图",
+  click_backend: "点击通道",
+  blocked_reason: "阻断原因",
+  risk_terms: "风险词",
+  ocr_bbox: "OCR 文字框",
+  showui_candidate: "ShowUI 候选",
+  fusion_candidate: "融合候选",
+  blocked_candidate: "已阻断候选",
+  overlay: "叠加层",
+  power_policy: "电源策略",
+  mouse_click_ready: "鼠标点击就绪"
+};
+
+export const overlayLabels: Record<string, string> = {
+  ocr_boxes: "OCR 文字框",
+  showui_candidates: "ShowUI 候选",
+  fusion_candidates: "融合候选",
+  blocked_candidates: "已阻断候选",
+  click_points: "点击点"
 };
 
 export const regionTypeLabels: Record<string, string> = {
@@ -96,4 +122,8 @@ export function labelRegionType(value?: string | null) {
     return "未知区域";
   }
   return regionTypeLabels[value] || value;
+}
+
+export function labelField(value: string) {
+  return fieldLabels[value] || value;
 }

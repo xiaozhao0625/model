@@ -31,6 +31,39 @@ def test_v3_api_create_start_summary(tmp_path, monkeypatch):
         assert summary["observe_only"] is True
 
 
+def test_v3_health_exposes_operator_status_summaries(tmp_path, monkeypatch):
+    performance = tmp_path / "ocr_gpu_performance.json"
+    performance.write_text(
+        """
+        {
+          "ocr_gpu_ready": true,
+          "ocr_performance_ready": true,
+          "ocr_production_ready": true,
+          "timings": {"full_frame_ms": 2300, "roi_ms": 420, "scaled_ms": 900, "cache_hit_ms": 4}
+        }
+        """,
+        encoding="utf-8",
+    )
+    heartbeat = tmp_path / "frame_pump_heartbeat.json"
+    heartbeat.write_text('{"status":"running","frame_index":12}', encoding="utf-8")
+    power_active = tmp_path / "power_policy_capture_active.json"
+    power_active.write_text('{"monitor_timeout_ac":0,"standby_timeout_ac":0}', encoding="utf-8")
+    monkeypatch.setenv("APP_SHOT_OCR_PERFORMANCE_REPORT", str(performance))
+    monkeypatch.setenv("APP_SHOT_FRAME_PUMP_HEARTBEAT", str(heartbeat))
+    monkeypatch.setenv("APP_SHOT_POWER_POLICY_ACTIVE", str(power_active))
+    monkeypatch.setenv("APP_SHOT_INPUT_GATEWAY_DIAGNOSIS", str(tmp_path / "missing_input_gateway.json"))
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        data = client.get("/api/v3/health").json()["data"]
+
+        assert data["ocr_performance"]["report_path"] == str(performance)
+        assert data["ocr_performance"]["full_frame_ms"] == 2300
+        assert data["frame_pump"]["ready"] is True
+        assert data["frame_pump"]["heartbeat_path"] == str(heartbeat)
+        assert data["power_policy"]["status"] == "capture_active"
+        assert data["power_policy"]["active_path"] == str(power_active)
+
+
 def test_v3_api_accepts_web_app_type(tmp_path):
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     with TestClient(create_app(settings)) as client:
@@ -127,6 +160,7 @@ def test_v3_api_serves_image_preview_thumbnail_and_reveal_paths(tmp_path, monkey
         image_id = ingested["image_id"]
 
         images = client.get(f"/api/v3/runs/{run_id}/images").json()["data"]
+        assert images[0]["file_exists"] is True
         preview = client.get(f"/api/v3/runs/{run_id}/images/{image_id}/preview")
         thumbnail = client.get(f"/api/v3/runs/{run_id}/images/{image_id}/thumbnail")
         reveal = client.post(f"/api/v3/runs/{run_id}/images/{image_id}/reveal").json()["data"]
@@ -144,6 +178,10 @@ def test_v3_api_serves_image_preview_thumbnail_and_reveal_paths(tmp_path, monkey
         assert open_folder["path"].endswith(run_id)
         assert open_folder["path"][1:3] == ":\\"
         assert open_folder["status"] == "disabled_by_env"
+
+        image.unlink()
+        missing_images = client.get(f"/api/v3/runs/{run_id}/images").json()["data"]
+        assert missing_images[0]["file_exists"] is False
 
 
 def test_v3_api_get_actions_is_read_only(tmp_path):

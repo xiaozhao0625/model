@@ -1,6 +1,5 @@
 import { AlertTriangle, FileText, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { mockRunLogs } from "../../lib/mock-data";
 import { Card } from "../ui/card";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -15,32 +14,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="grid min-h-[calc(100dvh-65px)] grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0">{children}</main>
             <aside className="space-y-4">
-              <Card title="运行提示" eyebrow="右侧面板">
+              <Card title="操作提示" eyebrow="operator guide">
                 <div className="space-y-3 text-sm text-slate-400">
                   <div className="flex gap-3">
                     <ShieldCheck className="mt-0.5 text-emerald-300" size={17} />
-                    <p>AI 只返回动作建议，本控制台不执行真实鼠标、键盘、模型或采集工具。</p>
+                    <p>真实点击只允许在已通过 Safety Gate 的安全 OCR 候选上执行；结果会写入运行审计。</p>
                   </div>
                   <div className="flex gap-3">
                     <AlertTriangle className="mt-0.5 text-amber-300" size={17} />
-                    <p>上传清理必须先由用户确认已上传百度网盘，之后才允许本地清理。</p>
+                    <p>如果系统状态出现阻塞项，先处理阻塞，再启动新的真实采集任务。</p>
                   </div>
                   <div className="flex gap-3">
                     <FileText className="mt-0.5 text-blue-300" size={17} />
-                    <p>当 Master API 不可用时，mock fallback 会保持控制台可浏览、可演示。</p>
+                    <p>采集截图、动作、候选和报告都保存在本机目录，可在结果页复制路径或打开文件夹。</p>
                   </div>
                 </div>
               </Card>
-              <Card title="最近 run.log" eyebrow="jsonl">
-                <div className="space-y-3">
-                  {mockRunLogs.map((entry) => (
-                    <div key={`${entry.timestamp}-${entry.event}`} className="rounded-lg border border-slate-800 bg-slate-950 p-3">
-                      <p className="font-mono text-xs text-blue-300">{entry.event}</p>
-                      <p className="mt-1 text-xs text-slate-500">{entry.timestamp}</p>
-                      <pre className="mt-2 overflow-x-auto text-xs text-slate-400">{JSON.stringify(entry.details, null, 2)}</pre>
-                    </div>
-                  ))}
-                </div>
+              <Card title="高级调试" eyebrow="collapsed">
+                <details className="text-sm text-slate-400">
+                  <summary className="cursor-pointer text-slate-300">仅开发排查使用</summary>
+                  <div className="mt-3 space-y-2">
+                    <p>原始日志请查看 run 目录中的 events.jsonl、images.jsonl、meta/actions.jsonl 和 meta/candidates.jsonl。</p>
+                    <p>旧平台页面仍可通过侧边栏的高级调试入口访问，主流程不再依赖演示数据兜底。</p>
+                  </div>
+                </details>
               </Card>
             </aside>
           </div>

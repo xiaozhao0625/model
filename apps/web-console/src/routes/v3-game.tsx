@@ -13,27 +13,30 @@ export function V3GameRoute() {
   const [config, setConfig] = useState<V3TaskConfig | null>(null);
   const [windowTitle, setWindowTitle] = useState("");
   const [processName, setProcessName] = useState("");
-  const [message, setMessage] = useState("游戏采集默认不允许自动探索，只有用户明确开启 enable_game_explorer 才允许。");
+  const [message, setMessage] = useState("游戏采集默认不允许自动探索，只有用户明确开启键鼠探索（enable_game_explorer）才允许。");
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
 
   useEffect(() => {
-    void apiClient.getV3Defaults().then((defaults) =>
-      setConfig({
-        ...defaults,
-        app_name: "game_sample",
-        app_type: "pc_game",
-        target_language: "en",
-        game_mode: "menu",
-        allow_no_text_gameplay: false,
-        enable_game_explorer: false,
-        enable_auto_click: false,
-        observe_only: true,
-        must_have_text: true,
-        max_images: 300,
-        max_actions: 10,
-        max_game_actions: 10
-      })
-    );
+    void apiClient
+      .getV3Defaults()
+      .then((defaults) =>
+        setConfig({
+          ...defaults,
+          app_name: "game_sample",
+          app_type: "pc_game",
+          target_language: "en",
+          game_mode: "menu",
+          allow_no_text_gameplay: false,
+          enable_game_explorer: false,
+          enable_auto_click: false,
+          observe_only: true,
+          must_have_text: true,
+          max_images: 300,
+          max_actions: 10,
+          max_game_actions: 10
+        })
+      )
+      .catch((error) => setMessage(`接口不可用或返回异常：${error instanceof Error ? error.message : String(error)}`));
   }, []);
 
   function setGameMode(gameMode: V3TaskConfig["game_mode"]) {
@@ -49,14 +52,18 @@ export function V3GameRoute() {
 
   async function createGameRun() {
     if (!config) return;
-    const run = await apiClient.createV3Run({
-      config: {
-        ...config,
-        app_name: `${config.app_name}${windowTitle ? `:${windowTitle}` : ""}${processName ? `:${processName}` : ""}`
-      }
-    });
-    setCreatedRunId(run.run_id);
-    setMessage(`已创建游戏采集任务：${run.run_id}`);
+    try {
+      const run = await apiClient.createV3Run({
+        config: {
+          ...config,
+          app_name: `${config.app_name}${windowTitle ? `:${windowTitle}` : ""}${processName ? `:${processName}` : ""}`
+        }
+      });
+      setCreatedRunId(run.run_id);
+      setMessage(`已创建游戏采集任务：${run.run_id}`);
+    } catch (error) {
+      setMessage(`接口不可用或返回异常：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   if (!config) {
@@ -65,7 +72,7 @@ export function V3GameRoute() {
 
   return (
     <div>
-      <PageHeader title="游戏采集" description="游戏菜单使用 OCR + ShowUI + Safety Gate；游戏对局允许 no_text，但必须通过画面变化过滤。" />
+      <PageHeader title="游戏采集" description="游戏菜单模式使用文字语言过滤；游戏对局模式允许无文字，但必须通过画面变化过滤和 Safety Gate。" />
       <div className="grid gap-4 xl:grid-cols-[1fr_0.75fr]">
         <Card title="新建游戏采集任务" eyebrow="pc_game">
           <div className="grid gap-3 md:grid-cols-2">
@@ -94,11 +101,11 @@ export function V3GameRoute() {
                 ))}
               </select>
             </Field>
-            <Field label="max_game_actions">
+            <Field label="最大游戏动作数（max_game_actions）">
               <input className={inputClass} type="number" value={config.max_game_actions} onChange={(event) => setConfig({ ...config, max_game_actions: Number(event.target.value) })} />
             </Field>
-            <Toggle label="allow_no_text_gameplay" checked={config.allow_no_text_gameplay} onChange={(value) => setConfig({ ...config, allow_no_text_gameplay: value, must_have_text: !value })} />
-            <Toggle label="enable_game_explorer" checked={config.enable_game_explorer} onChange={(value) => setConfig({ ...config, enable_game_explorer: value })} />
+            <Toggle label="是否允许无文字对局（allow_no_text_gameplay）" checked={config.allow_no_text_gameplay} onChange={(value) => setConfig({ ...config, allow_no_text_gameplay: value, must_have_text: !value })} />
+            <Toggle label="键鼠探索（enable_game_explorer）" checked={config.enable_game_explorer} onChange={(value) => setConfig({ ...config, enable_game_explorer: value })} />
           </div>
           <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
             游戏菜单模式：文字语言过滤。游戏对局模式：画面变化过滤。自动判断：先识别菜单/对局状态，再选择过滤策略。允许 no_text，但必须非黑屏、非白屏、非 near_duplicate、变化明显且不触发风险。

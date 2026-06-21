@@ -124,6 +124,9 @@ export interface V3Health {
   input_gateway_blockers: string[];
   input_gateway_diagnosis_path?: string | null;
   readiness_blockers: string[];
+  ocr_performance?: Record<string, unknown>;
+  frame_pump?: Record<string, unknown>;
+  power_policy?: Record<string, unknown>;
   defaults: V3TaskConfig;
 }
 
@@ -200,6 +203,7 @@ export interface V3ImageRecord {
   path: string;
   absolute_path?: string;
   folder?: string;
+  file_exists?: boolean;
   bucket: "pending" | "accepted" | "rejected" | "deleted" | "manual_review";
   sha256?: string | null;
   content_hash?: string | null;
