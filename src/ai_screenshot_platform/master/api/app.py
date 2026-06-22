@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ai_screenshot_platform.common.model_gateway.contracts import (
@@ -98,6 +99,19 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
     @app.exception_handler(ValueError)
     async def value_error_handler(_, exc: ValueError):
         return JSONResponse(status_code=400, content=error(str(exc)))
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_, exc: RequestValidationError):
+        details = [_localized_validation_error(item) for item in exc.errors()]
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "data": None,
+                "error": "请求参数不符合要求",
+                "detail": details,
+            },
+        )
 
     @app.get("/health")
     def health():
@@ -417,6 +431,38 @@ def create_app(settings: MasterSettings | None = None) -> FastAPI:
         )
 
     return app
+
+
+def _localized_validation_error(item: dict[str, object]) -> dict[str, object]:
+    loc = item.get("loc", [])
+    field = str(loc[-1]) if isinstance(loc, (list, tuple)) and loc else "unknown"
+    current = item.get("input")
+    field_labels = {
+        "max_actions": "最大软件动作数",
+        "max_game_actions": "最大游戏动作数",
+        "max_images": "最大截图数",
+        "target_accepted_min": "目标有效截图数",
+        "target_accepted_soft": "期望截图数",
+        "target_accepted_max": "目标上限",
+        "no_text_fill_ratio": "无文字补充图比例",
+    }
+    ranges = {
+        "max_actions": "0 到 100",
+        "max_game_actions": "0 到 200",
+        "no_text_fill_ratio": "0 到 0.2",
+        "target_accepted_max": "1 到 5000",
+    }
+    if field in {"max_actions", "max_game_actions"}:
+        message = "最大动作数是自动点击或键鼠动作次数，不是截图数量。为了安全，单次任务最多允许 100 次软件动作；游戏动作最多允许 200 次。"
+    else:
+        message = str(item.get("msg") or "字段不符合要求")
+    return {
+        "field": field,
+        "field_label": field_labels.get(field, field),
+        "current_value": current,
+        "allowed_range": ranges.get(field),
+        "message": message,
+    }
 
 
 def _create_services(settings: MasterSettings, database: MasterDatabase) -> MasterServices:

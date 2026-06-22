@@ -76,7 +76,9 @@ export interface RunLogEntry {
 }
 
 export interface V3TaskConfig {
+  task_name?: string | null;
   app_name: string;
+  display_name?: string | null;
   app_type: "software" | "pc_app" | "pc_game" | "game" | "web" | "auto";
   target_language: string;
   capture_source: "obs" | "folder_watch" | "window";
@@ -87,14 +89,25 @@ export interface V3TaskConfig {
   enable_auto_click: boolean;
   enable_game_explorer: boolean;
   delete_rejected: boolean;
+  target_accepted_min: number;
+  target_accepted_soft: number;
+  target_accepted_max: number;
   max_images: number;
   max_actions: number;
   safety_mode: "strict" | "review" | "off";
   observe_only: boolean;
+  text_priority: boolean;
   must_have_text: boolean;
+  allow_no_text_fill: boolean;
+  no_text_fill_ratio: number;
+  text_policy: "strict_text" | "text_priority_with_fill" | "visual_gameplay";
   game_mode: "menu" | "gameplay" | "auto";
   allow_no_text_gameplay: boolean;
   max_game_actions: number;
+  game_action_preset: "screenshot_only" | "low_risk_ui_click" | "wasd_mouse" | "hotkey_explore" | "custom";
+  allow_wasd_mouse: boolean;
+  safe_game_scene_confirmed: boolean;
+  action_interval_ms: number;
 }
 
 export interface V3ProviderHealth {
@@ -132,18 +145,38 @@ export interface V3Health {
 
 export interface V3RunRecord {
   run_id: string;
-  status: "created" | "running" | "paused" | "stopped" | "completed" | "failed";
+  status: "created" | "waiting_for_input" | "running" | "paused" | "stopped" | "completed" | "failed";
   config: V3TaskConfig;
+  task_name?: string | null;
+  app_name?: string | null;
+  display_name?: string | null;
   created_at: string;
   updated_at: string;
   counts: Record<string, number>;
   last_error?: string | null;
 }
 
+export interface V3InputStatus {
+  watch_dir: string;
+  exists: boolean;
+  latest_file?: string | null;
+  latest_file_path?: string | null;
+  latest_file_time?: string | null;
+  seconds_since_latest?: number | null;
+  status: "receiving" | "waiting_for_input" | "stale" | "path_missing" | "unreadable";
+  message: string;
+}
+
 export interface V3Summary {
   run_id: string;
   status: V3RunRecord["status"];
   counts: Record<string, number>;
+  task_name?: string | null;
+  app_name?: string | null;
+  display_name?: string | null;
+  target_accepted_min?: number;
+  target_accepted_soft?: number;
+  target_accepted_max?: number;
   processed?: number;
   accepted?: number;
   rejected?: number;
@@ -161,6 +194,15 @@ export interface V3Summary {
   reject_reason_distribution?: Record<string, number>;
   accepted_by_ui_state_hint?: Record<string, number>;
   accepted_by_capture_reason?: Record<string, number>;
+  accepted_text_ui_count?: number;
+  accepted_text_hud_count?: number;
+  accepted_visual_fill_count?: number;
+  no_text_fill_ratio_actual?: number;
+  no_text_fill_over_quota?: boolean;
+  latest_input_at?: string | null;
+  latest_accepted_at?: string | null;
+  top_reject_reason?: string | null;
+  input_status?: V3InputStatus | null;
   observe_only: boolean;
   auto_click_ready: boolean;
   full_auto_capture_ready: boolean;
@@ -245,6 +287,7 @@ export interface ApiEnvelope<T> {
   ok: boolean;
   data?: T;
   error?: string;
+  detail?: unknown;
 }
 
 export interface SceneClassifyResult {

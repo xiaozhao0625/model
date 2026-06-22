@@ -12,6 +12,7 @@ import type {
   ToolHealthRecord,
   UploadRecord,
   V3Health,
+  V3InputStatus,
   V3ActionRecord,
   V3ImageRecord,
   V3OpenPathResult,
@@ -69,10 +70,14 @@ export interface ApiClient {
   getV3ActionHealth(): Promise<Record<string, unknown>>;
   getV3Defaults(): Promise<V3TaskConfig>;
   listV3Runs(): Promise<V3RunRecord[]>;
-  createV3Run(payload: { config: V3TaskConfig }): Promise<V3RunRecord>;
+  createV3Run(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3RunRecord>;
   startV3Run(runId: string): Promise<V3RunRecord>;
   pauseV3Run(runId: string): Promise<V3RunRecord>;
+  resumeV3Run(runId: string): Promise<V3RunRecord>;
   stopV3Run(runId: string): Promise<V3RunRecord>;
+  getV3RunStatus(runId: string): Promise<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>;
+  getV3InputStatus(): Promise<V3InputStatus>;
+  openV3InputFolder(): Promise<V3OpenPathResult>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
   getV3Images(runId: string): Promise<V3ImageRecord[]>;
@@ -84,6 +89,8 @@ export interface ApiClient {
 }
 
 const defaultBaseUrl = import.meta.env.VITE_MASTER_API_URL || "";
+const maxActionHelpText =
+  "最大动作数是自动点击或键鼠动作次数，不是截图数量。为了安全，单次任务最多允许 100 次软件动作；游戏动作最多允许 200 次。";
 
 export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fetch): ApiClient {
   let usingMockFallback = false;
@@ -116,11 +123,11 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
       ...options
     });
     if (!response.ok) {
-      throw new Error(`${options.fallbackLabel || path} failed with ${response.status}`);
+      throw new Error(await formatApiError(response, options.fallbackLabel || path));
     }
     const envelope = (await response.json()) as ApiEnvelope<T>;
     if (!envelope.ok || envelope.data === undefined) {
-      throw new Error(envelope.error || `${options.fallbackLabel || path} returned an error`);
+      throw new Error(formatEnvelopeError(envelope, options.fallbackLabel || path));
     }
     return envelope.data;
   }
@@ -251,7 +258,11 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     createV3Run: (payload) => requestV3<V3RunRecord>("/api/v3/runs", { method: "POST", body: JSON.stringify(payload) }),
     startV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/start`, { method: "POST" }),
     pauseV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/pause`, { method: "POST" }),
+    resumeV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/resume`, { method: "POST" }),
     stopV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/stop`, { method: "POST" }),
+    getV3RunStatus: (runId) => requestV3<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>(`/api/v3/runs/${runId}/status`),
+    getV3InputStatus: () => requestV3<V3InputStatus>("/api/v3/input/status"),
+    openV3InputFolder: () => requestV3<V3OpenPathResult>("/api/v3/input/open-folder", { method: "POST", body: JSON.stringify({}) }),
     getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
     getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),
     getV3Images: (runId) => requestV3<V3ImageRecord[]>(`/api/v3/runs/${runId}/images`),
@@ -272,7 +283,9 @@ export const apiClient = createApiClient();
 
 function mockV3Defaults(): V3TaskConfig {
   return {
+    task_name: "新采集任务",
     app_name: "manual_target",
+    display_name: "新采集任务",
     app_type: "auto",
     target_language: "zh",
     capture_source: "folder_watch",
@@ -283,14 +296,25 @@ function mockV3Defaults(): V3TaskConfig {
     enable_auto_click: false,
     enable_game_explorer: false,
     delete_rejected: false,
-    max_images: 100,
-    max_actions: 5,
+    target_accepted_min: 800,
+    target_accepted_soft: 1000,
+    target_accepted_max: 2000,
+    max_images: 1500,
+    max_actions: 20,
     safety_mode: "strict",
     observe_only: true,
-    must_have_text: false,
+    text_priority: true,
+    must_have_text: true,
+    allow_no_text_fill: false,
+    no_text_fill_ratio: 0,
+    text_policy: "strict_text",
     game_mode: "menu",
     allow_no_text_gameplay: false,
-    max_game_actions: 5
+    max_game_actions: 50,
+    game_action_preset: "screenshot_only",
+    allow_wasd_mouse: false,
+    safe_game_scene_confirmed: false,
+    action_interval_ms: 1500
   };
 }
 
@@ -304,4 +328,38 @@ function mockV3Run(config: V3TaskConfig, runId = "mock_v3_run", status: V3RunRec
     counts: { pending: 0, accepted: 0, rejected: 0, deleted: 0, manual_review: 0, events: 0, actions: 0 },
     last_error: null
   };
+}
+
+async function formatApiError(response: Response, label: string) {
+  try {
+    const envelope = (await response.json()) as ApiEnvelope<unknown>;
+    return formatEnvelopeError(envelope, label, response.status);
+  } catch {
+    return `${label} 请求失败，状态码 ${response.status}`;
+  }
+}
+
+function formatEnvelopeError(envelope: ApiEnvelope<unknown>, label: string, status?: number) {
+  const detail = Array.isArray(envelope.detail) ? envelope.detail : [];
+  if (detail.length > 0) {
+    return detail
+      .map((item) => {
+        if (!item || typeof item !== "object") return String(item);
+        const row = item as Record<string, unknown>;
+        const field = row.field_label || row.field || "字段";
+        const current = row.current_value !== undefined ? `当前值：${String(row.current_value)}。` : "";
+        const range = row.allowed_range ? `允许范围：${String(row.allowed_range)}。` : "";
+        const isActionLimit = row.field === "max_actions" || row.field === "max_game_actions";
+        const message =
+          typeof row.message === "string" && row.message.length > 0
+            ? row.message
+            : isActionLimit
+              ? maxActionHelpText
+              : "";
+        return `${String(field)}不符合要求。${current}${range}${message}`;
+      })
+      .join("\n");
+  }
+  if (envelope.error) return envelope.error;
+  return status ? `${label} 请求失败，状态码 ${status}` : `${label} 返回异常`;
 }

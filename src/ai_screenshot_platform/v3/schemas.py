@@ -7,9 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-RunStatus = Literal["created", "running", "paused", "stopped", "completed", "failed"]
+RunStatus = Literal["created", "waiting_for_input", "running", "paused", "stopped", "completed", "failed"]
 AppType = Literal["software", "pc_app", "pc_game", "game", "web", "auto"]
 GameMode = Literal["menu", "gameplay", "auto"]
+TextPolicy = Literal["strict_text", "text_priority_with_fill", "visual_gameplay"]
+GameActionPreset = Literal["screenshot_only", "low_risk_ui_click", "wasd_mouse", "hotkey_explore", "custom"]
 CaptureSource = Literal["obs", "folder_watch", "window"]
 SafetyMode = Literal["strict", "review", "off"]
 CaptureReason = Literal[
@@ -53,7 +55,9 @@ def utc_now() -> str:
 
 
 class V3TaskConfig(BaseModel):
+    task_name: str | None = None
     app_name: str = "manual_target"
+    display_name: str | None = None
     app_type: AppType = "auto"
     target_language: str = "zh"
     capture_source: CaptureSource = "folder_watch"
@@ -64,18 +68,30 @@ class V3TaskConfig(BaseModel):
     enable_auto_click: bool = False
     enable_game_explorer: bool = False
     delete_rejected: bool = False
-    max_images: int = Field(default=100, ge=1, le=50000)
-    max_actions: int = Field(default=5, ge=1, le=20)
+    target_accepted_min: int = Field(default=800, ge=1, le=5000)
+    target_accepted_soft: int = Field(default=1000, ge=1, le=5000)
+    target_accepted_max: int = Field(default=2000, ge=1, le=5000)
+    max_images: int = Field(default=1500, ge=1, le=50000)
+    max_actions: int = Field(default=20, ge=0, le=100)
     safety_mode: SafetyMode = "strict"
     observe_only: bool = True
+    text_priority: bool = True
     must_have_text: bool = False
+    allow_no_text_fill: bool = False
+    no_text_fill_ratio: float = Field(default=0.0, ge=0.0, le=0.2)
+    text_policy: TextPolicy = "strict_text"
     game_mode: GameMode = "menu"
     allow_no_text_gameplay: bool = False
-    max_game_actions: int = Field(default=5, ge=1, le=30)
+    max_game_actions: int = Field(default=50, ge=0, le=200)
+    game_action_preset: GameActionPreset = "screenshot_only"
+    allow_wasd_mouse: bool = False
+    safe_game_scene_confirmed: bool = False
+    action_interval_ms: int = Field(default=1500, ge=200, le=60000)
 
 
 class V3RunCreateRequest(BaseModel):
     config: V3TaskConfig = Field(default_factory=V3TaskConfig)
+    start_immediately: bool = False
 
 
 class V3ImageIngestRequest(BaseModel):
@@ -93,6 +109,9 @@ class V3RunRecord(BaseModel):
     run_id: str
     status: RunStatus = "created"
     config: V3TaskConfig
+    task_name: str | None = None
+    app_name: str | None = None
+    display_name: str | None = None
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
     counts: dict[str, int] = Field(
@@ -121,6 +140,17 @@ class V3ImageRecord(BaseModel):
     reject_reason: str | None = None
     created_at: str = Field(default_factory=utc_now)
     meta: dict[str, object] = Field(default_factory=dict)
+
+
+class V3InputStatus(BaseModel):
+    watch_dir: str
+    exists: bool
+    latest_file: str | None = None
+    latest_file_path: str | None = None
+    latest_file_time: str | None = None
+    seconds_since_latest: float | None = None
+    status: Literal["receiving", "waiting_for_input", "stale", "path_missing", "unreadable"] = "waiting_for_input"
+    message: str
 
 
 class OcrTextBox(BaseModel):
@@ -201,6 +231,12 @@ class V3Summary(BaseModel):
     run_id: str
     status: RunStatus
     counts: dict[str, int]
+    task_name: str | None = None
+    app_name: str | None = None
+    display_name: str | None = None
+    target_accepted_min: int = 800
+    target_accepted_soft: int = 1000
+    target_accepted_max: int = 2000
     processed: int = 0
     accepted: int = 0
     rejected: int = 0
@@ -225,6 +261,15 @@ class V3Summary(BaseModel):
     reject_reason_distribution: dict[str, int] = Field(default_factory=dict)
     accepted_by_capture_reason: dict[str, int] = Field(default_factory=dict)
     accepted_by_ui_state_hint: dict[str, int] = Field(default_factory=dict)
+    accepted_text_ui_count: int = 0
+    accepted_text_hud_count: int = 0
+    accepted_visual_fill_count: int = 0
+    no_text_fill_ratio_actual: float = 0.0
+    no_text_fill_over_quota: bool = False
+    latest_input_at: str | None = None
+    latest_accepted_at: str | None = None
+    top_reject_reason: str | None = None
+    input_status: V3InputStatus | None = None
     auto_click_count: int = 0
     menu_opened_count: int = 0
     dialog_opened_count: int = 0

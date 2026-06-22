@@ -23,14 +23,22 @@ class V3RunStore:
 
     def create_run(self, config: V3TaskConfig) -> V3RunRecord:
         run_id = f"v3_{utc_now().replace(':', '').replace('+', '_').replace('.', '_')}_{uuid.uuid4().hex[:8]}"
-        record = V3RunRecord(run_id=run_id, config=config)
+        display_name = config.display_name or config.task_name or config.app_name or run_id
+        config.display_name = display_name
+        record = V3RunRecord(
+            run_id=run_id,
+            config=config,
+            task_name=config.task_name,
+            app_name=config.app_name,
+            display_name=display_name,
+        )
         self._write_run(record)
         self.append_event(run_id, "run_created", {"observe_only": config.observe_only})
         return record
 
     def list_runs(self) -> list[V3RunRecord]:
         records: list[V3RunRecord] = []
-        for path in sorted(self.root.glob("*/run.json")):
+        for path in sorted(self.root.glob("*/run.json"), key=lambda item: item.stat().st_mtime, reverse=True):
             records.append(V3RunRecord.model_validate_json(path.read_text(encoding="utf-8")))
         return records
 
@@ -149,6 +157,12 @@ class V3RunStore:
             run_id=run_id,
             status=record.status,
             counts=record.counts,
+            task_name=record.task_name or record.config.task_name,
+            app_name=record.app_name or record.config.app_name,
+            display_name=record.display_name or record.config.display_name or record.config.task_name or record.config.app_name,
+            target_accepted_min=record.config.target_accepted_min,
+            target_accepted_soft=record.config.target_accepted_soft,
+            target_accepted_max=record.config.target_accepted_max,
             processed=len(images),
             accepted=sum(1 for image in images if image.bucket == "accepted"),
             rejected=sum(1 for image in images if image.bucket == "rejected"),
@@ -173,6 +187,14 @@ class V3RunStore:
             reject_reason_distribution=_count_reject_reasons(images),
             accepted_by_capture_reason=accepted_by_capture_reason,
             accepted_by_ui_state_hint=accepted_by_ui_state_hint,
+            accepted_text_ui_count=_accepted_class_count(accepted_images, "accepted_text_ui"),
+            accepted_text_hud_count=_accepted_class_count(accepted_images, "accepted_text_hud"),
+            accepted_visual_fill_count=_accepted_class_count(accepted_images, "accepted_visual_fill"),
+            no_text_fill_ratio_actual=_visual_fill_ratio(accepted_images),
+            no_text_fill_over_quota=_visual_fill_ratio(accepted_images) > record.config.no_text_fill_ratio,
+            latest_input_at=images[-1].created_at if images else None,
+            latest_accepted_at=accepted_images[-1].created_at if accepted_images else None,
+            top_reject_reason=_top_reject_reason(images),
             auto_click_count=sum(1 for action in actions if _action_executed(action)),
             menu_opened_count=action_status_counts.get("menu_opened", 0),
             dialog_opened_count=action_status_counts.get("dialog_opened", 0),
@@ -257,6 +279,23 @@ def _count_reject_reasons(images: list[V3ImageRecord]) -> dict[str, int]:
         reason = image.reject_reason or "unknown"
         counts[reason] = counts.get(reason, 0) + 1
     return counts
+
+
+def _accepted_class_count(images: list[V3ImageRecord], class_name: str) -> int:
+    return sum(1 for image in images if str(image.meta.get("accepted_class") or "") == class_name)
+
+
+def _visual_fill_ratio(images: list[V3ImageRecord]) -> float:
+    if not images:
+        return 0.0
+    return round(_accepted_class_count(images, "accepted_visual_fill") / len(images), 4)
+
+
+def _top_reject_reason(images: list[V3ImageRecord]) -> str | None:
+    distribution = _count_reject_reasons(images)
+    if not distribution:
+        return None
+    return max(distribution.items(), key=lambda item: item[1])[0]
 
 
 def _duplicate_summary(images: list[V3ImageRecord]) -> dict[str, object]:

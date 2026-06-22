@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
+import time
 from pathlib import Path
 
+from ai_screenshot_platform.v3.capture.folder_watch import list_new_images
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.action.rollback import rollback_plan
@@ -24,9 +27,11 @@ from ai_screenshot_platform.v3.schemas import (
     OcrResult,
     V3Health,
     V3ImageRecord,
+    V3InputStatus,
     V3RunRecord,
     V3Summary,
     V3TaskConfig,
+    utc_now,
 )
 from ai_screenshot_platform.v3.storage.run_store import V3RunStore
 
@@ -50,6 +55,8 @@ class V3Runtime:
         self._action_duplicate_preserve_counts: dict[tuple[str, str, str], int] = {}
         self._ocr_by_sha: dict[str, OcrResult] = {}
         self._duplicate_seen_by_sha: dict[str, dict[str, str]] = {}
+        self._watch_threads: dict[str, threading.Thread] = {}
+        self._watch_seen: dict[str, set[str]] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -70,21 +77,52 @@ class V3Runtime:
         return self.store.get_run(run_id)
 
     def start_run(self, run_id: str) -> V3RunRecord:
-        record = self.store.update_status(run_id, "running")
-        self.store.append_event(run_id, "run_started", {"observe_only": record.config.observe_only})
+        record = self.get_run(run_id)
+        watch_dir = self._watch_dir()
+        watch_dir.mkdir(parents=True, exist_ok=True)
+        self._watch_seen[run_id] = {str(path.resolve()) for path in list_new_images(watch_dir)}
+        input_status = self.input_status()
+        status = "waiting_for_input" if input_status.status in {"waiting_for_input", "stale"} else "running"
+        record = self.store.update_status(run_id, status)
+        self.store.append_event(
+            run_id,
+            "run_started",
+            {"observe_only": record.config.observe_only, "watch_dir": str(watch_dir), "input_status": input_status.model_dump()},
+        )
+        self._ensure_watch_thread(run_id)
         return record
 
     def pause_run(self, run_id: str) -> V3RunRecord:
-        return self.store.update_status(run_id, "paused")
+        record = self.store.update_status(run_id, "paused")
+        self.store.append_event(run_id, "run_paused", {})
+        return record
+
+    def resume_run(self, run_id: str) -> V3RunRecord:
+        record = self.store.update_status(run_id, "waiting_for_input")
+        self.store.append_event(run_id, "run_resumed", {})
+        self._ensure_watch_thread(run_id)
+        return record
 
     def stop_run(self, run_id: str) -> V3RunRecord:
-        return self.store.update_status(run_id, "stopped")
+        record = self.store.update_status(run_id, "stopped")
+        self.store.append_event(run_id, "run_stopped", {})
+        return record
+
+    def run_status(self, run_id: str) -> dict[str, object]:
+        record = self.get_run(run_id)
+        summary = self.summary(run_id)
+        input_status = self.input_status()
+        return {
+            "run": record.model_dump(),
+            "summary": summary.model_dump(),
+            "input_status": input_status.model_dump(),
+        }
 
     def summary(self, run_id: str) -> V3Summary:
         health = self.health()
         ocr_ready = any(item.status == "ready" for item in health.ocr)
         model_ready = any(item.provider == "showui" and item.status == "ready" and item.enabled for item in health.models)
-        return self.store.summary(
+        summary = self.store.summary(
             run_id,
             ocr_ready=ocr_ready,
             model_ready=model_ready,
@@ -101,6 +139,50 @@ class V3Runtime:
             click_backend=health.click_backend,
             input_gateway_blockers=health.input_gateway_blockers,
             readiness_blockers=health.readiness_blockers,
+        )
+        summary.input_status = self.input_status()
+        summary.status = self._derived_status(self.get_run(run_id), summary, summary.input_status)
+        return summary
+
+    def input_status(self) -> V3InputStatus:
+        watch_dir = self._watch_dir()
+        if not watch_dir.exists():
+            return V3InputStatus(
+                watch_dir=str(watch_dir),
+                exists=False,
+                status="path_missing",
+                message=f"OBS 输出目录不存在：{watch_dir}",
+            )
+        try:
+            images = list_new_images(watch_dir)
+        except Exception as exc:
+            return V3InputStatus(
+                watch_dir=str(watch_dir),
+                exists=True,
+                status="unreadable",
+                message=f"OBS 输出目录无法读取：{exc}",
+            )
+        if not images:
+            return V3InputStatus(
+                watch_dir=str(watch_dir),
+                exists=True,
+                status="waiting_for_input",
+                message=f"正在等待 OBS 输出截图，请确认 OBS 已启动，并且输出目录为 {watch_dir}。",
+            )
+        latest = max(images, key=lambda item: item.stat().st_mtime)
+        latest_time = latest.stat().st_mtime
+        seconds = max(0.0, time.time() - latest_time)
+        status = "receiving" if seconds <= 10 else "stale"
+        message = "正常接收 OBS 截图。" if status == "receiving" else "长时间未收到新的 OBS 截图。"
+        return V3InputStatus(
+            watch_dir=str(watch_dir),
+            exists=True,
+            latest_file=latest.name,
+            latest_file_path=str(latest),
+            latest_file_time=time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(latest_time)),
+            seconds_since_latest=round(seconds, 1),
+            status=status,
+            message=message,
         )
 
     def images(self, run_id: str) -> list[V3ImageRecord]:
@@ -205,12 +287,18 @@ class V3Runtime:
                         reject_reason = "mixed_language"
                     else:
                         bucket = "accepted"
+                        meta["accepted_class"] = _accepted_text_class(record.config.app_type, ui_state_hint)
                 elif record.config.must_have_text and not ocr_result.text_boxes:
-                    bucket = "rejected"
-                    reject_reason = "no_text"
+                    bucket, reject_reason = self._no_text_decision(record, existing_images)
+                    if bucket == "accepted":
+                        meta["accepted_class"] = "accepted_visual_fill"
                 elif record.config.must_have_text:
                     bucket = "rejected"
                     reject_reason = "wrong_language"
+                elif not ocr_result.text_boxes and _uses_no_text_policy(record.config):
+                    bucket, reject_reason = self._no_text_decision(record, existing_images)
+                    if bucket == "accepted":
+                        meta["accepted_class"] = "accepted_visual_fill"
         if bucket == "accepted" and duplicate_preserved:
             self._mark_action_duplicate_preserved(run_id, capture_reason, action_id, ui_state_hint)
         duplicate_decision = _build_duplicate_decision(
@@ -250,6 +338,106 @@ class V3Runtime:
                 "ui_state_hint": ui_state_hint,
             }
         return self.store.add_image(run_id, image)
+
+    def _no_text_decision(self, record: V3RunRecord, existing_images: list[V3ImageRecord]) -> tuple[str, str | None]:
+        config = record.config
+        if config.text_policy == "visual_gameplay":
+            return "accepted", None
+        if config.text_policy == "text_priority_with_fill" and config.allow_no_text_fill:
+            accepted_count = sum(1 for image in existing_images if image.bucket == "accepted")
+            visual_count = sum(
+                1
+                for image in existing_images
+                if image.bucket == "accepted" and image.meta.get("accepted_class") == "accepted_visual_fill"
+            )
+            allowed = max(1, int(max(accepted_count, config.target_accepted_min) * config.no_text_fill_ratio))
+            if visual_count < allowed:
+                return "accepted", None
+            return "rejected", "rejected_no_text_over_quota"
+        return "rejected", "no_text"
+
+    def _watch_dir(self) -> Path:
+        explicit = os.environ.get("APP_SHOT_OBS_OUTPUT")
+        if explicit:
+            return Path(explicit)
+        home = os.environ.get("APP_SHOT_HOME")
+        if home:
+            return Path(home) / "obs-output"
+        return Path("obs-output")
+
+    def _ensure_watch_thread(self, run_id: str) -> None:
+        thread = self._watch_threads.get(run_id)
+        if thread and thread.is_alive():
+            return
+        thread = threading.Thread(target=self._watch_loop, args=(run_id,), daemon=True)
+        self._watch_threads[run_id] = thread
+        thread.start()
+
+    def _watch_loop(self, run_id: str) -> None:
+        watch_dir = self._watch_dir()
+        seen = self._watch_seen.setdefault(run_id, set())
+        while True:
+            try:
+                record = self.get_run(run_id)
+            except KeyError:
+                return
+            if record.status in {"stopped", "completed", "failed"}:
+                return
+            if record.status == "paused":
+                time.sleep(0.5)
+                continue
+            watch_dir.mkdir(parents=True, exist_ok=True)
+            images = list_new_images(watch_dir, seen)
+            if not images:
+                self._set_status_if_changed(run_id, "waiting_for_input")
+                self.store.write_artifact(
+                    run_id,
+                    "meta/folder_watch_summary.json",
+                    {
+                        "folder": str(watch_dir),
+                        "discovered": 0,
+                        "processed": self.store.get_run(run_id).counts.get("accepted", 0)
+                        + self.store.get_run(run_id).counts.get("rejected", 0)
+                        + self.store.get_run(run_id).counts.get("manual_review", 0),
+                        "failed": 0,
+                        "seen": len(seen),
+                        "stopped_reason": "waiting_for_input",
+                        "last_poll_at": utc_now(),
+                    },
+                )
+                time.sleep(max(0.2, record.config.capture_interval_ms / 1000))
+                continue
+            self._set_status_if_changed(run_id, "running")
+            for image in images:
+                seen.add(str(image.resolve()))
+                try:
+                    self.ingest_image(run_id, str(image))
+                except Exception as exc:
+                    self.store.append_event(run_id, "image_ingest_failed", {"image": str(image), "error": str(exc)})
+            summary = self.summary(run_id)
+            if summary.accepted >= record.config.target_accepted_max or summary.processed >= record.config.max_images:
+                self.store.update_status(run_id, "completed")
+                return
+            time.sleep(max(0.2, record.config.capture_interval_ms / 1000))
+
+    def _set_status_if_changed(self, run_id: str, status: str) -> None:
+        try:
+            record = self.get_run(run_id)
+        except KeyError:
+            return
+        if record.status != status:
+            self.store.update_status(run_id, status)
+
+    def _derived_status(self, record: V3RunRecord, summary: V3Summary, input_status: V3InputStatus) -> str:
+        if record.status in {"paused", "stopped", "completed", "failed"}:
+            return record.status
+        if summary.accepted >= record.config.target_accepted_soft:
+            return "completed"
+        if record.status in {"running", "waiting_for_input"} and summary.processed == 0 and input_status.status != "receiving":
+            return "waiting_for_input"
+        if summary.processed > 0:
+            return "running"
+        return record.status
 
     def _should_preserve_action_duplicate(
         self,
@@ -1020,6 +1208,18 @@ def _script_matches_target(script: str, target_language: str) -> bool:
     if target_language.startswith("ko"):
         return script == "korean"
     return True
+
+
+def _accepted_text_class(app_type: str, ui_state_hint: str) -> str:
+    if app_type in {"pc_game", "game"}:
+        if ui_state_hint in {"main_view", "unknown"}:
+            return "accepted_text_hud"
+        return "accepted_text_ui"
+    return "accepted_text_ui"
+
+
+def _uses_no_text_policy(config: V3TaskConfig) -> bool:
+    return config.app_type in {"pc_game", "game"} or config.text_policy in {"text_priority_with_fill", "visual_gameplay"}
 
 
 def _file_sha256(path: str) -> str | None:

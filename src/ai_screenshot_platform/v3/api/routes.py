@@ -36,7 +36,11 @@ def create_v3_router() -> APIRouter:
 
     @router.post("/runs")
     def create_run(payload: V3RunCreateRequest, request: Request):
-        return v3_ok(get_runtime(request).create_run(payload.config).model_dump())
+        runtime = get_runtime(request)
+        run = runtime.create_run(payload.config)
+        if payload.start_immediately:
+            run = runtime.start_run(run.run_id)
+        return v3_ok(run.model_dump())
 
     @router.get("/runs")
     def list_runs(request: Request):
@@ -54,9 +58,17 @@ def create_v3_router() -> APIRouter:
     def pause_run(run_id: str, request: Request):
         return v3_ok(get_runtime(request).pause_run(run_id).model_dump())
 
+    @router.post("/runs/{run_id}/resume")
+    def resume_run(run_id: str, request: Request):
+        return v3_ok(get_runtime(request).resume_run(run_id).model_dump())
+
     @router.post("/runs/{run_id}/stop")
     def stop_run(run_id: str, request: Request):
         return v3_ok(get_runtime(request).stop_run(run_id).model_dump())
+
+    @router.get("/runs/{run_id}/status")
+    def run_status(run_id: str, request: Request):
+        return v3_ok(get_runtime(request).run_status(run_id))
 
     @router.get("/runs/{run_id}/summary")
     def summary(run_id: str, request: Request):
@@ -129,6 +141,18 @@ def create_v3_router() -> APIRouter:
     @router.get("/action/health")
     def action_health(request: Request):
         return v3_ok(get_runtime(request).action_health())
+
+    @router.get("/input/status")
+    def input_status(request: Request):
+        return v3_ok(get_runtime(request).input_status().model_dump())
+
+    @router.post("/input/open-folder")
+    def open_input_folder(request: Request, dry_run: bool = False):
+        status = get_runtime(request).input_status()
+        path = Path(status.watch_dir).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        open_status = "dry_run" if dry_run else _open_in_file_manager(path)
+        return v3_ok({"status": open_status, "path": str(path)})
 
     @router.get("/runs/{run_id}/events")
     def events(run_id: str, request: Request):

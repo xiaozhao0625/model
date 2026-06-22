@@ -6,6 +6,7 @@ from ai_screenshot_platform.master.core.config import MasterSettings
 
 def test_v3_api_create_start_summary(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SHOT_INPUT_GATEWAY_DIAGNOSIS", str(tmp_path / "missing_input_gateway.json"))
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     with TestClient(create_app(settings)) as client:
         health = client.get("/api/v3/health").json()
@@ -27,7 +28,9 @@ def test_v3_api_create_start_summary(tmp_path, monkeypatch):
         created = client.post("/api/v3/runs", json={"config": {"save_root": str(tmp_path / "v3")}}).json()["data"]
         started = client.post(f"/api/v3/runs/{created['run_id']}/start").json()["data"]
         summary = client.get(f"/api/v3/runs/{created['run_id']}/summary").json()["data"]
-        assert started["status"] == "running"
+        assert started["status"] == "waiting_for_input"
+        assert summary["status"] == "waiting_for_input"
+        assert summary["input_status"]["status"] == "waiting_for_input"
         assert summary["observe_only"] is True
 
 
@@ -92,6 +95,21 @@ def test_v3_api_accepts_pc_app_type_and_twenty_actions(tmp_path):
         config = response.json()["data"]["config"]
         assert config["app_type"] == "pc_app"
         assert config["max_actions"] == 20
+
+
+def test_v3_api_rejects_unsafe_action_count_with_chinese_detail(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v3/runs",
+            json={"config": {"save_root": str(tmp_path / "v3"), "app_type": "pc_app", "max_actions": 10000}},
+        )
+        payload = response.json()
+
+        assert response.status_code == 422
+        assert payload["ok"] is False
+        assert payload["detail"][0]["field"] == "max_actions"
+        assert "最大动作数是自动点击" in payload["detail"][0]["message"]
 
 
 def test_v3_api_accepts_pc_game_config_fields(tmp_path):
