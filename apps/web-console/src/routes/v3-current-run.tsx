@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 import { apiClient } from "../lib/api-client";
-import type { V3CollectionSummary, V3InputStatus, V3RunRecord } from "../lib/api-types";
+import type { V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord } from "../lib/api-types";
 import { isDebugRun, labelAppType, labelLanguage, labelRejectReason, labelStatus, textPolicyLabels } from "../lib/labels";
 
 export function V3CurrentRunRoute() {
@@ -15,6 +15,7 @@ export function V3CurrentRunRoute() {
   const [collections, setCollections] = useState<V3CollectionSummary[]>([]);
   const [runs, setRuns] = useState<V3RunRecord[]>([]);
   const [inputStatus, setInputStatus] = useState<V3InputStatus | null>(null);
+  const [framePump, setFramePump] = useState<V3FramePumpStatus | null>(null);
   const [message, setMessage] = useState("正在读取当前采集项目。");
   const [showLegacyRuns, setShowLegacyRuns] = useState(false);
 
@@ -26,14 +27,16 @@ export function V3CurrentRunRoute() {
 
   async function load(showMessage = true) {
     try {
-      const [nextCollections, nextRuns, nextInput] = await Promise.all([
+      const [nextCollections, nextRuns, nextInput, nextFramePump] = await Promise.all([
         apiClient.listV3Collections(),
         apiClient.listV3Runs(),
-        apiClient.getV3InputStatus()
+        apiClient.getV3InputStatus(),
+        apiClient.getV3FramePumpStatus()
       ]);
       setCollections(nextCollections);
       setRuns(nextRuns);
       setInputStatus(nextInput);
+      setFramePump(nextFramePump);
       if (showMessage) setMessage(nextCollections.length ? "已加载采集项目。继续采集会创建新轮次并自动跨轮去重。" : "暂无采集项目，请先新建任务。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -52,6 +55,11 @@ export function V3CurrentRunRoute() {
 
   async function continueCollection(collectionId: string) {
     try {
+      if (framePump && framePump.status !== "running") {
+        const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
+        if (!shouldStart) return;
+        await apiClient.startV3FramePump({ fps: 1, full_screen: true });
+      }
       const run = await apiClient.continueV3Collection(collectionId);
       await load(false);
       setMessage(`已开始新一轮采集：第 ${run.round_index || "?"} 轮。动作预算只限制本轮自动操作次数，不代表有效截图数量。有效截图数量以去重后的累计有效图片为准。`);
@@ -84,6 +92,28 @@ export function V3CurrentRunRoute() {
     setMessage(`OBS 输出目录：${result.status} ${result.path}`);
   }
 
+  async function startFramePump() {
+    try {
+      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true });
+      setFramePump(status);
+      await load(false);
+      setMessage(status.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function stopFramePump() {
+    try {
+      const status = await apiClient.stopV3FramePump();
+      setFramePump(status);
+      await load(false);
+      setMessage(status.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <div>
       <PageHeader title="当前采集项目" description="主列表按 collection 展示。继续采集会创建新轮次 run，并把本轮新增有效图计入同一个采集项目。" />
@@ -99,6 +129,25 @@ export function V3CurrentRunRoute() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder()}>打开 OBS 输出目录</button>
           <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void load()}>刷新输入状态</button>
+        </div>
+      </Card>
+
+      <Card title="Frame Pump" className="mt-4">
+        <div className="grid gap-3 md:grid-cols-5">
+          <Metric label="状态" value={framePumpStatusText(framePump?.status)} />
+          <Metric label="输出目录" value={framePump?.output_dir || inputStatus?.watch_dir || "D:\\work\\app-shot\\obs-output"} />
+          <Metric label="最近输出帧" value={framePump?.latest_frame || "暂无"} />
+          <Metric label="最近输出时间" value={framePump?.latest_frame_time || "-"} />
+          <Metric label="已输出帧数" value={String(framePump?.frame_count ?? 0)} />
+        </div>
+        <p className="mt-3 text-sm text-slate-400">
+          {framePump?.message || "Frame Pump -> obs-output -> folder_watch -> OCR/去重/入库。当前链路不依赖 OBS WebSocket。"}
+        </p>
+        {framePump?.status === "stale" || inputStatus?.status === "stale" ? <p className="mt-2 text-sm text-amber-200">等待 Frame Pump 输出截图</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100" onClick={() => void startFramePump()}>启动 Frame Pump</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void stopFramePump()}>停止 Frame Pump</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder()}>打开输出目录</button>
         </div>
       </Card>
 
@@ -200,6 +249,12 @@ function collectionStatusText(collection: V3CollectionSummary) {
   if (collection.status === "collecting") return "采集中";
   if (collection.accepted_unique_total > 0) return "数量不足，需要继续采集";
   return "未开始或无有效结果";
+}
+
+function framePumpStatusText(status?: V3FramePumpStatus["status"]) {
+  if (status === "running") return "运行中";
+  if (status === "stale" || status === "error") return "异常";
+  return "未运行";
 }
 
 function Metric({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {

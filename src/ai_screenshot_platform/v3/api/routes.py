@@ -12,6 +12,7 @@ from ai_screenshot_platform.v3.schemas import (
     ModelRequest,
     V3ActionAuditRequest,
     V3CollectionCreateRequest,
+    V3FramePumpStartRequest,
     V3ImageIngestRequest,
     V3RunCreateRequest,
 )
@@ -194,6 +195,18 @@ def create_v3_router() -> APIRouter:
     @router.get("/input/status")
     def input_status(request: Request):
         return v3_ok(get_runtime(request).input_status().model_dump())
+
+    @router.get("/frame-pump/status")
+    def frame_pump_status(request: Request):
+        return v3_ok(get_runtime(request).frame_pump_status().model_dump())
+
+    @router.post("/frame-pump/start")
+    def frame_pump_start(payload: V3FramePumpStartRequest, request: Request):
+        return v3_ok(get_runtime(request).start_frame_pump(payload).model_dump())
+
+    @router.post("/frame-pump/stop")
+    def frame_pump_stop(request: Request):
+        return v3_ok(get_runtime(request).stop_frame_pump().model_dump())
 
     @router.post("/input/open-folder")
     def open_input_folder(request: Request, dry_run: bool = False):

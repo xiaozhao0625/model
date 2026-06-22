@@ -13,6 +13,8 @@ import type {
   UploadRecord,
   V3Health,
   V3InputStatus,
+  V3FramePumpStartRequest,
+  V3FramePumpStatus,
   V3CollectionExportResult,
   V3CollectionRecord,
   V3CollectionSummary,
@@ -88,6 +90,9 @@ export interface ApiClient {
   stopV3Run(runId: string): Promise<V3RunRecord>;
   getV3RunStatus(runId: string): Promise<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>;
   getV3InputStatus(): Promise<V3InputStatus>;
+  getV3FramePumpStatus(): Promise<V3FramePumpStatus>;
+  startV3FramePump(payload?: V3FramePumpStartRequest): Promise<V3FramePumpStatus>;
+  stopV3FramePump(): Promise<V3FramePumpStatus>;
   openV3InputFolder(): Promise<V3OpenPathResult>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
@@ -282,6 +287,10 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     stopV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/stop`, { method: "POST" }),
     getV3RunStatus: (runId) => requestV3<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>(`/api/v3/runs/${runId}/status`),
     getV3InputStatus: () => requestV3<V3InputStatus>("/api/v3/input/status"),
+    getV3FramePumpStatus: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/status"),
+    startV3FramePump: (payload = { fps: 1, full_screen: true }) =>
+      requestV3<V3FramePumpStatus>("/api/v3/frame-pump/start", { method: "POST", body: JSON.stringify(payload) }),
+    stopV3FramePump: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/stop", { method: "POST", body: JSON.stringify({}) }),
     openV3InputFolder: () => requestV3<V3OpenPathResult>("/api/v3/input/open-folder", { method: "POST", body: JSON.stringify({}) }),
     getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
     getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),

@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-RunStatus = Literal["created", "waiting_for_input", "running", "paused", "stopped", "completed", "failed"]
+RunStatus = Literal["created", "waiting_for_input", "waiting_for_input_timeout", "running", "paused", "stopped", "completed", "failed"]
 AppType = Literal["software", "pc_app", "pc_game", "game", "web", "auto"]
 GameMode = Literal["menu", "gameplay", "auto"]
 TextPolicy = Literal["strict_text", "text_priority_with_fill", "visual_gameplay"]
@@ -237,6 +237,28 @@ class V3InputStatus(BaseModel):
     seconds_since_latest: float | None = None
     status: Literal["receiving", "waiting_for_input", "stale", "path_missing", "unreadable"] = "waiting_for_input"
     message: str
+
+
+class V3FramePumpStartRequest(BaseModel):
+    fps: float = Field(default=1.0, ge=0.2, le=10.0)
+    window_title: str | None = None
+    full_screen: bool = True
+
+
+class V3FramePumpStatus(BaseModel):
+    status: Literal["running", "stopped", "stale", "error"] = "stopped"
+    output_dir: str
+    pid: int | None = None
+    latest_frame: str | None = None
+    latest_frame_path: str | None = None
+    latest_frame_time: str | None = None
+    seconds_since_latest: float | None = None
+    frame_count: int = 0
+    fps: float | None = None
+    mode: str = "fullscreen"
+    message: str
+    heartbeat_path: str | None = None
+    error: str | None = None
 
 
 class OcrTextBox(BaseModel):

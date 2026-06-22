@@ -9,6 +9,7 @@ from ai_screenshot_platform.master.core.config import MasterSettings
 def test_v3_api_create_start_summary(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SHOT_INPUT_GATEWAY_DIAGNOSIS", str(tmp_path / "missing_input_gateway.json"))
     monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     with TestClient(create_app(settings)) as client:
         health = client.get("/api/v3/health").json()
@@ -34,6 +35,23 @@ def test_v3_api_create_start_summary(tmp_path, monkeypatch):
         assert summary["status"] == "waiting_for_input"
         assert summary["input_status"]["status"] == "waiting_for_input"
         assert summary["observe_only"] is True
+
+
+def test_v3_frame_pump_api_status_start_stop(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        status = client.get("/api/v3/frame-pump/status").json()["data"]
+        assert status["status"] == "stopped"
+        assert status["output_dir"] == str(tmp_path / "obs-output")
+
+        started = client.post("/api/v3/frame-pump/start", json={"fps": 2, "full_screen": True}).json()["data"]
+        assert started["status"] == "stopped"
+        assert "disabled" in started["message"]
+
+        stopped = client.post("/api/v3/frame-pump/stop").json()["data"]
+        assert stopped["status"] == "stopped"
 
 
 def test_v3_health_exposes_operator_status_summaries(tmp_path, monkeypatch):

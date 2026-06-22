@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -28,6 +31,8 @@ from ai_screenshot_platform.v3.schemas import (
     V3CollectionExportResult,
     V3CollectionRecord,
     V3CollectionSummary,
+    V3FramePumpStartRequest,
+    V3FramePumpStatus,
     V3Health,
     V3ImageRecord,
     V3InputStatus,
@@ -60,6 +65,7 @@ class V3Runtime:
         self._duplicate_seen_by_sha: dict[str, dict[str, str]] = {}
         self._watch_threads: dict[str, threading.Thread] = {}
         self._watch_seen: dict[str, set[str]] = {}
+        self._watch_waiting_since: dict[str, float] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -105,6 +111,8 @@ class V3Runtime:
 
     def start_run(self, run_id: str) -> V3RunRecord:
         record = self.get_run(run_id)
+        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
+            self.start_frame_pump(V3FramePumpStartRequest())
         watch_dir = self._watch_dir()
         watch_dir.mkdir(parents=True, exist_ok=True)
         self._watch_seen[run_id] = {str(path.resolve()) for path in list_new_images(watch_dir)}
@@ -125,6 +133,8 @@ class V3Runtime:
         return record
 
     def resume_run(self, run_id: str) -> V3RunRecord:
+        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
+            self.start_frame_pump(V3FramePumpStartRequest())
         record = self.store.update_status(run_id, "waiting_for_input")
         self.store.append_event(run_id, "run_resumed", {})
         self._ensure_watch_thread(run_id)
@@ -144,6 +154,110 @@ class V3Runtime:
             "summary": summary.model_dump(),
             "input_status": input_status.model_dump(),
         }
+
+    def frame_pump_status(self) -> V3FramePumpStatus:
+        output_dir = self._watch_dir()
+        heartbeat = self._frame_pump_heartbeat_path()
+        pid_file = self._frame_pump_pid_path()
+        pid = _read_int(pid_file)
+        running = bool(pid and _process_exists(pid))
+        latest = _latest_image(output_dir)
+        seconds_since_latest = None
+        latest_time = None
+        if latest:
+            seconds_since_latest = max(0.0, time.time() - latest.stat().st_mtime)
+            latest_time = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(latest.stat().st_mtime))
+        frame_count = len(list_new_images(output_dir)) if output_dir.exists() else 0
+        heartbeat_payload: dict[str, object] = {}
+        if heartbeat.is_file():
+            try:
+                payload = json.loads(heartbeat.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    heartbeat_payload = payload
+            except json.JSONDecodeError:
+                heartbeat_payload = {}
+        error = str(heartbeat_payload.get("error") or "") or None
+        fps = heartbeat_payload.get("fps")
+        mode = str(heartbeat_payload.get("mode") or "fullscreen")
+        if error:
+            status = "error"
+            message = f"Frame Pump 异常：{error}"
+        elif running and seconds_since_latest is not None and seconds_since_latest <= 30:
+            status = "running"
+            message = "Frame Pump 正在输出截图。"
+        elif running:
+            status = "stale"
+            message = "Frame Pump 进程存在，但 30 秒内没有新截图。"
+        else:
+            status = "stopped"
+            message = "Frame Pump 未运行。"
+        return V3FramePumpStatus(
+            status=status,  # type: ignore[arg-type]
+            output_dir=str(output_dir),
+            pid=pid if running else None,
+            latest_frame=latest.name if latest else None,
+            latest_frame_path=str(latest) if latest else None,
+            latest_frame_time=latest_time,
+            seconds_since_latest=round(seconds_since_latest, 1) if seconds_since_latest is not None else None,
+            frame_count=frame_count,
+            fps=float(fps) if isinstance(fps, (int, float)) else None,
+            mode=mode,
+            message=message,
+            heartbeat_path=str(heartbeat),
+            error=error,
+        )
+
+    def start_frame_pump(self, request: V3FramePumpStartRequest | None = None) -> V3FramePumpStatus:
+        request = request or V3FramePumpStartRequest()
+        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") == "1":
+            status = self.frame_pump_status()
+            status.message = "Frame Pump disabled by APP_SHOT_DISABLE_FRAME_PUMP"
+            return status
+        status = self.frame_pump_status()
+        if status.status == "running":
+            return status
+        output_dir = self._watch_dir()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stop_file = self._frame_pump_stop_path()
+        stop_file.unlink(missing_ok=True)
+        pid_file = self._frame_pump_pid_path()
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        heartbeat = self._frame_pump_heartbeat_path()
+        heartbeat.parent.mkdir(parents=True, exist_ok=True)
+        args = [
+            sys.executable,
+            "-m",
+            "ai_screenshot_platform.v3.capture.frame_pump",
+            "--output-dir",
+            str(output_dir),
+            "--heartbeat-path",
+            str(heartbeat),
+            "--stop-file",
+            str(stop_file),
+            "--fps",
+            str(request.fps),
+        ]
+        if request.full_screen:
+            args.append("--full-screen")
+        if request.window_title:
+            args.extend(["--window-title", request.window_title])
+        env = os.environ.copy()
+        src_root = Path(__file__).resolve().parents[2]
+        env["PYTHONPATH"] = str(src_root) + os.pathsep + env.get("PYTHONPATH", "")
+        process = subprocess.Popen(args, cwd=str(src_root.parent), env=env)
+        pid_file.write_text(str(process.pid), encoding="utf-8")
+        time.sleep(0.2)
+        return self.frame_pump_status()
+
+    def stop_frame_pump(self) -> V3FramePumpStatus:
+        self._frame_pump_stop_path().write_text(utc_now(), encoding="utf-8")
+        pid = _read_int(self._frame_pump_pid_path())
+        deadline = time.time() + 3.0
+        while pid and _process_exists(pid) and time.time() < deadline:
+            time.sleep(0.1)
+        if pid and not _process_exists(pid):
+            self._frame_pump_pid_path().unlink(missing_ok=True)
+        return self.frame_pump_status()
 
     def summary(self, run_id: str) -> V3Summary:
         health = self.health()
@@ -412,6 +526,26 @@ class V3Runtime:
             return Path(home) / "obs-output"
         return Path("obs-output")
 
+    def _frame_pump_root(self) -> Path:
+        home = os.environ.get("APP_SHOT_HOME")
+        root = Path(home) if home else Path("runs")
+        path = root / "cache" / "frame-pump"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _frame_pump_pid_path(self) -> Path:
+        return self._frame_pump_root() / "generic_frame_pump.pid"
+
+    def _frame_pump_stop_path(self) -> Path:
+        return self._frame_pump_root() / "generic_frame_pump.stop"
+
+    def _frame_pump_heartbeat_path(self) -> Path:
+        explicit = os.environ.get("APP_SHOT_FRAME_PUMP_HEARTBEAT")
+        if explicit:
+            return Path(explicit)
+        home = os.environ.get("APP_SHOT_HOME")
+        return (Path(home) if home else Path(".")) / "logs" / "frame_pump_heartbeat.json"
+
     def _ensure_watch_thread(self, run_id: str) -> None:
         thread = self._watch_threads.get(run_id)
         if thread and thread.is_alive():
@@ -436,7 +570,9 @@ class V3Runtime:
             watch_dir.mkdir(parents=True, exist_ok=True)
             images = list_new_images(watch_dir, seen)
             if not images:
-                self._set_status_if_changed(run_id, "waiting_for_input")
+                waiting_since = self._watch_waiting_since.setdefault(run_id, time.monotonic())
+                status = "waiting_for_input_timeout" if time.monotonic() - waiting_since >= 30 else "waiting_for_input"
+                self._set_status_if_changed(run_id, status)
                 self.store.write_artifact(
                     run_id,
                     "meta/folder_watch_summary.json",
@@ -448,12 +584,14 @@ class V3Runtime:
                         + self.store.get_run(run_id).counts.get("manual_review", 0),
                         "failed": 0,
                         "seen": len(seen),
-                        "stopped_reason": "waiting_for_input",
+                        "stopped_reason": status,
                         "last_poll_at": utc_now(),
+                        "frame_pump": self.frame_pump_status().model_dump(),
                     },
                 )
                 time.sleep(max(0.2, record.config.capture_interval_ms / 1000))
                 continue
+            self._watch_waiting_since.pop(run_id, None)
             self._set_status_if_changed(run_id, "running")
             for image in images:
                 seen.add(str(image.resolve()))
@@ -480,8 +618,8 @@ class V3Runtime:
             return record.status
         if summary.accepted >= record.config.target_accepted_soft:
             return "completed"
-        if record.status in {"running", "waiting_for_input"} and summary.processed == 0 and input_status.status != "receiving":
-            return "waiting_for_input"
+        if record.status in {"running", "waiting_for_input", "waiting_for_input_timeout"} and summary.processed == 0 and input_status.status != "receiving":
+            return record.status if record.status == "waiting_for_input_timeout" else "waiting_for_input"
         if summary.processed > 0:
             return "running"
         return record.status
@@ -1278,6 +1416,44 @@ def _file_sha256(path: str) -> str | None:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _read_int(path: Path) -> int | None:
+    if not path.is_file():
+        return None
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _process_exists(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    except Exception:
+        return False
+
+
+def _latest_image(folder: Path) -> Path | None:
+    images = list_new_images(folder)
+    if not images:
+        return None
+    return max(images, key=lambda item: item.stat().st_mtime)
 
 
 def _build_duplicate_decision(

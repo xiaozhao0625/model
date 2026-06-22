@@ -238,6 +238,28 @@ export interface V3InputStatus {
   message: string;
 }
 
+export interface V3FramePumpStatus {
+  status: "running" | "stopped" | "stale" | "error";
+  output_dir: string;
+  pid?: number | null;
+  latest_frame?: string | null;
+  latest_frame_path?: string | null;
+  latest_frame_time?: string | null;
+  seconds_since_latest?: number | null;
+  frame_count: number;
+  fps?: number | null;
+  mode: string;
+  message: string;
+  heartbeat_path?: string | null;
+  error?: string | null;
+}
+
+export interface V3FramePumpStartRequest {
+  fps?: number;
+  window_title?: string | null;
+  full_screen?: boolean;
+}
+
 export interface V3Summary {
   run_id: string;
   status: V3RunRecord["status"];

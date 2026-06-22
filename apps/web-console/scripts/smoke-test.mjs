@@ -35,7 +35,11 @@ for (const phrase of [
   "createV3Collection",
   "continueV3Collection",
   "exportV3Collection",
+  "getV3FramePumpStatus",
+  "startV3FramePump",
+  "stopV3FramePump",
   "/api/v3/collections",
+  "/api/v3/frame-pump/status",
   "/api/v3/collections/${collectionId}/continue",
   "最大动作数是自动点击或键鼠动作次数"
 ]) {
@@ -80,11 +84,15 @@ for (const phrase of ["游戏采集", "文字策略", "只截图，不操作", "
 }
 
 const status = read("src/routes/tool-health.tsx");
-for (const phrase of ["系统状态", "OBS 输入目录", "PaddleOCR", "OCR GPU", "ShowUI", "Input Gateway", "当前运行任务数"]) {
+for (const phrase of ["系统状态", "OBS 输入目录", "PaddleOCR", "OCR GPU", "ShowUI", "Input Gateway", "当前采集中项目"]) {
   assert(status.includes(phrase), `missing status phrase ${phrase}`);
 }
 for (const forbidden of ["Redis、PostgreSQL 或 Docker 是必需", "mockToolHealth", "getToolHealth"]) {
   assert(!status.includes(forbidden), `status page exposes forbidden legacy term ${forbidden}`);
+}
+
+for (const phrase of ["Frame Pump", "启动 Frame Pump", "停止 Frame Pump", "等待 Frame Pump 输出截图"]) {
+  assert(current.includes(phrase) || status.includes(phrase), `missing frame pump phrase ${phrase}`);
 }
 
 console.log("web_console_smoke_ok", requiredFiles.length);
