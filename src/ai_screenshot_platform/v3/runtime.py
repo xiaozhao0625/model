@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from ai_screenshot_platform.v3.capture.folder_watch import list_new_images
+from ai_screenshot_platform.v3.capture.obs_websocket import config_from_payload, list_scenes, list_sources, obs_status, take_obs_screenshot
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.action.rollback import rollback_plan
@@ -31,11 +32,13 @@ from ai_screenshot_platform.v3.schemas import (
     V3CollectionExportResult,
     V3CollectionRecord,
     V3CollectionSummary,
+    V3DeleteResult,
     V3FramePumpStartRequest,
     V3FramePumpStatus,
     V3Health,
     V3ImageRecord,
     V3InputStatus,
+    V3ObsConfigRequest,
     V3RunRecord,
     V3Summary,
     V3TaskConfig,
@@ -109,6 +112,27 @@ class V3Runtime:
     def export_collection(self, collection_id: str) -> V3CollectionExportResult:
         return self.store.export_collection(collection_id)
 
+    def delete_collection(self, collection_id: str, delete_files: bool = False) -> V3DeleteResult:
+        try:
+            result = self.store.delete_collection(collection_id, delete_files=delete_files)
+        except ValueError as exc:
+            if str(exc) == "collection_has_running_run":
+                raise RuntimeError("采集项目仍有运行中的轮次，请先停止采集再删除。") from exc
+            raise
+        return V3DeleteResult.model_validate(result)
+
+    def restore_collection(self, collection_id: str) -> V3CollectionRecord:
+        return self.store.restore_collection(collection_id)
+
+    def delete_run(self, run_id: str, delete_files: bool = False) -> V3DeleteResult:
+        try:
+            result = self.store.delete_run(run_id, delete_files=delete_files)
+        except ValueError as exc:
+            if str(exc) == "run_is_running":
+                raise RuntimeError("该轮次仍在运行，请先停止再删除。") from exc
+            raise
+        return V3DeleteResult.model_validate(result)
+
     def create_run(self, config: V3TaskConfig, collection_id: str | None = None) -> V3RunRecord:
         return self.store.create_run(config, collection_id=collection_id)
 
@@ -121,7 +145,7 @@ class V3Runtime:
     def start_run(self, run_id: str) -> V3RunRecord:
         record = self.get_run(run_id)
         if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
-            self.start_frame_pump(V3FramePumpStartRequest())
+            self.start_frame_pump(self._frame_pump_request_for_config(record.config))
         watch_dir = self._watch_dir()
         watch_dir.mkdir(parents=True, exist_ok=True)
         self._watch_seen[run_id] = {str(path.resolve()) for path in list_new_images(watch_dir)}
@@ -143,7 +167,7 @@ class V3Runtime:
 
     def resume_run(self, run_id: str) -> V3RunRecord:
         if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
-            self.start_frame_pump(V3FramePumpStartRequest())
+            self.start_frame_pump(self._frame_pump_request_for_config(record.config))
         record = self.store.update_status(run_id, "waiting_for_input")
         self.store.append_event(run_id, "run_resumed", {})
         self._ensure_watch_thread(run_id)
@@ -193,6 +217,10 @@ class V3Runtime:
             pid = None
         fps = heartbeat_payload.get("fps")
         mode = str(heartbeat_payload.get("mode") or "fullscreen")
+        source_mode = str(heartbeat_payload.get("source_mode") or mode or "screen")
+        obs_connected = bool(heartbeat_payload.get("obs_connected"))
+        obs_scene_name = heartbeat_payload.get("obs_scene_name")
+        obs_source_name = heartbeat_payload.get("obs_source_name")
         if error:
             status = "error"
             message = f"Frame Pump 异常：{error}"
@@ -219,6 +247,10 @@ class V3Runtime:
             message=message,
             heartbeat_path=str(heartbeat),
             error=error,
+            source_mode=source_mode,
+            obs_connected=obs_connected,
+            obs_scene_name=str(obs_scene_name) if obs_scene_name else None,
+            obs_source_name=str(obs_source_name) if obs_source_name else None,
         )
 
     def start_frame_pump(self, request: V3FramePumpStartRequest | None = None) -> V3FramePumpStatus:
@@ -238,6 +270,9 @@ class V3Runtime:
         pid_file.parent.mkdir(parents=True, exist_ok=True)
         heartbeat = self._frame_pump_heartbeat_path()
         heartbeat.parent.mkdir(parents=True, exist_ok=True)
+        heartbeat.unlink(missing_ok=True)
+        self._frame_pump_status_path().unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         args = [
             sys.executable,
             "-m",
@@ -250,7 +285,28 @@ class V3Runtime:
             str(stop_file),
             "--fps",
             str(request.fps),
+            "--source-mode",
+            request.source_mode,
+            "--obs-host",
+            request.obs_host,
+            "--obs-port",
+            str(request.obs_port),
+            "--screenshot-target",
+            request.screenshot_target,
+            "--image-format",
+            request.image_format,
+            "--image-quality",
+            str(request.image_quality),
+            "--status-path",
+            str(self._frame_pump_status_path()),
         ]
+        password = request.obs_password if request.obs_password is not None else os.environ.get("APP_SHOT_OBS_PASSWORD", "")
+        if password:
+            args.extend(["--obs-password", password])
+        if request.obs_scene_name:
+            args.extend(["--obs-scene-name", request.obs_scene_name])
+        if request.obs_source_name:
+            args.extend(["--obs-source-name", request.obs_source_name])
         if request.full_screen:
             args.append("--full-screen")
         if request.window_title:
@@ -262,6 +318,52 @@ class V3Runtime:
         pid_file.write_text(str(process.pid), encoding="utf-8")
         time.sleep(0.2)
         return self.frame_pump_status()
+
+    def obs_status(self, request: V3ObsConfigRequest | None = None) -> dict[str, object]:
+        return obs_status(config_from_payload(request.model_dump() if request else None))
+
+    def obs_scenes(self, request: V3ObsConfigRequest | None = None) -> dict[str, object]:
+        return list_scenes(config_from_payload(request.model_dump() if request else None))
+
+    def obs_sources(self, request: V3ObsConfigRequest | None = None, scene_name: str | None = None) -> dict[str, object]:
+        return list_sources(config_from_payload(request.model_dump() if request else None), scene_name=scene_name)
+
+    def obs_test_screenshot(self, request: V3ObsConfigRequest | None = None) -> dict[str, object]:
+        config = config_from_payload(request.model_dump() if request else None)
+        try:
+            return take_obs_screenshot(config, self._watch_dir(), frame_index=int(time.time()))
+        except Exception as exc:
+            return {
+                "ok": False,
+                "image_path": None,
+                "width": None,
+                "height": None,
+                "source_mode": "obs_websocket",
+                "black_screen_detected": False,
+                "message": str(exc),
+            }
+
+    def frame_pump_test_shot(self, request: V3FramePumpStartRequest | None = None) -> dict[str, object]:
+        request = request or V3FramePumpStartRequest()
+        if request.source_mode == "obs_websocket":
+            obs_request = V3ObsConfigRequest(
+                obs_host=request.obs_host,
+                obs_port=request.obs_port,
+                obs_password=request.obs_password,
+                obs_scene_name=request.obs_scene_name,
+                obs_source_name=request.obs_source_name,
+                screenshot_target=request.screenshot_target,
+                image_format=request.image_format,
+                image_quality=request.image_quality,
+            )
+            return self.obs_test_screenshot(obs_request)
+        from PIL import ImageGrab
+
+        self._watch_dir().mkdir(parents=True, exist_ok=True)
+        image = ImageGrab.grab(all_screens=request.full_screen)
+        frame_path = self._watch_dir() / f"frame_{time.strftime('%Y%m%d_%H%M%S')}_test_{request.source_mode}.png"
+        image.save(frame_path)
+        return {"ok": True, "image_path": str(frame_path), "width": image.width, "height": image.height, "source_mode": request.source_mode}
 
     def stop_frame_pump(self) -> V3FramePumpStatus:
         self._frame_pump_stop_path().write_text(utc_now(), encoding="utf-8")
@@ -568,6 +670,18 @@ class V3Runtime:
             return Path(explicit)
         home = os.environ.get("APP_SHOT_HOME")
         return (Path(home) if home else Path(".")) / "logs" / "frame_pump_heartbeat.json"
+
+    def _frame_pump_status_path(self) -> Path:
+        home = os.environ.get("APP_SHOT_HOME")
+        return (Path(home) if home else Path(".")) / "logs" / "frame_pump_status.json"
+
+    def _frame_pump_request_for_config(self, config: V3TaskConfig) -> V3FramePumpStartRequest:
+        fps = max(0.2, min(10.0, 1000 / max(config.capture_interval_ms, 100)))
+        if config.capture_source in {"obs", "obs_websocket"}:
+            return V3FramePumpStartRequest(source_mode="obs_websocket", fps=fps)
+        if config.capture_source == "window":
+            return V3FramePumpStartRequest(source_mode="window", fps=fps, full_screen=False)
+        return V3FramePumpStartRequest(source_mode="screen", fps=fps)
 
     def _ensure_watch_thread(self, run_id: str) -> None:
         thread = self._watch_threads.get(run_id)

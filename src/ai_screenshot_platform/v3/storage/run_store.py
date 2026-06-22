@@ -49,7 +49,17 @@ class V3RunStore:
     def list_collections(self) -> list[V3CollectionRecord]:
         records: list[V3CollectionRecord] = []
         for path in sorted(self._collections_root().glob("*/collection.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            records.append(V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8")))
+            record = V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            if record.status != "deleted":
+                records.append(record)
+        return records
+
+    def list_deleted_collections(self) -> list[V3CollectionRecord]:
+        records: list[V3CollectionRecord] = []
+        for path in sorted(self._collections_root().glob("*/collection.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            record = V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            if record.status == "deleted":
+                records.append(record)
         return records
 
     def get_collection(self, collection_id: str) -> V3CollectionRecord:
@@ -87,7 +97,9 @@ class V3RunStore:
     def list_runs(self) -> list[V3RunRecord]:
         records: list[V3RunRecord] = []
         for path in sorted(self.root.glob("*/run.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            records.append(V3RunRecord.model_validate_json(path.read_text(encoding="utf-8")))
+            record = V3RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            if record.status != "deleted":
+                records.append(record)
         return records
 
     def get_run(self, run_id: str) -> V3RunRecord:
@@ -148,6 +160,78 @@ class V3RunStore:
                 self.update_status(run_id, "stopped")
         return collection
 
+    def delete_collection(self, collection_id: str, delete_files: bool = False) -> dict[str, object]:
+        collection = self.get_collection(collection_id)
+        active = {"running", "waiting_for_input", "waiting_for_input_timeout"}
+        for run_id in collection.run_ids:
+            try:
+                if self.get_run(run_id).status in active:
+                    raise ValueError("collection_has_running_run")
+            except KeyError:
+                continue
+        if delete_files:
+            moved_to = self._move_collection_to_trash(collection)
+            return {
+                "target_type": "collection",
+                "target_id": collection_id,
+                "status": "deleted_to_trash",
+                "delete_files": True,
+                "moved_to": str(moved_to),
+                "message": "采集项目文件已移动到回收站。",
+            }
+        collection.status = "deleted"
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        self._write_delete_audit("collection", collection_id, False, None)
+        return {
+            "target_type": "collection",
+            "target_id": collection_id,
+            "status": "deleted",
+            "delete_files": False,
+            "moved_to": None,
+            "message": "采集项目已软删除，可在已删除任务中恢复。",
+        }
+
+    def restore_collection(self, collection_id: str) -> V3CollectionRecord:
+        collection = self.get_collection(collection_id)
+        if collection.status != "deleted":
+            return collection
+        collection.status = "stopped"
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        return collection
+
+    def delete_run(self, run_id: str, delete_files: bool = False) -> dict[str, object]:
+        run = self.get_run(run_id)
+        if run.status in {"running", "waiting_for_input", "waiting_for_input_timeout"}:
+            raise ValueError("run_is_running")
+        if delete_files:
+            moved_to = self._move_run_to_trash(run)
+            if run.collection_id:
+                self.refresh_collection_summary(run.collection_id)
+            return {
+                "target_type": "run",
+                "target_id": run_id,
+                "status": "deleted_to_trash",
+                "delete_files": True,
+                "moved_to": str(moved_to),
+                "message": "轮次文件已移动到回收站。",
+            }
+        run.status = "deleted"
+        run.updated_at = utc_now()
+        self._write_run(run)
+        self._write_delete_audit("run", run_id, False, None, collection_id=run.collection_id)
+        if run.collection_id:
+            self.refresh_collection_summary(run.collection_id)
+        return {
+            "target_type": "run",
+            "target_id": run_id,
+            "status": "deleted",
+            "delete_files": False,
+            "moved_to": None,
+            "message": "轮次已软删除，collection 汇总已重算。",
+        }
+
     def refresh_collection_summary(self, collection_id: str) -> V3CollectionSummary:
         summary = self.collection_summary(collection_id)
         collection = self.get_collection(collection_id)
@@ -165,7 +249,12 @@ class V3RunStore:
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
         for index, run_id in enumerate(collection.run_ids, start=1):
-            run_record = self.get_run(run_id)
+            try:
+                run_record = self.get_run(run_id)
+            except KeyError:
+                continue
+            if run_record.status == "deleted":
+                continue
             images = self.list_images(run_id)
             actions = self.list_meta_jsonl(run_id, "actions.jsonl")
             accepted = [image for image in images if image.bucket == "accepted"]
@@ -227,7 +316,7 @@ class V3RunStore:
             rejected_total=rejected_total,
             failed_total=failed_total,
             action_total=action_total,
-            run_count=len(collection.run_ids),
+            run_count=len(run_summaries),
             latest_run_id=collection.latest_run_id,
             latest_round_index=int(latest_round.get("round_index", 0)) if latest_round else 0,
             latest_round_processed=int(latest_round.get("processed", 0)) if latest_round else 0,
@@ -575,6 +664,48 @@ class V3RunStore:
         path = self._run_path(record.run_id)
         path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
 
+    def _trash_root(self) -> Path:
+        path = self.root / "trash"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _move_collection_to_trash(self, collection: V3CollectionRecord) -> Path:
+        stamp = utc_now().replace(":", "").replace("+", "_").replace(".", "_")
+        target = self._trash_root() / f"{stamp}_{collection.collection_id}"
+        target.mkdir(parents=True, exist_ok=True)
+        collection_dir = self._collection_dir(collection.collection_id)
+        if collection_dir.exists():
+            shutil.move(str(collection_dir), str(target / "collection"))
+        for run_id in collection.run_ids:
+            run_dir = self.root / run_id
+            if run_dir.exists():
+                shutil.move(str(run_dir), str(target / f"run_{run_id}"))
+        self._write_delete_audit("collection", collection.collection_id, True, target)
+        return target
+
+    def _move_run_to_trash(self, run: V3RunRecord) -> Path:
+        stamp = utc_now().replace(":", "").replace("+", "_").replace(".", "_")
+        target = self._trash_root() / f"{stamp}_{run.run_id}"
+        run_dir = self.root / run.run_id
+        if run_dir.exists():
+            shutil.move(str(run_dir), str(target))
+        self._write_delete_audit("run", run.run_id, True, target, collection_id=run.collection_id)
+        return target
+
+    def _write_delete_audit(self, target_type: str, target_id: str, delete_files: bool, moved_to: Path | None, collection_id: str | None = None) -> None:
+        audit = self._trash_root() / "delete_audit.jsonl"
+        payload = {
+            "target_type": target_type,
+            "collection_id": collection_id if target_type == "run" else target_id,
+            "run_id": target_id if target_type == "run" else None,
+            "delete_files": delete_files,
+            "moved_to": str(moved_to) if moved_to else None,
+            "deleted_at": utc_now(),
+            "operator": "local",
+        }
+        with audit.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
     def _increment(self, run_id: str, key: str) -> None:
         try:
             record = self.get_run(run_id)
@@ -654,6 +785,8 @@ def _collection_rejection_summary(images: list[V3ImageRecord]) -> dict[str, obje
 
 
 def _collection_status(collection: V3CollectionRecord, accepted_unique_total: int, has_running_run: bool) -> str:
+    if collection.status == "deleted":
+        return "deleted"
     if has_running_run:
         return "collecting"
     if collection.status == "stopped":

@@ -7,12 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-RunStatus = Literal["created", "waiting_for_input", "waiting_for_input_timeout", "running", "paused", "stopped", "completed", "failed"]
+RunStatus = Literal["created", "waiting_for_input", "waiting_for_input_timeout", "running", "paused", "stopped", "completed", "failed", "deleted"]
 AppType = Literal["software", "pc_app", "pc_game", "game", "web", "auto"]
 GameMode = Literal["menu", "gameplay", "auto"]
 TextPolicy = Literal["strict_text", "text_priority_with_fill", "visual_gameplay"]
 GameActionPreset = Literal["screenshot_only", "low_risk_ui_click", "wasd_mouse", "hotkey_explore", "custom"]
-CaptureSource = Literal["obs", "folder_watch", "window"]
+CaptureSource = Literal["obs", "obs_websocket", "folder_watch", "window", "screen", "obs_projector"]
 SafetyMode = Literal["strict", "review", "off"]
 CaptureReason = Literal[
     "periodic",
@@ -162,6 +162,7 @@ class V3CollectionRecord(BaseModel):
         "max_target_reached",
         "needs_manual",
         "stopped",
+        "deleted",
     ] = "not_started"
     config: V3TaskConfig
     task_name: str | None = None
@@ -241,8 +242,17 @@ class V3InputStatus(BaseModel):
 
 class V3FramePumpStartRequest(BaseModel):
     fps: float = Field(default=1.0, ge=0.2, le=10.0)
+    source_mode: Literal["obs_websocket", "screen", "window", "obs_projector"] = "obs_websocket"
     window_title: str | None = None
     full_screen: bool = True
+    obs_host: str = "127.0.0.1"
+    obs_port: int = Field(default=4455, ge=1, le=65535)
+    obs_password: str | None = None
+    screenshot_target: Literal["source", "scene"] = "source"
+    obs_scene_name: str | None = None
+    obs_source_name: str | None = None
+    image_format: Literal["png", "jpg", "jpeg"] = "png"
+    image_quality: int = Field(default=90, ge=1, le=100)
 
 
 class V3FramePumpStatus(BaseModel):
@@ -259,6 +269,30 @@ class V3FramePumpStatus(BaseModel):
     message: str
     heartbeat_path: str | None = None
     error: str | None = None
+    source_mode: str = "screen"
+    obs_connected: bool = False
+    obs_scene_name: str | None = None
+    obs_source_name: str | None = None
+
+
+class V3ObsConfigRequest(BaseModel):
+    obs_host: str = "127.0.0.1"
+    obs_port: int = Field(default=4455, ge=1, le=65535)
+    obs_password: str | None = None
+    obs_scene_name: str | None = None
+    obs_source_name: str | None = None
+    screenshot_target: Literal["source", "scene"] = "source"
+    image_format: Literal["png", "jpg", "jpeg"] = "png"
+    image_quality: int = Field(default=90, ge=1, le=100)
+
+
+class V3DeleteResult(BaseModel):
+    target_type: Literal["collection", "run"]
+    target_id: str
+    status: str
+    delete_files: bool = False
+    moved_to: str | None = None
+    message: str
 
 
 class OcrTextBox(BaseModel):

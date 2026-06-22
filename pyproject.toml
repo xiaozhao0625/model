@@ -5,6 +5,7 @@ description = "Core domain model for the multi-type app/game screenshot collecti
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.136.3",
+    "obsws-python>=1.8.0",
     "psycopg[binary]>=3.2.0",
 ]
 

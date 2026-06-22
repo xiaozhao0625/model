@@ -54,6 +54,70 @@ def test_v3_frame_pump_api_status_start_stop(tmp_path, monkeypatch):
         assert stopped["status"] == "stopped"
 
 
+def test_v3_obs_api_returns_friendly_status_without_obs(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        unavailable_port = 9
+        status = client.get(f"/api/v3/obs/status?obs_port={unavailable_port}").json()["data"]
+        scenes = client.get(f"/api/v3/obs/scenes?obs_port={unavailable_port}").json()["data"]
+        sources = client.get(f"/api/v3/obs/sources?obs_port={unavailable_port}").json()["data"]
+        shot = client.post("/api/v3/obs/test-screenshot", json={"obs_host": "127.0.0.1", "obs_port": unavailable_port}).json()["data"]
+
+        assert status["connected"] is False
+        assert status["error"]
+        assert scenes["scenes"] == []
+        assert sources["sources"] == []
+        assert shot["ok"] is False
+        assert shot["source_mode"] == "obs_websocket"
+
+
+def test_v3_delete_restore_collection_and_delete_run_recalculates(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_DISABLE_OPEN_FOLDER", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    image1 = tmp_path / "start_wps_001.png"
+    image2 = tmp_path / "ok_wps_002.png"
+    image1.write_bytes(b"first-wps-screen")
+    image2.write_bytes(b"second-wps-screen")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "delete_case",
+                    "app_name": "delete_case",
+                    "target_language": "en",
+                    "save_root": str(tmp_path / "v3"),
+                    "must_have_text": True,
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+        run1 = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+        run2 = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+        client.post(f"/api/v3/runs/{run1['run_id']}/images/ingest", json={"image_path": str(image1)})
+        client.post(f"/api/v3/runs/{run2['run_id']}/images/ingest", json={"image_path": str(image2)})
+
+        before = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
+        assert before["run_count"] == 2
+        assert before["accepted_unique_total"] == 2
+
+        deleted_run = client.delete(f"/api/v3/runs/{run2['run_id']}").json()["data"]
+        after_run_delete = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
+        assert deleted_run["status"] == "deleted"
+        assert after_run_delete["run_count"] == 1
+        assert after_run_delete["accepted_unique_total"] == 1
+
+        deleted = client.delete(f"/api/v3/collections/{collection_id}").json()["data"]
+        assert deleted["status"] == "deleted"
+        assert all(item["collection_id"] != collection_id for item in client.get("/api/v3/collections").json()["data"])
+        assert any(item["collection_id"] == collection_id for item in client.get("/api/v3/collections?include_deleted=true").json()["data"])
+
+        restored = client.post(f"/api/v3/collections/{collection_id}/restore").json()["data"]
+        assert restored["status"] == "stopped"
+        assert any(item["collection_id"] == collection_id for item in client.get("/api/v3/collections").json()["data"])
+
+
 def test_v3_health_exposes_operator_status_summaries(tmp_path, monkeypatch):
     performance = tmp_path / "ocr_gpu_performance.json"
     performance.write_text(

@@ -82,7 +82,7 @@ export interface V3TaskConfig {
   display_name?: string | null;
   app_type: "software" | "pc_app" | "pc_game" | "game" | "web" | "auto";
   target_language: string;
-  capture_source: "obs" | "folder_watch" | "window";
+  capture_source: "obs" | "obs_websocket" | "folder_watch" | "window" | "screen" | "obs_projector";
   capture_interval_ms: number;
   save_root: string;
   enable_ocr: boolean;
@@ -148,7 +148,7 @@ export interface V3RunRecord {
   run_id: string;
   collection_id?: string | null;
   round_index?: number;
-  status: "created" | "waiting_for_input" | "running" | "paused" | "stopped" | "completed" | "failed";
+  status: "created" | "waiting_for_input" | "waiting_for_input_timeout" | "running" | "paused" | "stopped" | "completed" | "failed" | "deleted";
   config: V3TaskConfig;
   task_name?: string | null;
   app_name?: string | null;
@@ -249,6 +249,10 @@ export interface V3FramePumpStatus {
   frame_count: number;
   fps?: number | null;
   mode: string;
+  source_mode?: "obs_websocket" | "screen" | "window" | "obs_projector" | string;
+  obs_connected?: boolean;
+  obs_scene_name?: string | null;
+  obs_source_name?: string | null;
   message: string;
   heartbeat_path?: string | null;
   error?: string | null;
@@ -258,6 +262,74 @@ export interface V3FramePumpStartRequest {
   fps?: number;
   window_title?: string | null;
   full_screen?: boolean;
+  source_mode?: "obs_websocket" | "screen" | "window" | "obs_projector";
+  output_dir?: string;
+  obs_host?: string;
+  obs_port?: number;
+  obs_password?: string;
+  screenshot_target?: "source" | "scene";
+  obs_scene_name?: string | null;
+  obs_source_name?: string | null;
+  image_format?: "png" | "jpg" | "jpeg";
+  image_quality?: number;
+}
+
+export interface V3ObsConfigRequest {
+  obs_host?: string;
+  obs_port?: number;
+  obs_password?: string;
+  screenshot_target?: "source" | "scene";
+  obs_scene_name?: string | null;
+  obs_source_name?: string | null;
+  output_dir?: string;
+  image_format?: "png" | "jpg" | "jpeg";
+  image_quality?: number;
+}
+
+export interface V3ObsStatus {
+  ok: boolean;
+  connected: boolean;
+  host: string;
+  port: number;
+  message: string;
+  version?: string | null;
+  current_scene?: string | null;
+  error?: string | null;
+}
+
+export interface V3ObsSceneRecord {
+  name: string;
+  current?: boolean;
+}
+export type V3ObsSceneOption = V3ObsSceneRecord | string;
+
+export interface V3ObsSourceRecord {
+  name: string;
+  kind?: string | null;
+  scene_name?: string | null;
+}
+export type V3ObsSourceOption = V3ObsSourceRecord | string;
+
+export interface V3ObsScreenshotResult {
+  ok: boolean;
+  image_path?: string | null;
+  width?: number | null;
+  height?: number | null;
+  source_mode?: string;
+  obs_scene_name?: string | null;
+  obs_source_name?: string | null;
+  black_screen_detected?: boolean;
+  message: string;
+  error?: string | null;
+}
+
+export interface V3DeleteResult {
+  target_type: "collection" | "run";
+  target_id: string;
+  status: "deleted" | "deleted_to_trash";
+  delete_files: boolean;
+  moved_to?: string | null;
+  message: string;
 }
 
 export interface V3Summary {

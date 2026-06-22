@@ -3,20 +3,26 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 import { apiClient } from "../lib/api-client";
-import type { V3CollectionSummary, V3FramePumpStatus, V3Health, V3InputStatus, V3RunRecord } from "../lib/api-types";
+import type { V3CollectionSummary, V3FramePumpStatus, V3Health, V3InputStatus, V3ObsConfigRequest, V3ObsSceneOption, V3ObsSourceOption, V3ObsStatus, V3RunRecord } from "../lib/api-types";
 import { isDebugRun, labelStatus } from "../lib/labels";
 
 type State = {
   health: V3Health | null;
   input: V3InputStatus | null;
   framePump: V3FramePumpStatus | null;
+  obs: V3ObsStatus | null;
+  scenes: V3ObsSceneOption[];
+  sources: V3ObsSourceOption[];
   runs: V3RunRecord[];
   collections: V3CollectionSummary[];
   error: string | null;
 };
 
 export function ToolHealthRoute() {
-  const [state, setState] = useState<State>({ health: null, input: null, framePump: null, runs: [], collections: [], error: null });
+  const [state, setState] = useState<State>({ health: null, input: null, framePump: null, obs: null, scenes: [], sources: [], runs: [], collections: [], error: null });
+  const [obsConfig, setObsConfig] = useState<V3ObsConfigRequest>({ obs_host: "127.0.0.1", obs_port: 4455, obs_password: "", screenshot_target: "source", image_format: "png" });
+  const [frameFps, setFrameFps] = useState(1);
+  const [obsMessage, setObsMessage] = useState("");
 
   useEffect(() => {
     void load();
@@ -24,21 +30,22 @@ export function ToolHealthRoute() {
 
   async function load() {
     try {
-      const [health, input, framePump, runs, collections] = await Promise.all([
+      const [health, input, framePump, obs, runs, collections] = await Promise.all([
         apiClient.getV3Health(),
         apiClient.getV3InputStatus(),
         apiClient.getV3FramePumpStatus(),
+        apiClient.getV3ObsStatus(obsConfig),
         apiClient.listV3Runs(),
         apiClient.listV3Collections()
       ]);
-      setState({ health, input, framePump, runs: runs.filter((run) => !isDebugRun(run)), collections, error: null });
+      setState((current) => ({ ...current, health, input, framePump, obs, runs: runs.filter((run) => !isDebugRun(run)), collections, error: null }));
     } catch (error) {
-      setState({ health: null, input: null, framePump: null, runs: [], collections: [], error: error instanceof Error ? error.message : String(error) });
+      setState({ health: null, input: null, framePump: null, obs: null, scenes: [], sources: [], runs: [], collections: [], error: error instanceof Error ? error.message : String(error) });
     }
   }
 
   async function startFramePump() {
-    await apiClient.startV3FramePump({ fps: 1, full_screen: true });
+    await apiClient.startV3FramePump({ fps: frameFps, full_screen: true, source_mode: "obs_websocket", ...obsConfig });
     await load();
   }
 
@@ -51,9 +58,33 @@ export function ToolHealthRoute() {
     await apiClient.openV3InputFolder();
   }
 
+  async function testObs() {
+    const obs = await apiClient.getV3ObsStatus(obsConfig);
+    setState((current) => ({ ...current, obs }));
+    setObsMessage(obs.message);
+  }
+
+  async function loadScenes() {
+    const result = await apiClient.getV3ObsScenes(obsConfig);
+    setState((current) => ({ ...current, scenes: result.scenes }));
+    setObsMessage(`已读取 ${result.scenes.length} 个 OBS 场景。`);
+  }
+
+  async function loadSources() {
+    const result = await apiClient.getV3ObsSources({ ...obsConfig, scene_name: obsConfig.obs_scene_name });
+    setState((current) => ({ ...current, sources: result.sources }));
+    setObsMessage(`已读取 ${result.sources.length} 个 OBS 来源。`);
+  }
+
+  async function testScreenshot() {
+    const result = await apiClient.testV3ObsScreenshot(obsConfig);
+    await load();
+    setObsMessage(result.message || result.image_path || "测试截图完成。");
+  }
+
   const health = state.health;
   const collectingCollections = useMemo(() => state.collections.filter((item) => item.status === "collecting").length, [state.collections]);
-  const activeRuns = useMemo(() => state.runs.filter((run) => run.collection_id && ["running", "waiting_for_input"].includes(run.status)).length, [state.runs]);
+  const activeRuns = useMemo(() => state.runs.filter((run) => run.collection_id && ["running", "waiting_for_input", "waiting_for_input_timeout"].includes(run.status)).length, [state.runs]);
   const recentErrors = useMemo(() => state.runs.map((run) => run.last_error).filter(Boolean).slice(0, 5), [state.runs]);
   const paddle = health?.ocr?.find((item) => item.provider === "paddleocr");
   const showui = health?.models?.find((item) => item.provider === "showui");
@@ -96,6 +127,27 @@ export function ToolHealthRoute() {
           <Field label="距离当前" value={state.input?.seconds_since_latest === undefined || state.input?.seconds_since_latest === null ? "-" : `${state.input.seconds_since_latest} 秒`} />
         </div>
         <p className="mt-3 text-sm text-slate-400">{state.input?.message}</p>
+      </Card>
+
+      <Card title="OBS WebSocket 截图" className="mt-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">Host</span><input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" value={obsConfig.obs_host || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_host: event.target.value })} /></label>
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">Port</span><input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" type="number" value={obsConfig.obs_port || 4455} onChange={(event) => setObsConfig({ ...obsConfig, obs_port: Number(event.target.value) })} /></label>
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">Password</span><input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" type="password" value={obsConfig.obs_password || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_password: event.target.value })} /></label>
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">FPS</span><select className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" value={frameFps} onChange={(event) => setFrameFps(Number(event.target.value))}><option value={1}>1 FPS</option><option value={2}>2 FPS</option><option value={5}>5 FPS</option></select></label>
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">场景</span><input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" list="obs-scenes" value={obsConfig.obs_scene_name || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_scene_name: event.target.value })} /><datalist id="obs-scenes">{state.scenes.map((scene) => <option key={obsOptionName(scene)} value={obsOptionName(scene)} />)}</datalist></label>
+          <label className="grid gap-1 text-sm text-slate-300"><span className="text-xs text-slate-500">来源</span><input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" list="obs-sources" value={obsConfig.obs_source_name || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_source_name: event.target.value })} /><datalist id="obs-sources">{state.sources.map((source) => <option key={obsOptionName(source)} value={obsOptionName(source)} />)}</datalist></label>
+          <Field label="连接状态" value={state.obs?.connected ? "已连接" : "未连接"} />
+          <Field label="当前来源模式" value={state.framePump?.source_mode || state.framePump?.mode || "-"} />
+        </div>
+        <p className="mt-3 text-sm text-slate-400">OBS WebSocket 只用于截取 OBS 画面，不负责录制、推流、改场景，也不执行游戏操作。游戏操作仍由 Input Gateway 安全门控。</p>
+        {obsMessage ? <p className="mt-2 whitespace-pre-line text-sm text-amber-200">{obsMessage}</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void testObs()}>测试连接</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void loadScenes()}>读取场景</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void loadSources()}>读取来源</button>
+          <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100" onClick={() => void testScreenshot()}>测试截图</button>
+        </div>
       </Card>
 
       <Card title="Frame Pump" className="mt-4">
@@ -154,4 +206,8 @@ function framePumpStatusText(status?: V3FramePumpStatus["status"]) {
 
 function Field({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 break-all text-sm text-slate-200">{value}</p></div>;
+}
+
+function obsOptionName(option: V3ObsSceneOption | V3ObsSourceOption) {
+  return typeof option === "string" ? option : option.name;
 }

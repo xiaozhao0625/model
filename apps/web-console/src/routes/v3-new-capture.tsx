@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
+import { ObsFramePumpPanel } from "../components/v3/obs-frame-pump-panel";
 import { apiClient } from "../lib/api-client";
 import type { V3TaskConfig } from "../lib/api-types";
 import { gameActionPresetLabels, gameModeLabels, textPolicyLabels } from "../lib/labels";
@@ -30,6 +31,7 @@ export function V3NewCaptureRoute() {
           target_accepted_min: 800,
           target_accepted_soft: 1000,
           target_accepted_max: 2000,
+          capture_source: "obs_websocket",
           max_images: 1500,
           max_actions: 20,
           max_game_actions: 50,
@@ -50,7 +52,30 @@ export function V3NewCaptureRoute() {
 
   function patch(next: Partial<V3TaskConfig>) {
     if (!config) return;
-    setConfig({ ...config, ...next });
+    const merged = { ...config, ...next };
+    if (next.text_policy === "strict_text") {
+      merged.must_have_text = true;
+      merged.allow_no_text_fill = false;
+      merged.no_text_fill_ratio = 0;
+    }
+    if (next.text_policy === "text_priority_with_fill" && merged.no_text_fill_ratio <= 0) {
+      merged.allow_no_text_fill = true;
+      merged.no_text_fill_ratio = 0.1;
+    }
+    if (next.game_action_preset === "screenshot_only") {
+      merged.enable_game_explorer = false;
+      merged.allow_wasd_mouse = false;
+      merged.enable_auto_click = false;
+      merged.observe_only = true;
+    }
+    if (next.game_action_preset === "wasd_mouse") {
+      merged.enable_game_explorer = true;
+      merged.allow_wasd_mouse = true;
+    }
+    if (next.allow_wasd_mouse === true) {
+      merged.enable_game_explorer = true;
+    }
+    setConfig(merged);
   }
 
   function applyTab(next: Tab) {
@@ -64,6 +89,7 @@ export function V3NewCaptureRoute() {
         display_name: config.display_name || config.task_name || config.app_name || "wps",
         max_images: config.max_images || 1500,
         max_actions: Math.min(config.max_actions || 20, 100),
+        capture_source: "obs_websocket",
         must_have_text: true,
         allow_no_text_fill: false,
         no_text_fill_ratio: 0,
@@ -80,6 +106,7 @@ export function V3NewCaptureRoute() {
         max_images: Math.max(config.max_images || 0, 2000),
         max_actions: Math.min(config.max_actions || 20, 100),
         max_game_actions: Math.min(config.max_game_actions || 50, 200),
+        capture_source: "obs_websocket",
         game_mode: "menu",
         text_priority: true,
         must_have_text: true,
@@ -118,6 +145,17 @@ export function V3NewCaptureRoute() {
       max_actions: Math.min(config.max_actions, 100),
       max_game_actions: Math.min(config.max_game_actions, 200)
     };
+    if (prepared.text_policy === "strict_text") {
+      prepared.must_have_text = true;
+      prepared.allow_no_text_fill = false;
+      prepared.no_text_fill_ratio = 0;
+    }
+    if (prepared.game_action_preset === "screenshot_only") {
+      prepared.enable_game_explorer = false;
+      prepared.allow_wasd_mouse = false;
+      prepared.enable_auto_click = false;
+      prepared.observe_only = true;
+    }
     const validation = validate(prepared);
     if (validation) {
       setMessage(validation);
@@ -151,6 +189,8 @@ export function V3NewCaptureRoute() {
         <TabButton active={tab === "advanced"} onClick={() => applyTab("advanced")} label="高级配置" />
       </div>
 
+      <ObsFramePumpPanel onMessage={setMessage} />
+
       <Card title={tab === "game" ? "游戏采集" : tab === "advanced" ? "高级配置" : "软件采集"}>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="任务名称">
@@ -165,6 +205,14 @@ export function V3NewCaptureRoute() {
               <option value="pc_game">PC 游戏</option>
               <option value="web">网页</option>
               <option value="auto">自动判断</option>
+            </select>
+          </Field>
+          <Field label="截图来源">
+            <select className={inputClass} value={config.capture_source} onChange={(event) => patch({ capture_source: event.target.value as V3TaskConfig["capture_source"] })}>
+              <option value="obs_websocket">OBS WebSocket 截图</option>
+              <option value="screen">全屏截图</option>
+              <option value="window">目标窗口截图</option>
+              <option value="folder_watch">只监听 obs-output 文件夹</option>
             </select>
           </Field>
           <Field label="目标语言">
@@ -184,9 +232,11 @@ export function V3NewCaptureRoute() {
           <Field label="最大截图数">
             <input className={inputClass} type="number" min={1} max={50000} value={config.max_images} onChange={(event) => patch({ max_images: Number(event.target.value) })} />
           </Field>
-          <Field label="最大软件动作数">
-            <input className={inputClass} type="number" min={0} max={100} value={config.max_actions} onChange={(event) => patch({ max_actions: Math.min(Number(event.target.value), 100) })} />
-          </Field>
+          {tab !== "game" && config.app_type !== "pc_game" ? (
+            <Field label="最大软件动作数">
+              <input className={inputClass} type="number" min={0} max={100} value={config.max_actions} onChange={(event) => patch({ max_actions: Math.min(Number(event.target.value), 100) })} />
+            </Field>
+          ) : null}
 
           {tab === "game" || config.app_type === "pc_game" ? (
             <>

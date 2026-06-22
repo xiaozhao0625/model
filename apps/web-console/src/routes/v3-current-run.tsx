@@ -1,9 +1,10 @@
-import { Archive, ClipboardList, FolderOpen, Images, Play, RotateCw, Square } from "lucide-react";
+import { Archive, ClipboardList, FolderOpen, Images, Play, RotateCw, Square, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
+import { ObsFramePumpPanel } from "../components/v3/obs-frame-pump-panel";
 import { apiClient } from "../lib/api-client";
 import type { V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord } from "../lib/api-types";
 import { isDebugRun, labelAppType, labelLanguage, labelRejectReason, labelStatus, textPolicyLabels } from "../lib/labels";
@@ -68,7 +69,7 @@ export function V3CurrentRunRoute() {
       if (framePump && framePump.status !== "running") {
         const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
         if (!shouldStart) return;
-        await apiClient.startV3FramePump({ fps: 1, full_screen: true });
+        await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket" });
       }
       const run = await apiClient.continueV3Collection(collectionId);
       await load(false);
@@ -107,6 +108,41 @@ export function V3CurrentRunRoute() {
     }
   }
 
+  async function deleteCollection(collection: V3CollectionSummary) {
+    if (busyAction) return;
+    const name = collection.display_name || collection.task_name || collection.app_name || collection.collection_id;
+    if (!window.confirm(`确认删除采集项目“${name}”？默认只软删除，可在后续恢复。`)) return;
+    const deleteFiles = window.confirm("是否同时把项目文件移入 runs/v3/trash？\n选择“取消”会执行软删除。");
+    if (deleteFiles && !window.confirm("二次确认：文件会被移入 trash，不会永久删除。是否继续？")) return;
+    setBusyAction(`delete:${collection.collection_id}`);
+    try {
+      const result = await apiClient.deleteV3Collection(collection.collection_id, deleteFiles);
+      await load(false);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteRun(runId: string) {
+    if (busyAction) return;
+    if (!window.confirm(`确认删除轮次 ${runId}？默认软删除并重新计算 collection 汇总。`)) return;
+    const deleteFiles = window.confirm("是否同时把该轮次文件移入 runs/v3/trash？\n选择“取消”会执行软删除。");
+    if (deleteFiles && !window.confirm("二次确认：轮次文件会被移入 trash，不会永久删除。是否继续？")) return;
+    setBusyAction(`delete-run:${runId}`);
+    try {
+      const result = await apiClient.deleteV3Run(runId, deleteFiles);
+      await load(false);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function openInputFolder() {
     const result = await apiClient.openV3InputFolder();
     setMessage(`OBS 输出目录：${result.status} ${result.path}`);
@@ -116,7 +152,7 @@ export function V3CurrentRunRoute() {
     if (busyAction) return;
     setBusyAction("frame-pump:start");
     try {
-      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true });
+      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket" });
       setFramePump(status);
       await load(false);
       setMessage(status.message);
@@ -159,6 +195,8 @@ export function V3CurrentRunRoute() {
           <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void load()}>刷新输入状态</button>
         </div>
       </Card>
+
+      <ObsFramePumpPanel onMessage={setMessage} />
 
       <Card title="Frame Pump" className="mt-4">
         <div className="grid gap-3 md:grid-cols-5">
@@ -234,6 +272,12 @@ export function V3CurrentRunRoute() {
               <LinkButton icon={<Images size={15} />} label="查看累计图库" to={`/v3/collections/${collection.collection_id}/gallery`} />
               <LinkButton icon={<ClipboardList size={15} />} label="查看所有轮次" to={`/v3/collections/${collection.collection_id}/runs`} />
               <ActionButton icon={<Archive size={15} />} label="导出最终有效图" onClick={() => void exportCollection(collection.collection_id)} />
+              <ActionButton
+                icon={<Trash2 size={15} />}
+                label={busyAction === `delete:${collection.collection_id}` ? "删除中..." : "删除项目"}
+                disabled={Boolean(busyAction) || ["running", "collecting", "waiting_for_input", "waiting_for_input_timeout"].includes(collection.status)}
+                onClick={() => void deleteCollection(collection)}
+              />
               <button className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => setMessage(`最终有效图库：${collection.accepted_unique_dir || "-"}`)}>
                 <FolderOpen size={15} />打开文件夹
               </button>
@@ -250,6 +294,13 @@ export function V3CurrentRunRoute() {
                     <span>合格：{String(run.accepted)}</span>
                     <span>新增有效：{String(run.new_unique)}</span>
                     <span>跨轮重复：{String(run.duplicate_across_runs)}</span>
+                    <button
+                      className="rounded border border-red-500/30 px-2 py-1 text-red-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+                      disabled={Boolean(busyAction) || ["running", "waiting_for_input", "waiting_for_input_timeout"].includes(String(run.status))}
+                      onClick={() => void deleteRun(String(run.run_id))}
+                    >
+                      删除轮次
+                    </button>
                   </div>
                 ))}
               </div>

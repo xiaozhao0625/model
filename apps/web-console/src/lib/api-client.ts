@@ -18,8 +18,14 @@ import type {
   V3CollectionExportResult,
   V3CollectionRecord,
   V3CollectionSummary,
+  V3DeleteResult,
   V3ActionRecord,
   V3ImageRecord,
+  V3ObsConfigRequest,
+  V3ObsSceneOption,
+  V3ObsScreenshotResult,
+  V3ObsSourceOption,
+  V3ObsStatus,
   V3OpenPathResult,
   V3RunRecord,
   V3Summary,
@@ -74,13 +80,15 @@ export interface ApiClient {
   getV3ModelHealth(): Promise<V3Health>;
   getV3ActionHealth(): Promise<Record<string, unknown>>;
   getV3Defaults(): Promise<V3TaskConfig>;
-  listV3Collections(): Promise<V3CollectionSummary[]>;
+  listV3Collections(includeDeleted?: boolean): Promise<V3CollectionSummary[]>;
   createV3Collection(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>;
   getV3Collection(collectionId: string): Promise<V3CollectionRecord>;
   getV3CollectionSummary(collectionId: string): Promise<V3CollectionSummary>;
   getV3CollectionGallery(collectionId: string): Promise<V3ImageRecord[]>;
   continueV3Collection(collectionId: string): Promise<V3RunRecord>;
   stopV3Collection(collectionId: string): Promise<V3CollectionRecord>;
+  deleteV3Collection(collectionId: string, deleteFiles?: boolean): Promise<V3DeleteResult>;
+  restoreV3Collection(collectionId: string): Promise<V3CollectionRecord>;
   exportV3Collection(collectionId: string): Promise<V3CollectionExportResult>;
   listV3Runs(): Promise<V3RunRecord[]>;
   createV3Run(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3RunRecord>;
@@ -88,11 +96,18 @@ export interface ApiClient {
   pauseV3Run(runId: string): Promise<V3RunRecord>;
   resumeV3Run(runId: string): Promise<V3RunRecord>;
   stopV3Run(runId: string): Promise<V3RunRecord>;
+  deleteV3Run(runId: string, deleteFiles?: boolean): Promise<V3DeleteResult>;
   getV3RunStatus(runId: string): Promise<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>;
   getV3InputStatus(): Promise<V3InputStatus>;
+  getV3ObsStatus(payload?: V3ObsConfigRequest): Promise<V3ObsStatus>;
+  getV3ObsScenes(payload?: V3ObsConfigRequest): Promise<{ scenes: V3ObsSceneOption[]; current_scene?: string | null }>;
+  getV3ObsSources(payload?: V3ObsConfigRequest & { scene_name?: string | null }): Promise<{ sources: V3ObsSourceOption[]; scene_name?: string | null }>;
+  testV3ObsScreenshot(payload?: V3ObsConfigRequest): Promise<V3ObsScreenshotResult>;
   getV3FramePumpStatus(): Promise<V3FramePumpStatus>;
   startV3FramePump(payload?: V3FramePumpStartRequest): Promise<V3FramePumpStatus>;
   stopV3FramePump(): Promise<V3FramePumpStatus>;
+  testV3FramePumpShot(payload?: V3FramePumpStartRequest): Promise<V3ObsScreenshotResult>;
+  getV3FramePumpLatestFrameUrl(): string;
   openV3InputFolder(): Promise<V3OpenPathResult>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
@@ -270,7 +285,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     getV3ModelHealth: () => requestV3<V3Health>("/api/v3/model/health"),
     getV3ActionHealth: () => requestV3<Record<string, unknown>>("/api/v3/action/health"),
     getV3Defaults: () => requestV3<V3TaskConfig>("/api/v3/config/defaults"),
-    listV3Collections: () => requestV3<V3CollectionSummary[]>("/api/v3/collections"),
+    listV3Collections: (includeDeleted = false) => requestV3<V3CollectionSummary[]>(`/api/v3/collections${includeDeleted ? "?include_deleted=true" : ""}`),
     createV3Collection: (payload) =>
       requestV3<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>("/api/v3/collections", { method: "POST", body: JSON.stringify(payload) }),
     getV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}`),
@@ -278,6 +293,9 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     getV3CollectionGallery: (collectionId) => requestV3<V3ImageRecord[]>(`/api/v3/collections/${collectionId}/gallery`),
     continueV3Collection: (collectionId) => requestV3<V3RunRecord>(`/api/v3/collections/${collectionId}/continue`, { method: "POST" }),
     stopV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}/stop`, { method: "POST" }),
+    deleteV3Collection: (collectionId, deleteFiles = false) =>
+      requestV3<V3DeleteResult>(`/api/v3/collections/${collectionId}?delete_files=${deleteFiles ? "true" : "false"}`, { method: "DELETE" }),
+    restoreV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}/restore`, { method: "POST" }),
     exportV3Collection: (collectionId) => requestV3<V3CollectionExportResult>(`/api/v3/collections/${collectionId}/export`, { method: "POST" }),
     listV3Runs: () => requestV3<V3RunRecord[]>("/api/v3/runs"),
     createV3Run: (payload) => requestV3<V3RunRecord>("/api/v3/runs", { method: "POST", body: JSON.stringify(payload) }),
@@ -285,12 +303,25 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     pauseV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/pause`, { method: "POST" }),
     resumeV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/resume`, { method: "POST" }),
     stopV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/stop`, { method: "POST" }),
+    deleteV3Run: (runId, deleteFiles = false) =>
+      requestV3<V3DeleteResult>(`/api/v3/runs/${runId}?delete_files=${deleteFiles ? "true" : "false"}`, { method: "DELETE" }),
     getV3RunStatus: (runId) => requestV3<{ run: V3RunRecord; summary: V3Summary; input_status: V3InputStatus }>(`/api/v3/runs/${runId}/status`),
     getV3InputStatus: () => requestV3<V3InputStatus>("/api/v3/input/status"),
+    getV3ObsStatus: (payload = {}) =>
+      requestV3<V3ObsStatus>(`/api/v3/obs/status${queryFromObsConfig(payload)}`),
+    getV3ObsScenes: (payload = {}) =>
+      requestV3<{ scenes: V3ObsSceneOption[]; current_scene?: string | null }>(`/api/v3/obs/scenes${queryFromObsConfig(payload)}`),
+    getV3ObsSources: (payload = {}) =>
+      requestV3<{ sources: V3ObsSourceOption[]; scene_name?: string | null }>(`/api/v3/obs/sources${queryFromObsConfig(payload)}`),
+    testV3ObsScreenshot: (payload = {}) =>
+      requestV3<V3ObsScreenshotResult>("/api/v3/obs/test-screenshot", { method: "POST", body: JSON.stringify(payload) }),
     getV3FramePumpStatus: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/status"),
     startV3FramePump: (payload = { fps: 1, full_screen: true }) =>
       requestV3<V3FramePumpStatus>("/api/v3/frame-pump/start", { method: "POST", body: JSON.stringify(payload) }),
     stopV3FramePump: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/stop", { method: "POST", body: JSON.stringify({}) }),
+    testV3FramePumpShot: (payload = {}) =>
+      requestV3<V3ObsScreenshotResult>("/api/v3/frame-pump/test-shot", { method: "POST", body: JSON.stringify(payload) }),
+    getV3FramePumpLatestFrameUrl: () => `${root}/api/v3/frame-pump/latest-frame`,
     openV3InputFolder: () => requestV3<V3OpenPathResult>("/api/v3/input/open-folder", { method: "POST", body: JSON.stringify({}) }),
     getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
     getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),
@@ -309,6 +340,28 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
 }
 
 export const apiClient = createApiClient();
+
+function queryFromObsConfig(payload: V3ObsConfigRequest & { scene_name?: string | null }) {
+  const params = new URLSearchParams();
+  const entries: Array<[string, string | number | null | undefined]> = [
+    ["obs_host", payload.obs_host],
+    ["obs_port", payload.obs_port],
+    ["obs_password", payload.obs_password],
+    ["screenshot_target", payload.screenshot_target],
+    ["obs_scene_name", payload.obs_scene_name || payload.scene_name],
+    ["obs_source_name", payload.obs_source_name],
+    ["output_dir", payload.output_dir],
+    ["image_format", payload.image_format],
+    ["image_quality", payload.image_quality]
+  ];
+  for (const [key, value] of entries) {
+    if (value !== undefined && value !== null && String(value).length > 0) {
+      params.set(key, String(value));
+    }
+  }
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
 
 function mockV3Defaults(): V3TaskConfig {
   return {

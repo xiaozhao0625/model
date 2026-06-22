@@ -14,6 +14,7 @@ from ai_screenshot_platform.v3.schemas import (
     V3CollectionCreateRequest,
     V3FramePumpStartRequest,
     V3ImageIngestRequest,
+    V3ObsConfigRequest,
     V3RunCreateRequest,
 )
 
@@ -52,9 +53,10 @@ def create_v3_router() -> APIRouter:
         return v3_ok(collection.model_dump())
 
     @router.get("/collections")
-    def list_collections(request: Request):
+    def list_collections(request: Request, include_deleted: bool = False):
         runtime = get_runtime(request)
-        return v3_ok([runtime.collection_summary(record.collection_id).model_dump() for record in runtime.list_collections()])
+        records = runtime.store.list_deleted_collections() if include_deleted else runtime.list_collections()
+        return v3_ok([runtime.collection_summary(record.collection_id).model_dump() for record in records])
 
     @router.get("/collections/{collection_id}")
     def get_collection(collection_id: str, request: Request):
@@ -83,6 +85,17 @@ def create_v3_router() -> APIRouter:
     @router.post("/collections/{collection_id}/export")
     def export_collection(collection_id: str, request: Request):
         return v3_ok(get_runtime(request).export_collection(collection_id).model_dump())
+
+    @router.delete("/collections/{collection_id}")
+    def delete_collection(collection_id: str, request: Request, delete_files: bool = False):
+        try:
+            return v3_ok(get_runtime(request).delete_collection(collection_id, delete_files=delete_files).model_dump())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/collections/{collection_id}/restore")
+    def restore_collection(collection_id: str, request: Request):
+        return v3_ok(get_runtime(request).restore_collection(collection_id).model_dump())
 
     @router.post("/runs")
     def create_run(payload: V3RunCreateRequest, request: Request):
@@ -115,6 +128,13 @@ def create_v3_router() -> APIRouter:
     @router.post("/runs/{run_id}/stop")
     def stop_run(run_id: str, request: Request):
         return v3_ok(get_runtime(request).stop_run(run_id).model_dump())
+
+    @router.delete("/runs/{run_id}")
+    def delete_run(run_id: str, request: Request, delete_files: bool = False):
+        try:
+            return v3_ok(get_runtime(request).delete_run(run_id, delete_files=delete_files).model_dump())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.get("/runs/{run_id}/status")
     def run_status(run_id: str, request: Request):
@@ -196,6 +216,22 @@ def create_v3_router() -> APIRouter:
     def input_status(request: Request):
         return v3_ok(get_runtime(request).input_status().model_dump())
 
+    @router.get("/obs/status")
+    def obs_status(request: Request, obs_host: str = "127.0.0.1", obs_port: int = 4455):
+        return v3_ok(get_runtime(request).obs_status(V3ObsConfigRequest(obs_host=obs_host, obs_port=obs_port)))
+
+    @router.get("/obs/scenes")
+    def obs_scenes(request: Request, obs_host: str = "127.0.0.1", obs_port: int = 4455):
+        return v3_ok(get_runtime(request).obs_scenes(V3ObsConfigRequest(obs_host=obs_host, obs_port=obs_port)))
+
+    @router.get("/obs/sources")
+    def obs_sources(request: Request, scene_name: str | None = None, obs_host: str = "127.0.0.1", obs_port: int = 4455):
+        return v3_ok(get_runtime(request).obs_sources(V3ObsConfigRequest(obs_host=obs_host, obs_port=obs_port, obs_scene_name=scene_name), scene_name=scene_name))
+
+    @router.post("/obs/test-screenshot")
+    def obs_test_screenshot(payload: V3ObsConfigRequest, request: Request):
+        return v3_ok(get_runtime(request).obs_test_screenshot(payload))
+
     @router.get("/frame-pump/status")
     def frame_pump_status(request: Request):
         return v3_ok(get_runtime(request).frame_pump_status().model_dump())
@@ -207,6 +243,20 @@ def create_v3_router() -> APIRouter:
     @router.post("/frame-pump/stop")
     def frame_pump_stop(request: Request):
         return v3_ok(get_runtime(request).stop_frame_pump().model_dump())
+
+    @router.post("/frame-pump/test-shot")
+    def frame_pump_test_shot(payload: V3FramePumpStartRequest, request: Request):
+        return v3_ok(get_runtime(request).frame_pump_test_shot(payload))
+
+    @router.get("/frame-pump/latest-frame")
+    def frame_pump_latest_frame(request: Request):
+        status = get_runtime(request).frame_pump_status()
+        if not status.latest_frame_path:
+            raise HTTPException(status_code=404, detail="Frame Pump 暂无最新输出帧。")
+        path = Path(status.latest_frame_path)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Frame Pump 最新输出帧文件不存在。")
+        return FileResponse(path)
 
     @router.post("/input/open-folder")
     def open_input_folder(request: Request, dry_run: bool = False):
