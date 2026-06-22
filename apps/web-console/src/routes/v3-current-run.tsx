@@ -18,12 +18,17 @@ export function V3CurrentRunRoute() {
   const [framePump, setFramePump] = useState<V3FramePumpStatus | null>(null);
   const [message, setMessage] = useState("正在读取当前采集项目。");
   const [showLegacyRuns, setShowLegacyRuns] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
+  }, []);
+
+  useEffect(() => {
+    if (busyAction) return;
     const timer = window.setInterval(() => void load(false), 3000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [busyAction]);
 
   async function load(showMessage = true) {
     try {
@@ -33,13 +38,16 @@ export function V3CurrentRunRoute() {
         apiClient.getV3InputStatus(),
         apiClient.getV3FramePumpStatus()
       ]);
-      setCollections(nextCollections);
+      const visibleCollections = nextCollections.filter((collection) => !isDebugCollection(collection));
+      setCollections(visibleCollections);
       setRuns(nextRuns);
       setInputStatus(nextInput);
       setFramePump(nextFramePump);
-      if (showMessage) setMessage(nextCollections.length ? "已加载采集项目。继续采集会创建新轮次并自动跨轮去重。" : "暂无采集项目，请先新建任务。");
+      if (showMessage) setMessage(visibleCollections.length ? "已加载采集项目。继续采集会创建新轮次并自动跨轮去重。" : "暂无采集项目，请先新建任务。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -54,6 +62,8 @@ export function V3CurrentRunRoute() {
   const debugRuns = useMemo(() => runs.filter((run) => isDebugRun(run)), [runs]);
 
   async function continueCollection(collectionId: string) {
+    if (busyAction) return;
+    setBusyAction(`continue:${collectionId}`);
     try {
       if (framePump && framePump.status !== "running") {
         const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
@@ -65,16 +75,26 @@ export function V3CurrentRunRoute() {
       setMessage(`已开始新一轮采集：第 ${run.round_index || "?"} 轮。动作预算只限制本轮自动操作次数，不代表有效截图数量。有效截图数量以去重后的累计有效图片为准。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
     }
   }
 
-  async function stopCollection(collectionId: string) {
+  async function stopCollection(collection: V3CollectionSummary) {
+    if (busyAction) return;
+    if (collection.status === "stopped") {
+      setMessage("采集项目已经停止。");
+      return;
+    }
+    setBusyAction(`stop:${collection.collection_id}`);
     try {
-      await apiClient.stopV3Collection(collectionId);
+      await apiClient.stopV3Collection(collection.collection_id);
       await load(false);
       setMessage("采集项目已停止。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -93,6 +113,8 @@ export function V3CurrentRunRoute() {
   }
 
   async function startFramePump() {
+    if (busyAction) return;
+    setBusyAction("frame-pump:start");
     try {
       const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true });
       setFramePump(status);
@@ -100,10 +122,14 @@ export function V3CurrentRunRoute() {
       setMessage(status.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
     }
   }
 
   async function stopFramePump() {
+    if (busyAction) return;
+    setBusyAction("frame-pump:stop");
     try {
       const status = await apiClient.stopV3FramePump();
       setFramePump(status);
@@ -111,6 +137,8 @@ export function V3CurrentRunRoute() {
       setMessage(status.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -145,8 +173,8 @@ export function V3CurrentRunRoute() {
         </p>
         {framePump?.status === "stale" || inputStatus?.status === "stale" ? <p className="mt-2 text-sm text-amber-200">等待 Frame Pump 输出截图</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100" onClick={() => void startFramePump()}>启动 Frame Pump</button>
-          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void stopFramePump()}>停止 Frame Pump</button>
+          <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void startFramePump()}>{busyAction === "frame-pump:start" ? "启动中..." : "启动 Frame Pump"}</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || framePump?.status !== "running"} onClick={() => void stopFramePump()}>{busyAction === "frame-pump:stop" ? "停止中..." : "停止 Frame Pump"}</button>
           <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder()}>打开输出目录</button>
         </div>
       </Card>
@@ -201,8 +229,8 @@ export function V3CurrentRunRoute() {
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <ActionButton icon={<Play size={15} />} label="继续采集" onClick={() => void continueCollection(collection.collection_id)} />
-              <ActionButton icon={<Square size={15} />} label="停止项目" onClick={() => void stopCollection(collection.collection_id)} />
+              <ActionButton icon={<Play size={15} />} label={busyAction === `continue:${collection.collection_id}` ? "启动中..." : "继续采集"} disabled={Boolean(busyAction)} onClick={() => void continueCollection(collection.collection_id)} />
+              <ActionButton icon={<Square size={15} />} label={collection.status === "stopped" ? "已停止" : busyAction === `stop:${collection.collection_id}` ? "停止中..." : "停止项目"} disabled={Boolean(busyAction) || collection.status === "stopped"} onClick={() => void stopCollection(collection)} />
               <LinkButton icon={<Images size={15} />} label="查看累计图库" to={`/v3/collections/${collection.collection_id}/gallery`} />
               <LinkButton icon={<ClipboardList size={15} />} label="查看所有轮次" to={`/v3/collections/${collection.collection_id}/runs`} />
               <ActionButton icon={<Archive size={15} />} label="导出最终有效图" onClick={() => void exportCollection(collection.collection_id)} />
@@ -257,6 +285,11 @@ function framePumpStatusText(status?: V3FramePumpStatus["status"]) {
   return "未运行";
 }
 
+function isDebugCollection(collection: V3CollectionSummary) {
+  const text = `${collection.collection_id} ${collection.task_name || ""} ${collection.app_name || ""} ${collection.display_name || ""}`.toLowerCase();
+  return ["smoke", "test", "demo", "v3_real_test", "wrong_language"].some((keyword) => text.includes(keyword));
+}
+
 function Metric({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className={`rounded-lg border p-3 ${highlight ? "border-emerald-500/40 bg-emerald-500/10" : "border-slate-800 bg-slate-950"}`}>
@@ -277,8 +310,16 @@ function Notice({ title, lines }: { title: string; lines: string[] }) {
   );
 }
 
-function ActionButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return <button className="inline-flex items-center gap-2 rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100" onClick={onClick}>{icon}{label}</button>;
+function ActionButton({ icon, label, onClick, disabled = false }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${disabled ? "cursor-not-allowed border-slate-800 text-slate-500" : "border-blue-500/40 text-blue-100"}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {icon}{label}
+    </button>
+  );
 }
 
 function LinkButton({ icon, label, to }: { icon: ReactNode; label: string; to: string }) {

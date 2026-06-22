@@ -6,6 +6,7 @@ export const statusLabels: Record<string, string> = {
   pending: "待处理",
   created: "已创建",
   waiting_for_input: "等待 OBS 输入",
+  waiting_for_input_timeout: "等待 Frame Pump 输出截图",
   running: "采集中",
   paused: "已暂停",
   stopped: "已停止",

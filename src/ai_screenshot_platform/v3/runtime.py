@@ -95,7 +95,16 @@ class V3Runtime:
         return self.store.continue_collection(collection_id)
 
     def stop_collection(self, collection_id: str) -> V3CollectionRecord:
-        return self.store.stop_collection(collection_id)
+        collection = self.store.stop_collection(collection_id)
+        active_statuses = {"running", "waiting_for_input", "waiting_for_input_timeout"}
+        has_other_active_collection = any(
+            bool(run.collection_id) and run.collection_id != collection_id and run.status in active_statuses
+            for run in self.list_runs()
+        )
+        if not has_other_active_collection:
+            self.stop_frame_pump()
+        self._watch_waiting_since.pop(collection.latest_run_id or "", None)
+        return collection
 
     def export_collection(self, collection_id: str) -> V3CollectionExportResult:
         return self.store.export_collection(collection_id)
@@ -177,6 +186,11 @@ class V3Runtime:
             except json.JSONDecodeError:
                 heartbeat_payload = {}
         error = str(heartbeat_payload.get("error") or "") or None
+        heartbeat_status = str(heartbeat_payload.get("status") or "")
+        if heartbeat_status == "stopped":
+            running = False
+            pid_file.unlink(missing_ok=True)
+            pid = None
         fps = heartbeat_payload.get("fps")
         mode = str(heartbeat_payload.get("mode") or "fullscreen")
         if error:
@@ -255,7 +269,16 @@ class V3Runtime:
         deadline = time.time() + 3.0
         while pid and _process_exists(pid) and time.time() < deadline:
             time.sleep(0.1)
-        if pid and not _process_exists(pid):
+        heartbeat_status = ""
+        heartbeat = self._frame_pump_heartbeat_path()
+        if heartbeat.is_file():
+            try:
+                payload = json.loads(heartbeat.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    heartbeat_status = str(payload.get("status") or "")
+            except json.JSONDecodeError:
+                heartbeat_status = ""
+        if heartbeat_status == "stopped" or (pid and not _process_exists(pid)):
             self._frame_pump_pid_path().unlink(missing_ok=True)
         return self.frame_pump_status()
 

@@ -151,9 +151,10 @@ class V3RunStore:
     def refresh_collection_summary(self, collection_id: str) -> V3CollectionSummary:
         summary = self.collection_summary(collection_id)
         collection = self.get_collection(collection_id)
-        collection.status = summary.status  # type: ignore[assignment]
-        collection.updated_at = utc_now()
-        self._write_collection(collection)
+        if collection.status != summary.status:
+            collection.status = summary.status  # type: ignore[assignment]
+            collection.updated_at = utc_now()
+            self._write_collection(collection)
         self._write_collection_json(collection_id, "collection_summary.json", summary.model_dump())
         return summary
 
@@ -201,7 +202,11 @@ class V3RunStore:
             duplicate_across_runs_total += len(cross_duplicates)
             visual_fill_total += sum(1 for image in new_unique if image.meta.get("accepted_class") == "accepted_visual_fill")
         config = collection.config
-        status = _collection_status(collection, accepted_unique_total, any(row.get("status") in {"running", "waiting_for_input"} for row in run_summaries))
+        status = _collection_status(
+            collection,
+            accepted_unique_total,
+            any(row.get("status") in {"running", "waiting_for_input", "waiting_for_input_timeout"} for row in run_summaries),
+        )
         suggestion = _continue_suggestion(latest_round, accepted_unique_total, config)
         summary = V3CollectionSummary(
             collection_id=collection_id,
