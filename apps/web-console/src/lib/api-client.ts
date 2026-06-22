@@ -13,6 +13,9 @@ import type {
   UploadRecord,
   V3Health,
   V3InputStatus,
+  V3CollectionExportResult,
+  V3CollectionRecord,
+  V3CollectionSummary,
   V3ActionRecord,
   V3ImageRecord,
   V3OpenPathResult,
@@ -69,6 +72,14 @@ export interface ApiClient {
   getV3ModelHealth(): Promise<V3Health>;
   getV3ActionHealth(): Promise<Record<string, unknown>>;
   getV3Defaults(): Promise<V3TaskConfig>;
+  listV3Collections(): Promise<V3CollectionSummary[]>;
+  createV3Collection(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>;
+  getV3Collection(collectionId: string): Promise<V3CollectionRecord>;
+  getV3CollectionSummary(collectionId: string): Promise<V3CollectionSummary>;
+  getV3CollectionGallery(collectionId: string): Promise<V3ImageRecord[]>;
+  continueV3Collection(collectionId: string): Promise<V3RunRecord>;
+  stopV3Collection(collectionId: string): Promise<V3CollectionRecord>;
+  exportV3Collection(collectionId: string): Promise<V3CollectionExportResult>;
   listV3Runs(): Promise<V3RunRecord[]>;
   createV3Run(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3RunRecord>;
   startV3Run(runId: string): Promise<V3RunRecord>;
@@ -254,6 +265,15 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     getV3ModelHealth: () => requestV3<V3Health>("/api/v3/model/health"),
     getV3ActionHealth: () => requestV3<Record<string, unknown>>("/api/v3/action/health"),
     getV3Defaults: () => requestV3<V3TaskConfig>("/api/v3/config/defaults"),
+    listV3Collections: () => requestV3<V3CollectionSummary[]>("/api/v3/collections"),
+    createV3Collection: (payload) =>
+      requestV3<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>("/api/v3/collections", { method: "POST", body: JSON.stringify(payload) }),
+    getV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}`),
+    getV3CollectionSummary: (collectionId) => requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/summary`),
+    getV3CollectionGallery: (collectionId) => requestV3<V3ImageRecord[]>(`/api/v3/collections/${collectionId}/gallery`),
+    continueV3Collection: (collectionId) => requestV3<V3RunRecord>(`/api/v3/collections/${collectionId}/continue`, { method: "POST" }),
+    stopV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}/stop`, { method: "POST" }),
+    exportV3Collection: (collectionId) => requestV3<V3CollectionExportResult>(`/api/v3/collections/${collectionId}/export`, { method: "POST" }),
     listV3Runs: () => requestV3<V3RunRecord[]>("/api/v3/runs"),
     createV3Run: (payload) => requestV3<V3RunRecord>("/api/v3/runs", { method: "POST", body: JSON.stringify(payload) }),
     startV3Run: (runId) => requestV3<V3RunRecord>(`/api/v3/runs/${runId}/start`, { method: "POST" }),

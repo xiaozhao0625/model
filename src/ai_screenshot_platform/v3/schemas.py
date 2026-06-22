@@ -55,6 +55,7 @@ def utc_now() -> str:
 
 
 class V3TaskConfig(BaseModel):
+    collection_id: str | None = None
     task_name: str | None = None
     app_name: str = "manual_target"
     display_name: str | None = None
@@ -92,6 +93,7 @@ class V3TaskConfig(BaseModel):
 class V3RunCreateRequest(BaseModel):
     config: V3TaskConfig = Field(default_factory=V3TaskConfig)
     start_immediately: bool = False
+    collection_id: str | None = None
 
 
 class V3ImageIngestRequest(BaseModel):
@@ -107,6 +109,8 @@ class V3ActionAuditRequest(BaseModel):
 
 class V3RunRecord(BaseModel):
     run_id: str
+    collection_id: str | None = None
+    round_index: int = 1
     status: RunStatus = "created"
     config: V3TaskConfig
     task_name: str | None = None
@@ -140,6 +144,88 @@ class V3ImageRecord(BaseModel):
     reject_reason: str | None = None
     created_at: str = Field(default_factory=utc_now)
     meta: dict[str, object] = Field(default_factory=dict)
+
+
+class V3CollectionCreateRequest(BaseModel):
+    config: V3TaskConfig = Field(default_factory=V3TaskConfig)
+    start_immediately: bool = False
+
+
+class V3CollectionRecord(BaseModel):
+    collection_id: str
+    status: Literal[
+        "not_started",
+        "collecting",
+        "insufficient",
+        "min_target_reached",
+        "soft_target_reached",
+        "max_target_reached",
+        "needs_manual",
+        "stopped",
+    ] = "not_started"
+    config: V3TaskConfig
+    task_name: str | None = None
+    app_name: str | None = None
+    display_name: str | None = None
+    created_at: str = Field(default_factory=utc_now)
+    updated_at: str = Field(default_factory=utc_now)
+    run_ids: list[str] = Field(default_factory=list)
+    latest_run_id: str | None = None
+
+
+class V3CollectionSummary(BaseModel):
+    collection_id: str
+    status: str
+    task_name: str | None = None
+    app_name: str | None = None
+    display_name: str | None = None
+    app_type: str = "auto"
+    target_language: str = "zh"
+    text_policy: str = "strict_text"
+    target_accepted_min: int = 800
+    target_accepted_soft: int = 1000
+    target_accepted_max: int = 2000
+    processed_total: int = 0
+    accepted_total: int = 0
+    accepted_unique_total: int = 0
+    duplicate_across_runs_total: int = 0
+    rejected_total: int = 0
+    failed_total: int = 0
+    action_total: int = 0
+    run_count: int = 0
+    latest_run_id: str | None = None
+    latest_round_index: int = 0
+    latest_round_processed: int = 0
+    latest_round_accepted: int = 0
+    latest_round_new_unique: int = 0
+    latest_round_duplicate_across_runs: int = 0
+    latest_round_rejected: int = 0
+    latest_round_failed: int = 0
+    latest_round_action_count: int = 0
+    latest_round_top_reject_reasons: list[dict[str, object]] = Field(default_factory=list)
+    min_target_reached: bool = False
+    soft_target_reached: bool = False
+    max_target_reached: bool = False
+    remaining_to_min: int = 0
+    remaining_to_soft: int = 0
+    visual_fill_total: int = 0
+    visual_fill_ratio: float = 0.0
+    continue_suggestion: str | None = None
+    accepted_unique_dir: str | None = None
+    export_dir: str | None = None
+    runs: list[dict[str, object]] = Field(default_factory=list)
+
+
+class V3CollectionExportResult(BaseModel):
+    collection_id: str
+    status: str
+    export_dir: str
+    archive_path: str | None = None
+    manifest_path: str
+    summary_path: str
+    rejection_summary_path: str
+    duplicate_summary_path: str
+    accepted_unique_total: int
 
 
 class V3InputStatus(BaseModel):

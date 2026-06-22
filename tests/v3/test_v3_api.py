@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from ai_screenshot_platform.master.api.app import create_app
@@ -375,3 +377,62 @@ def test_v3_api_summary_exposes_reject_distribution_and_production_gate(tmp_path
         assert summary["ocr_production_ready"] is False
         assert summary["full_auto_capture_ready"] is False
         assert "ocr_gpu_not_ready" in summary["readiness_blockers"]
+
+
+def test_v3_collection_multi_round_counts_unique_and_exports(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    first = tmp_path / "start_wps_001.png"
+    duplicate = tmp_path / "start_wps_001_copy.png"
+    second = tmp_path / "ok_wps_002.png"
+    first.write_bytes(b"first-wps-screen")
+    duplicate.write_bytes(b"first-wps-screen")
+    second.write_bytes(b"second-wps-screen")
+
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "wps",
+                    "app_name": "WPS",
+                    "app_type": "pc_app",
+                    "target_language": "en",
+                    "target_accepted_min": 2,
+                    "target_accepted_soft": 3,
+                    "save_root": str(tmp_path / "v3"),
+                    "must_have_text": True,
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+
+        run1 = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+        image1 = client.post(f"/api/v3/runs/{run1['run_id']}/images/ingest", json={"image_path": str(first)}).json()["data"]
+        assert image1["bucket"] == "accepted"
+        assert image1["meta"]["collection_unique"] is True
+
+        run2 = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+        duplicate_image = client.post(f"/api/v3/runs/{run2['run_id']}/images/ingest", json={"image_path": str(duplicate)}).json()["data"]
+        unique_image = client.post(f"/api/v3/runs/{run2['run_id']}/images/ingest", json={"image_path": str(second)}).json()["data"]
+
+        assert duplicate_image["bucket"] == "rejected"
+        assert duplicate_image["reject_reason"] == "rejected_duplicate_across_runs"
+        assert duplicate_image["meta"]["duplicate_with_run_id"] == run1["run_id"]
+        assert unique_image["bucket"] == "accepted"
+
+        summary = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
+        assert summary["run_count"] == 2
+        assert summary["latest_round_accepted"] == 1
+        assert summary["latest_round_duplicate_across_runs"] == 1
+        assert summary["latest_round_new_unique"] == 1
+        assert summary["accepted_unique_total"] == 2
+        assert summary["duplicate_across_runs_total"] == 1
+        assert summary["min_target_reached"] is True
+
+        gallery = client.get(f"/api/v3/collections/{collection_id}/gallery").json()["data"]
+        assert [image["image_id"] for image in gallery] == ["start_wps_001", "ok_wps_002"]
+
+        exported = client.post(f"/api/v3/collections/{collection_id}/export").json()["data"]
+        assert exported["accepted_unique_total"] == 2
+        assert Path(summary["accepted_unique_dir"]).is_dir()
+        assert exported["manifest_path"].endswith("manifest.json")

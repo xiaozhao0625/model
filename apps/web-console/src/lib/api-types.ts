@@ -76,6 +76,7 @@ export interface RunLogEntry {
 }
 
 export interface V3TaskConfig {
+  collection_id?: string | null;
   task_name?: string | null;
   app_name: string;
   display_name?: string | null;
@@ -145,6 +146,8 @@ export interface V3Health {
 
 export interface V3RunRecord {
   run_id: string;
+  collection_id?: string | null;
+  round_index?: number;
   status: "created" | "waiting_for_input" | "running" | "paused" | "stopped" | "completed" | "failed";
   config: V3TaskConfig;
   task_name?: string | null;
@@ -154,6 +157,74 @@ export interface V3RunRecord {
   updated_at: string;
   counts: Record<string, number>;
   last_error?: string | null;
+}
+
+export interface V3CollectionSummary {
+  collection_id: string;
+  status: string;
+  task_name?: string | null;
+  app_name?: string | null;
+  display_name?: string | null;
+  app_type: V3TaskConfig["app_type"];
+  target_language: string;
+  text_policy: V3TaskConfig["text_policy"];
+  target_accepted_min: number;
+  target_accepted_soft: number;
+  target_accepted_max: number;
+  processed_total: number;
+  accepted_total: number;
+  accepted_unique_total: number;
+  duplicate_across_runs_total: number;
+  rejected_total: number;
+  failed_total: number;
+  action_total: number;
+  run_count: number;
+  latest_run_id?: string | null;
+  latest_round_index: number;
+  latest_round_processed: number;
+  latest_round_accepted: number;
+  latest_round_new_unique: number;
+  latest_round_duplicate_across_runs: number;
+  latest_round_rejected: number;
+  latest_round_failed: number;
+  latest_round_action_count: number;
+  latest_round_top_reject_reasons: Array<{ reason: string; count: number }>;
+  min_target_reached: boolean;
+  soft_target_reached: boolean;
+  max_target_reached: boolean;
+  remaining_to_min: number;
+  remaining_to_soft: number;
+  visual_fill_total: number;
+  visual_fill_ratio: number;
+  continue_suggestion?: string | null;
+  accepted_unique_dir?: string | null;
+  export_dir?: string | null;
+  runs: Array<Record<string, unknown>>;
+}
+
+export interface V3CollectionRecord {
+  collection_id: string;
+  status: string;
+  config: V3TaskConfig;
+  task_name?: string | null;
+  app_name?: string | null;
+  display_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  run_ids: string[];
+  latest_run_id?: string | null;
+}
+
+export interface V3CollectionExportResult {
+  collection_id: string;
+  status: string;
+  export_dir: string;
+  archive_path?: string | null;
+  manifest_path: string;
+  summary_path: string;
+  rejection_summary_path: string;
+  duplicate_summary_path: string;
+  accepted_unique_total: number;
 }
 
 export interface V3InputStatus {

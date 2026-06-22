@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import uuid
+import zipfile
 from pathlib import Path
 
 from ai_screenshot_platform.v3.schemas import (
+    V3CollectionExportResult,
+    V3CollectionRecord,
+    V3CollectionSummary,
     V3Event,
     V3ImageRecord,
     V3RunRecord,
@@ -21,18 +26,61 @@ class V3RunStore:
         self.root = Path(root) if root is not None else _default_v3_runs_root()
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def create_run(self, config: V3TaskConfig) -> V3RunRecord:
+    def create_collection(self, config: V3TaskConfig) -> V3CollectionRecord:
+        collection_id = config.collection_id or self._collection_id_for(config)
+        try:
+            return self.get_collection(collection_id)
+        except KeyError:
+            pass
+        config.collection_id = collection_id
+        display_name = config.display_name or config.task_name or config.app_name or collection_id
+        config.display_name = display_name
+        record = V3CollectionRecord(
+            collection_id=collection_id,
+            config=config,
+            task_name=config.task_name,
+            app_name=config.app_name,
+            display_name=display_name,
+        )
+        self._write_collection(record)
+        self._write_collection_json(collection_id, "collection_index.json", {"accepted_unique": []})
+        return record
+
+    def list_collections(self) -> list[V3CollectionRecord]:
+        records: list[V3CollectionRecord] = []
+        for path in sorted(self._collections_root().glob("*/collection.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            records.append(V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8")))
+        return records
+
+    def get_collection(self, collection_id: str) -> V3CollectionRecord:
+        path = self._collection_dir(collection_id) / "collection.json"
+        if not path.is_file():
+            raise KeyError(f"v3 collection not found: {collection_id}")
+        return V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+
+    def create_run(self, config: V3TaskConfig, collection_id: str | None = None) -> V3RunRecord:
+        if collection_id is not None:
+            config.collection_id = collection_id
+        collection = self.create_collection(config)
         run_id = f"v3_{utc_now().replace(':', '').replace('+', '_').replace('.', '_')}_{uuid.uuid4().hex[:8]}"
         display_name = config.display_name or config.task_name or config.app_name or run_id
         config.display_name = display_name
+        config.collection_id = collection.collection_id
+        round_index = len(collection.run_ids) + 1
         record = V3RunRecord(
             run_id=run_id,
+            collection_id=collection.collection_id,
+            round_index=round_index,
             config=config,
             task_name=config.task_name,
             app_name=config.app_name,
             display_name=display_name,
         )
         self._write_run(record)
+        collection.run_ids.append(run_id)
+        collection.latest_run_id = run_id
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
         self.append_event(run_id, "run_created", {"observe_only": config.observe_only})
         return record
 
@@ -58,12 +106,201 @@ class V3RunStore:
         return record
 
     def add_image(self, run_id: str, image: V3ImageRecord) -> V3ImageRecord:
+        record = self.get_run(run_id)
+        if image.bucket == "accepted" and record.collection_id:
+            image = self._apply_collection_unique_index(record, image)
         image_path = self._run_dir(run_id) / "images.jsonl"
         with image_path.open("a", encoding="utf-8") as file:
             file.write(image.model_dump_json() + "\n")
         self._recount(run_id)
         self.append_event(run_id, "image_added", {"image_id": image.image_id, "bucket": image.bucket})
+        if record.collection_id:
+            self.refresh_collection_summary(record.collection_id)
         return image
+
+    def collection_images(self, collection_id: str, unique_only: bool = False) -> list[V3ImageRecord]:
+        collection = self.get_collection(collection_id)
+        images: list[V3ImageRecord] = []
+        for run_id in collection.run_ids:
+            for image in self.list_images(run_id):
+                if unique_only and not bool(image.meta.get("collection_unique")):
+                    continue
+                images.append(image)
+        return images
+
+    def continue_collection(self, collection_id: str) -> V3RunRecord:
+        collection = self.get_collection(collection_id)
+        config = collection.config.model_copy(deep=True)
+        config.collection_id = collection_id
+        return self.create_run(config, collection_id=collection_id)
+
+    def stop_collection(self, collection_id: str) -> V3CollectionRecord:
+        collection = self.get_collection(collection_id)
+        collection.status = "stopped"
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        for run_id in collection.run_ids:
+            try:
+                run = self.get_run(run_id)
+            except KeyError:
+                continue
+            if run.status not in {"completed", "stopped", "failed"}:
+                self.update_status(run_id, "stopped")
+        return collection
+
+    def refresh_collection_summary(self, collection_id: str) -> V3CollectionSummary:
+        summary = self.collection_summary(collection_id)
+        collection = self.get_collection(collection_id)
+        collection.status = summary.status  # type: ignore[assignment]
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        self._write_collection_json(collection_id, "collection_summary.json", summary.model_dump())
+        return summary
+
+    def collection_summary(self, collection_id: str) -> V3CollectionSummary:
+        collection = self.get_collection(collection_id)
+        run_summaries: list[dict[str, object]] = []
+        processed_total = accepted_total = rejected_total = failed_total = action_total = 0
+        duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
+        latest_round: dict[str, object] | None = None
+        for index, run_id in enumerate(collection.run_ids, start=1):
+            run_record = self.get_run(run_id)
+            images = self.list_images(run_id)
+            actions = self.list_meta_jsonl(run_id, "actions.jsonl")
+            accepted = [image for image in images if image.bucket == "accepted"]
+            rejected = [image for image in images if image.bucket == "rejected"]
+            new_unique = [image for image in accepted if bool(image.meta.get("collection_unique"))]
+            cross_duplicates = [
+                image
+                for image in images
+                if image.reject_reason == "rejected_duplicate_across_runs" or bool(image.meta.get("duplicate_across_runs"))
+            ]
+            run_failed = _folder_watch_metric(self._run_dir(run_id), "failed", 0)
+            top_rejects = _top_reject_reasons(images)
+            row = {
+                "run_id": run_id,
+                "status": run_record.status,
+                "round_index": index,
+                "processed": len(images),
+                "accepted": len(accepted),
+                "new_unique": len(new_unique),
+                "duplicate_across_runs": len(cross_duplicates),
+                "rejected": len(rejected),
+                "failed": run_failed,
+                "actions": len(actions),
+                "top_reject_reasons": top_rejects,
+            }
+            run_summaries.append(row)
+            latest_round = row
+            processed_total += len(images)
+            accepted_total += len(accepted) + len(cross_duplicates)
+            rejected_total += len(rejected)
+            failed_total += run_failed
+            action_total += len(actions)
+            accepted_unique_total += len(new_unique)
+            duplicate_across_runs_total += len(cross_duplicates)
+            visual_fill_total += sum(1 for image in new_unique if image.meta.get("accepted_class") == "accepted_visual_fill")
+        config = collection.config
+        status = _collection_status(collection, accepted_unique_total, any(row.get("status") in {"running", "waiting_for_input"} for row in run_summaries))
+        suggestion = _continue_suggestion(latest_round, accepted_unique_total, config)
+        summary = V3CollectionSummary(
+            collection_id=collection_id,
+            status=status,
+            task_name=collection.task_name or config.task_name,
+            app_name=collection.app_name or config.app_name,
+            display_name=collection.display_name or config.display_name or config.task_name or config.app_name,
+            app_type=config.app_type,
+            target_language=config.target_language,
+            text_policy=config.text_policy,
+            target_accepted_min=config.target_accepted_min,
+            target_accepted_soft=config.target_accepted_soft,
+            target_accepted_max=config.target_accepted_max,
+            processed_total=processed_total,
+            accepted_total=accepted_total,
+            accepted_unique_total=accepted_unique_total,
+            duplicate_across_runs_total=duplicate_across_runs_total,
+            rejected_total=rejected_total,
+            failed_total=failed_total,
+            action_total=action_total,
+            run_count=len(collection.run_ids),
+            latest_run_id=collection.latest_run_id,
+            latest_round_index=int(latest_round.get("round_index", 0)) if latest_round else 0,
+            latest_round_processed=int(latest_round.get("processed", 0)) if latest_round else 0,
+            latest_round_accepted=int(latest_round.get("accepted", 0)) if latest_round else 0,
+            latest_round_new_unique=int(latest_round.get("new_unique", 0)) if latest_round else 0,
+            latest_round_duplicate_across_runs=int(latest_round.get("duplicate_across_runs", 0)) if latest_round else 0,
+            latest_round_rejected=int(latest_round.get("rejected", 0)) if latest_round else 0,
+            latest_round_failed=int(latest_round.get("failed", 0)) if latest_round else 0,
+            latest_round_action_count=int(latest_round.get("actions", 0)) if latest_round else 0,
+            latest_round_top_reject_reasons=list(latest_round.get("top_reject_reasons", [])) if latest_round else [],
+            min_target_reached=accepted_unique_total >= config.target_accepted_min,
+            soft_target_reached=accepted_unique_total >= config.target_accepted_soft,
+            max_target_reached=accepted_unique_total >= config.target_accepted_max,
+            remaining_to_min=max(0, config.target_accepted_min - accepted_unique_total),
+            remaining_to_soft=max(0, config.target_accepted_soft - accepted_unique_total),
+            visual_fill_total=visual_fill_total,
+            visual_fill_ratio=round(visual_fill_total / accepted_unique_total, 4) if accepted_unique_total else 0.0,
+            continue_suggestion=suggestion,
+            accepted_unique_dir=str(self._collection_dir(collection_id) / "accepted_unique"),
+            export_dir=str(self._collection_dir(collection_id) / "exports"),
+            runs=run_summaries,
+        )
+        return summary
+
+    def export_collection(self, collection_id: str) -> V3CollectionExportResult:
+        summary = self.refresh_collection_summary(collection_id)
+        export_dir = self._collection_dir(collection_id) / "exports" / utc_now().replace(":", "").replace("+", "_").replace(".", "_")
+        images_dir = export_dir / "accepted_unique"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        manifest: list[dict[str, object]] = []
+        for image in self.collection_images(collection_id, unique_only=True):
+            source = Path(image.path)
+            dest = images_dir / source.name
+            if source.is_file() and not dest.exists():
+                shutil.copy2(source, dest)
+            manifest.append(
+                {
+                    "image_id": image.image_id,
+                    "source_path": image.path,
+                    "export_path": str(dest),
+                    "source_run_id": image.meta.get("collection_run_id"),
+                    "accepted_reason": image.duplicate_decision.get("duplicate_decision_reason"),
+                    "ocr_language": image.meta.get("ocr", {}).get("target_language") if isinstance(image.meta.get("ocr"), dict) else None,
+                    "accepted_class": image.meta.get("accepted_class"),
+                    "sha256": image.sha256,
+                    "content_hash": image.content_hash,
+                    "near_duplicate_signature": image.duplicate_decision.get("content_hash"),
+                }
+            )
+        rejection_summary = _collection_rejection_summary(self.collection_images(collection_id))
+        duplicate_summary = {
+            "duplicate_across_runs_total": summary.duplicate_across_runs_total,
+            "accepted_unique_total": summary.accepted_unique_total,
+        }
+        manifest_path = export_dir / "manifest.json"
+        summary_path = export_dir / "summary.json"
+        rejection_path = export_dir / "rejection_summary.json"
+        duplicate_path = export_dir / "duplicate_summary.json"
+        _write_json(manifest_path, manifest)
+        _write_json(summary_path, summary.model_dump())
+        _write_json(rejection_path, rejection_summary)
+        _write_json(duplicate_path, duplicate_summary)
+        archive_path = export_dir.with_suffix(".zip")
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in export_dir.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(export_dir))
+        return V3CollectionExportResult(
+            collection_id=collection_id,
+            status="exported",
+            export_dir=str(export_dir),
+            archive_path=str(archive_path),
+            manifest_path=str(manifest_path),
+            summary_path=str(summary_path),
+            rejection_summary_path=str(rejection_path),
+            duplicate_summary_path=str(duplicate_path),
+            accepted_unique_total=summary.accepted_unique_total,
+        )
 
     def list_images(self, run_id: str) -> list[V3ImageRecord]:
         path = self._run_dir(run_id) / "images.jsonl"
@@ -232,6 +469,103 @@ class V3RunStore:
     def _run_path(self, run_id: str) -> Path:
         return self._run_dir(run_id) / "run.json"
 
+    def _collections_root(self) -> Path:
+        root = self.root / "collections"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _collection_dir(self, collection_id: str) -> Path:
+        path = self._collections_root() / collection_id
+        path.mkdir(parents=True, exist_ok=True)
+        for name in ("accepted_unique", "reports", "runs", "exports"):
+            (path / name).mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _collection_id_for(self, config: V3TaskConfig) -> str:
+        base = "|".join(
+            [
+                config.app_name,
+                config.app_type,
+                config.target_language,
+                config.text_policy,
+                config.capture_source,
+                str(Path(config.save_root).resolve()),
+                config.task_name or "",
+            ]
+        )
+        safe_name = _slug(config.task_name or config.app_name or "collection")
+        digest = uuid.uuid5(uuid.NAMESPACE_URL, base).hex[:10]
+        return f"col_{safe_name}_{digest}"
+
+    def _write_collection(self, record: V3CollectionRecord) -> None:
+        path = self._collection_dir(record.collection_id) / "collection.json"
+        path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+
+    def _write_collection_json(self, collection_id: str, name: str, payload: object) -> Path:
+        path = self._collection_dir(collection_id) / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(path, payload)
+        return path
+
+    def _read_collection_index(self, collection_id: str) -> dict[str, object]:
+        path = self._collection_dir(collection_id) / "collection_index.json"
+        if not path.is_file():
+            return {"accepted_unique": []}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"accepted_unique": []}
+        return payload if isinstance(payload, dict) else {"accepted_unique": []}
+
+    def _apply_collection_unique_index(self, run: V3RunRecord, image: V3ImageRecord) -> V3ImageRecord:
+        collection_id = run.collection_id
+        if not collection_id:
+            return image
+        index = self._read_collection_index(collection_id)
+        accepted_unique = index.setdefault("accepted_unique", [])
+        if not isinstance(accepted_unique, list):
+            accepted_unique = []
+            index["accepted_unique"] = accepted_unique
+        signature = _image_signature(image)
+        duplicate = _find_collection_duplicate(accepted_unique, signature, current_run_id=run.run_id)
+        image.meta["collection_id"] = collection_id
+        image.meta["collection_run_id"] = run.run_id
+        image.meta["collection_round_index"] = run.round_index
+        if duplicate:
+            image.bucket = "rejected"
+            image.reject_reason = "rejected_duplicate_across_runs"
+            image.meta["collection_unique"] = False
+            image.meta["duplicate_across_runs"] = True
+            image.meta["duplicate_with_run_id"] = duplicate.get("run_id")
+            image.meta["duplicate_with_image_id"] = duplicate.get("image_id")
+            image.duplicate_decision["duplicate_across_runs"] = True
+            image.duplicate_decision["compared_with_run_id"] = duplicate.get("run_id")
+            image.duplicate_decision["compared_with_image_id"] = duplicate.get("image_id")
+            image.duplicate_decision["duplicate_decision_reason"] = "rejected_duplicate_across_runs"
+            return image
+        image.meta["collection_unique"] = True
+        row = {
+            "run_id": run.run_id,
+            "round_index": run.round_index,
+            "image_id": image.image_id,
+            "path": image.path,
+            "sha256": image.sha256,
+            "content_hash": image.content_hash,
+            "ocr_text_signature": signature.get("ocr_text_signature"),
+            "near_duplicate_signature": signature.get("near_duplicate_signature"),
+            "accepted_class": image.meta.get("accepted_class"),
+            "created_at": image.created_at,
+        }
+        accepted_unique.append(row)
+        self._write_collection_json(collection_id, "collection_index.json", index)
+        source = Path(image.path)
+        if source.is_file():
+            dest = self._collection_dir(collection_id) / "accepted_unique" / f"{run.round_index:03d}_{image.image_id}{source.suffix}"
+            if not dest.exists():
+                shutil.copy2(source, dest)
+            image.meta["collection_unique_path"] = str(dest)
+        return image
+
     def _write_run(self, record: V3RunRecord) -> None:
         path = self._run_path(record.run_id)
         path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
@@ -296,6 +630,104 @@ def _top_reject_reason(images: list[V3ImageRecord]) -> str | None:
     if not distribution:
         return None
     return max(distribution.items(), key=lambda item: item[1])[0]
+
+
+def _top_reject_reasons(images: list[V3ImageRecord], limit: int = 3) -> list[dict[str, object]]:
+    distribution = _count_reject_reasons(images)
+    return [
+        {"reason": reason, "count": count}
+        for reason, count in sorted(distribution.items(), key=lambda item: item[1], reverse=True)[:limit]
+    ]
+
+
+def _collection_rejection_summary(images: list[V3ImageRecord]) -> dict[str, object]:
+    return {
+        "reject_reason_distribution": _count_reject_reasons(images),
+        "duplicate_across_runs_total": sum(1 for image in images if image.reject_reason == "rejected_duplicate_across_runs"),
+        "near_duplicate_total": sum(1 for image in images if image.reject_reason == "near_duplicate"),
+    }
+
+
+def _collection_status(collection: V3CollectionRecord, accepted_unique_total: int, has_running_run: bool) -> str:
+    if has_running_run:
+        return "collecting"
+    if collection.status == "stopped":
+        return "stopped"
+    config = collection.config
+    if accepted_unique_total >= config.target_accepted_max:
+        return "max_target_reached"
+    if accepted_unique_total >= config.target_accepted_soft:
+        return "soft_target_reached"
+    if accepted_unique_total >= config.target_accepted_min:
+        return "min_target_reached"
+    if accepted_unique_total > 0:
+        return "insufficient"
+    return "not_started"
+
+
+def _continue_suggestion(latest_round: dict[str, object] | None, accepted_unique_total: int, config: V3TaskConfig) -> str:
+    if accepted_unique_total >= config.target_accepted_max:
+        return "已达到最大扩充目标，建议停止采集并导出最终有效截图。"
+    if accepted_unique_total >= config.target_accepted_soft:
+        return "标准目标已达标，可继续扩充或导出最终有效截图。"
+    if accepted_unique_total >= config.target_accepted_min:
+        return f"小目标已达标，可继续冲标准目标 {config.target_accepted_soft}。"
+    if not latest_round:
+        return "尚未开始采集，请启动第一轮采集。"
+    processed = int(latest_round.get("processed", 0) or 0)
+    accepted = int(latest_round.get("accepted", 0) or 0)
+    duplicate = int(latest_round.get("duplicate_across_runs", 0) or 0)
+    new_unique = int(latest_round.get("new_unique", 0) or 0)
+    if processed == 0:
+        return "上一轮 OBS 输入不足，请检查 OBS 输出目录。"
+    if accepted and duplicate / max(1, accepted) >= 0.35:
+        return "上一轮重复率较高，建议切换软件页面、游戏场景、背包、地图、仓库、训练场区域后继续采集。"
+    if accepted and new_unique / max(1, accepted) <= 0.25:
+        return "上一轮有效图较少，建议手动切换场景后继续。"
+    return "数量不足，需要继续采集；系统会自动跨轮去重并累计。"
+
+
+def _image_signature(image: V3ImageRecord) -> dict[str, object]:
+    ocr_text = ""
+    ocr = image.meta.get("ocr")
+    if isinstance(ocr, dict):
+        boxes = ocr.get("text_boxes", [])
+        if isinstance(boxes, list):
+            texts = [str(box.get("text", "")) for box in boxes if isinstance(box, dict)]
+            ocr_text = " ".join(texts).strip().casefold()
+    return {
+        "sha256": image.sha256,
+        "content_hash": image.content_hash,
+        "near_duplicate_signature": image.duplicate_decision.get("content_hash") or image.content_hash or image.sha256,
+        "ocr_text_signature": ocr_text,
+    }
+
+
+def _find_collection_duplicate(rows: list[object], signature: dict[str, object], current_run_id: str | None = None) -> dict[str, object] | None:
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if current_run_id and row.get("run_id") == current_run_id:
+            continue
+        for key in ("sha256", "content_hash", "near_duplicate_signature"):
+            value = signature.get(key)
+            if value and row.get(key) == value:
+                return row
+        ocr_signature = signature.get("ocr_text_signature")
+        if ocr_signature and row.get("ocr_text_signature") == ocr_signature:
+            return row
+    return None
+
+
+def _slug(value: str) -> str:
+    cleaned = "".join(char.lower() if char.isalnum() else "_" for char in value.strip())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return cleaned[:32] or "collection"
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _duplicate_summary(images: list[V3ImageRecord]) -> dict[str, object]:

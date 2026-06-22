@@ -124,9 +124,10 @@ export function V3NewCaptureRoute() {
       return;
     }
     try {
-      const run = await apiClient.createV3Run({ config: prepared, start_immediately: startImmediately });
-      setMessage(startImmediately ? "任务已创建并开始等待 OBS 输入。" : "任务已创建。");
-      navigate("/v3/current", { replace: true, state: { runId: run.run_id } });
+      const created = await apiClient.createV3Collection({ config: prepared, start_immediately: startImmediately });
+      const collectionId = "collection" in created ? created.collection.collection_id : created.collection_id;
+      setMessage(startImmediately ? "采集项目已创建，并开始第一轮采集等待 OBS 输入。" : "采集项目已创建。");
+      navigate("/v3/current", { replace: true, state: { collectionId } });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }

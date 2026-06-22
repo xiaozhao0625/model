@@ -8,7 +8,13 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ai_screenshot_platform.v3.runtime import V3Runtime
-from ai_screenshot_platform.v3.schemas import ModelRequest, V3ActionAuditRequest, V3ImageIngestRequest, V3RunCreateRequest
+from ai_screenshot_platform.v3.schemas import (
+    ModelRequest,
+    V3ActionAuditRequest,
+    V3CollectionCreateRequest,
+    V3ImageIngestRequest,
+    V3RunCreateRequest,
+)
 
 
 def v3_ok(data: object) -> dict[str, object]:
@@ -34,10 +40,53 @@ def create_v3_router() -> APIRouter:
     def defaults(request: Request):
         return v3_ok(get_runtime(request).defaults().model_dump())
 
+    @router.post("/collections")
+    def create_collection(payload: V3CollectionCreateRequest, request: Request):
+        runtime = get_runtime(request)
+        collection = runtime.create_collection(payload.config)
+        if payload.start_immediately:
+            run = runtime.continue_collection(collection.collection_id)
+            run = runtime.start_run(run.run_id)
+            return v3_ok({"collection": collection.model_dump(), "run": run.model_dump()})
+        return v3_ok(collection.model_dump())
+
+    @router.get("/collections")
+    def list_collections(request: Request):
+        runtime = get_runtime(request)
+        return v3_ok([runtime.collection_summary(record.collection_id).model_dump() for record in runtime.list_collections()])
+
+    @router.get("/collections/{collection_id}")
+    def get_collection(collection_id: str, request: Request):
+        return v3_ok(get_runtime(request).get_collection(collection_id).model_dump())
+
+    @router.get("/collections/{collection_id}/summary")
+    def collection_summary(collection_id: str, request: Request):
+        return v3_ok(get_runtime(request).collection_summary(collection_id).model_dump())
+
+    @router.get("/collections/{collection_id}/gallery")
+    def collection_gallery(collection_id: str, request: Request):
+        return v3_ok([_image_payload(image) for image in get_runtime(request).collection_gallery(collection_id)])
+
+    @router.post("/collections/{collection_id}/continue")
+    def continue_collection(collection_id: str, request: Request, start: bool = True):
+        runtime = get_runtime(request)
+        run = runtime.continue_collection(collection_id)
+        if start:
+            run = runtime.start_run(run.run_id)
+        return v3_ok(run.model_dump())
+
+    @router.post("/collections/{collection_id}/stop")
+    def stop_collection(collection_id: str, request: Request):
+        return v3_ok(get_runtime(request).stop_collection(collection_id).model_dump())
+
+    @router.post("/collections/{collection_id}/export")
+    def export_collection(collection_id: str, request: Request):
+        return v3_ok(get_runtime(request).export_collection(collection_id).model_dump())
+
     @router.post("/runs")
     def create_run(payload: V3RunCreateRequest, request: Request):
         runtime = get_runtime(request)
-        run = runtime.create_run(payload.config)
+        run = runtime.create_run(payload.config, collection_id=payload.collection_id)
         if payload.start_immediately:
             run = runtime.start_run(run.run_id)
         return v3_ok(run.model_dump())

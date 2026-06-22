@@ -25,6 +25,9 @@ from ai_screenshot_platform.v3.quality.image_quality import basic_image_quality
 from ai_screenshot_platform.v3.schemas import (
     ModelRequest,
     OcrResult,
+    V3CollectionExportResult,
+    V3CollectionRecord,
+    V3CollectionSummary,
     V3Health,
     V3ImageRecord,
     V3InputStatus,
@@ -67,8 +70,32 @@ class V3Runtime:
     def defaults(self) -> V3TaskConfig:
         return V3TaskConfig()
 
-    def create_run(self, config: V3TaskConfig) -> V3RunRecord:
-        return self.store.create_run(config)
+    def create_collection(self, config: V3TaskConfig) -> V3CollectionRecord:
+        return self.store.create_collection(config)
+
+    def list_collections(self) -> list[V3CollectionRecord]:
+        return self.store.list_collections()
+
+    def get_collection(self, collection_id: str) -> V3CollectionRecord:
+        return self.store.get_collection(collection_id)
+
+    def collection_summary(self, collection_id: str) -> V3CollectionSummary:
+        return self.store.refresh_collection_summary(collection_id)
+
+    def collection_gallery(self, collection_id: str) -> list[V3ImageRecord]:
+        return self.store.collection_images(collection_id, unique_only=True)
+
+    def continue_collection(self, collection_id: str) -> V3RunRecord:
+        return self.store.continue_collection(collection_id)
+
+    def stop_collection(self, collection_id: str) -> V3CollectionRecord:
+        return self.store.stop_collection(collection_id)
+
+    def export_collection(self, collection_id: str) -> V3CollectionExportResult:
+        return self.store.export_collection(collection_id)
+
+    def create_run(self, config: V3TaskConfig, collection_id: str | None = None) -> V3RunRecord:
+        return self.store.create_run(config, collection_id=collection_id)
 
     def list_runs(self) -> list[V3RunRecord]:
         return self.store.list_runs()
@@ -317,6 +344,25 @@ class V3Runtime:
             ocr_cache_hit=ocr_cache_hit,
             existing_state_count=existing_state_count,
         )
+        if (
+            bucket == "rejected"
+            and reject_reason == "near_duplicate"
+            and compared_with
+            and compared_with.get("run_id")
+            and compared_with.get("run_id") != run_id
+            and record.collection_id
+        ):
+            reject_reason = "rejected_duplicate_across_runs"
+            meta["collection_id"] = record.collection_id
+            meta["collection_run_id"] = run_id
+            meta["collection_round_index"] = record.round_index
+            meta["collection_unique"] = False
+            meta["duplicate_across_runs"] = True
+            meta["duplicate_with_run_id"] = compared_with.get("run_id")
+            meta["duplicate_with_image_id"] = compared_with.get("image_id")
+            duplicate_decision["duplicate_decision_reason"] = "rejected_duplicate_across_runs"
+            duplicate_decision["duplicate_across_runs"] = True
+            duplicate_decision["compared_with_run_id"] = compared_with.get("run_id")
         image = V3ImageRecord(
             image_id=path.stem,
             path=str(path),
@@ -331,6 +377,7 @@ class V3Runtime:
         )
         if quality["accepted"] and unique and digest:
             self._duplicate_seen_by_sha[digest] = {
+                "run_id": run_id,
                 "image_id": image.image_id,
                 "path": image.path,
                 "capture_reason": capture_reason,

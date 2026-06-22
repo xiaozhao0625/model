@@ -57,7 +57,7 @@ export function V3GameRoute() {
       return;
     }
     try {
-      const run = await apiClient.createV3Run({
+      const created = await apiClient.createV3Collection({
         config: {
           ...config,
           display_name: config.display_name || config.task_name || config.app_name,
@@ -67,7 +67,8 @@ export function V3GameRoute() {
         },
         start_immediately: start
       });
-      navigate("/v3/current", { replace: true, state: { runId: run.run_id } });
+      const collectionId = "collection" in created ? created.collection.collection_id : created.collection_id;
+      navigate("/v3/current", { replace: true, state: { collectionId } });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }

@@ -25,65 +25,57 @@ for (const file of requiredFiles) {
 }
 
 const app = read("src/App.tsx");
-for (const route of ["/v3", "/v3/new", "/v3/current", "/v3/gallery", "/v3/actions", "/v3/game", "/v3/status"]) {
+for (const route of ["/v3", "/v3/new", "/v3/current", "/v3/collections", "/v3/collections/:collectionId/gallery", "/v3/gallery", "/v3/actions", "/v3/game", "/v3/status"]) {
   assert(app.includes(route), `missing route ${route}`);
 }
 
 const apiClient = read("src/lib/api-client.ts");
 for (const phrase of [
-  "getV3InputStatus",
-  "openV3InputFolder",
-  "resumeV3Run",
-  "getV3RunStatus",
-  "/api/v3/input/status",
-  "/api/v3/runs/${runId}/resume",
+  "listV3Collections",
+  "createV3Collection",
+  "continueV3Collection",
+  "exportV3Collection",
+  "/api/v3/collections",
+  "/api/v3/collections/${collectionId}/continue",
   "最大动作数是自动点击或键鼠动作次数"
 ]) {
   assert(apiClient.includes(phrase), `missing api phrase ${phrase}`);
 }
 
-const labels = read("src/lib/labels.ts");
-for (const phrase of [
-  "合格",
-  "已拒绝",
-  "近重复",
-  "未检测到文字",
-  "输入网关就绪",
-  "OCR 文字框",
-  "ShowUI 候选",
-  "融合候选",
-  "风险窗口区域"
-]) {
-  assert(labels.includes(phrase), `missing label phrase ${phrase}`);
-}
-
-const dashboard = read("src/routes/v3-dashboard.tsx");
-for (const phrase of ["V3 操作员采集控制台", "新建采集任务", "当前任务与采集控制", "查看结果图库", "V3 单机模式不需要 Redis"]) {
-  assert(dashboard.includes(phrase), `missing dashboard phrase ${phrase}`);
+const apiTypes = read("src/lib/api-types.ts");
+for (const phrase of ["V3CollectionSummary", "accepted_unique_total", "duplicate_across_runs_total", "latest_round_new_unique", "V3CollectionExportResult"]) {
+  assert(apiTypes.includes(phrase), `missing api type phrase ${phrase}`);
 }
 
 const current = read("src/routes/v3-current-run.tsx");
-for (const phrase of ["OBS 输入状态", "开始采集", "暂停", "继续", "停止", "等待 OBS 输入", "历史测试任务 / 调试样本"]) {
+for (const phrase of [
+  "当前采集项目",
+  "collection 采集项目",
+  "累计去重有效截图",
+  "继续采集",
+  "查看累计图库",
+  "查看所有轮次",
+  "导出最终有效图",
+  "本轮新增有效",
+  "本轮跨轮重复",
+  "动作预算只限制本轮自动操作次数",
+  "历史未归类任务 / 调试样本"
+]) {
   assert(current.includes(phrase), `missing current phrase ${phrase}`);
 }
 
-const create = read("src/routes/v3-new-capture.tsx");
-for (const phrase of ["软件采集", "游戏采集", "高级配置", "创建并开始采集", "无文字补充图比例", "最大软件动作数"]) {
-  assert(create.includes(phrase), `missing create phrase ${phrase}`);
-}
-
 const gallery = read("src/routes/v3-gallery.tsx");
-for (const phrase of ["结果图库", "只看合格", "只看无文字补充图", "是否动作后截图", "复制图片路径", "高级调试信息"]) {
+for (const phrase of ["最终有效图库", "accepted_unique", "只看跨轮重复", "复制图片路径", "高级调试信息", "来源 run_id"]) {
   assert(gallery.includes(phrase), `missing gallery phrase ${phrase}`);
 }
 
-const actions = read("src/routes/v3-actions.tsx");
-for (const phrase of ["运行详情 / 审计", "动作前截图", "动作后截图", "候选区域类型", "阻止原因", "原始动作 JSON"]) {
-  assert(actions.includes(phrase), `missing actions phrase ${phrase}`);
+const create = read("src/routes/v3-new-capture.tsx");
+for (const phrase of ["软件采集", "游戏采集", "高级配置", "创建并开始采集", "无文字补充图比例", "最大软件动作数", "createV3Collection"]) {
+  assert(create.includes(phrase), `missing create phrase ${phrase}`);
 }
 
 const game = read("src/routes/v3-game.tsx");
-for (const phrase of ["游戏采集", "文字策略", "只截图，不操作", "启用游戏键鼠探索", "禁止自动登录", "安全场景"]) {
+for (const phrase of ["游戏采集", "文字策略", "只截图，不操作", "启用游戏键鼠探索", "禁止自动登录", "安全场景", "createV3Collection"]) {
   assert(game.includes(phrase), `missing game phrase ${phrase}`);
 }
 

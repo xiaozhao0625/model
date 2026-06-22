@@ -39,6 +39,11 @@ export function AppRoutes() {
         <Route path="/v3" element={<V3DashboardRoute />} />
         <Route path="/v3/new" element={<V3NewCaptureRoute />} />
         <Route path="/v3/current" element={<V3CurrentRunRoute />} />
+        <Route path="/v3/collections" element={<V3CurrentRunRoute />} />
+        <Route path="/v3/collections/:collectionId" element={<V3CurrentRunRoute />} />
+        <Route path="/v3/collections/:collectionId/gallery" element={<V3GalleryRoute />} />
+        <Route path="/v3/collections/:collectionId/runs" element={<V3CurrentRunRoute />} />
+        <Route path="/v3/collections/:collectionId/export" element={<V3CurrentRunRoute />} />
         <Route path="/v3/gallery" element={<V3GalleryRoute />} />
         <Route path="/v3/actions" element={<V3ActionsRoute />} />
         <Route path="/v3/runs/:runId/gallery" element={<V3GalleryRoute />} />
