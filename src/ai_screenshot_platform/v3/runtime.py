@@ -33,6 +33,7 @@ from ai_screenshot_platform.v3.schemas import (
     V3CollectionExportResult,
     V3CollectionRecord,
     V3CollectionSummary,
+    V3AgentConfigRequest,
     V3DeleteResult,
     V3FramePumpStartRequest,
     V3FramePumpStatus,
@@ -93,6 +94,9 @@ class V3Runtime:
 
     def collection_summary(self, collection_id: str) -> V3CollectionSummary:
         return self.store.refresh_collection_summary(collection_id)
+
+    def update_collection_agent_config(self, collection_id: str, payload: V3AgentConfigRequest) -> V3CollectionSummary:
+        return self.store.update_collection_agent_config(collection_id, payload)
 
     def collection_gallery(self, collection_id: str) -> list[V3ImageRecord]:
         return self.store.collection_images(collection_id, unique_only=True)
@@ -166,7 +170,12 @@ class V3Runtime:
         self.store.append_event(
             run_id,
             "run_started",
-            {"observe_only": record.config.observe_only, "watch_dir": str(watch_dir), "input_status": input_status.model_dump()},
+            {
+                "observe_only": record.config.observe_only,
+                "watch_dir": str(watch_dir),
+                "input_status": input_status.model_dump(),
+                "game_agent": self._game_agent_start_decision(record.config),
+            },
         )
         self._ensure_watch_thread(run_id)
         self._ensure_game_agent_thread(run_id)
@@ -183,7 +192,7 @@ class V3Runtime:
         if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status(output_dir=watch_dir).status != "running":
             self.start_frame_pump(self._frame_pump_request_for_config(record.config, output_dir=watch_dir))
         record = self.store.update_status(run_id, "waiting_for_input")
-        self.store.append_event(run_id, "run_resumed", {})
+        self.store.append_event(run_id, "run_resumed", {"game_agent": self._game_agent_start_decision(record.config)})
         self._ensure_watch_thread(run_id)
         self._ensure_game_agent_thread(run_id)
         return record
@@ -804,6 +813,27 @@ class V3Runtime:
         self._game_agent_threads[run_id] = thread
         thread.start()
 
+    def _game_agent_start_decision(self, config: V3TaskConfig) -> dict[str, object]:
+        enabled = bool(config.enable_game_agent or config.enable_game_explorer or config.game_agent_mode != "off")
+        capabilities = _agent_capability_names(config) if enabled else []
+        if not enabled:
+            return {"game_agent_enabled": False, "blocked_reason": "game_agent_disabled", "capabilities": capabilities}
+        if not (config.safe_scene_confirmed or config.safe_game_scene_confirmed):
+            return {"game_agent_enabled": False, "blocked_reason": "safe_scene_not_confirmed", "capabilities": capabilities}
+        if not capabilities:
+            return {"game_agent_enabled": False, "blocked_reason": "no_action_capability_enabled", "capabilities": capabilities}
+        if os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() != "1":
+            return {"game_agent_enabled": True, "blocked_reason": "real_input_disabled", "capabilities": capabilities}
+        readiness = load_input_gateway_readiness()
+        if not readiness.input_gateway_ready:
+            return {
+                "game_agent_enabled": True,
+                "blocked_reason": "input_gateway_not_ready",
+                "capabilities": capabilities,
+                "blockers": readiness.blockers,
+            }
+        return {"game_agent_enabled": True, "blocked_reason": None, "capabilities": capabilities}
+
     def _game_agent_loop(self, run_id: str) -> None:
         agent = GameAgentLoop()
         last_effect: str | None = None
@@ -841,9 +871,6 @@ class V3Runtime:
                 last_action_effect=last_effect,
             )
             blocked_reason = str(action.get("blocked_reason") or "")
-            if blocked_reason and self._game_agent_last_blocked_reason.get(run_id) == blocked_reason:
-                time.sleep(max(0.5, record.config.action_interval_ms / 1000))
-                continue
             if blocked_reason:
                 self._game_agent_last_blocked_reason[run_id] = blocked_reason
             else:
@@ -1262,6 +1289,25 @@ class V3Runtime:
         self.store.append_meta_jsonl(run_id, "actions.jsonl", action)
         self.store.append_meta_jsonl(run_id, "events.jsonl", {"event": "action_evaluated", "details": action})
         self.store.append_event(run_id, "action_evaluated", action)
+
+
+def _agent_capability_names(config: V3TaskConfig) -> list[str]:
+    capabilities: list[str] = []
+    if config.allow_ui_click or config.enable_auto_click:
+        capabilities.append("ui_click")
+    if config.allow_hotkeys:
+        capabilities.append("hotkeys")
+    if config.allow_wasd:
+        capabilities.append("wasd")
+    if config.allow_mouse_look:
+        capabilities.append("mouse_look")
+    if config.allow_back_close:
+        capabilities.append("back_close")
+    if config.allow_inventory_map_explore:
+        capabilities.append("inventory_map_explore")
+    if config.allow_training_movement:
+        capabilities.append("training_movement")
+    return capabilities
 
 
 _SAFE_CLICK_LABELS = [

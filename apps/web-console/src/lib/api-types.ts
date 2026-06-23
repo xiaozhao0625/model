@@ -157,6 +157,7 @@ export interface V3Health {
   click_backend: string;
   input_gateway_blockers: string[];
   input_gateway_diagnosis_path?: string | null;
+  real_input_enabled: boolean;
   readiness_blockers: string[];
   ocr_performance?: Record<string, unknown>;
   frame_pump?: Record<string, unknown>;
@@ -217,6 +218,22 @@ export interface V3CollectionSummary {
   game_agent_status?: string;
   game_agent_state?: string;
   game_agent_enabled_capabilities?: string[];
+  enable_game_agent: boolean;
+  game_agent_mode: "off" | "auto_explore" | string;
+  allow_ui_click: boolean;
+  allow_hotkeys: boolean;
+  allow_wasd: boolean;
+  allow_mouse_look: boolean;
+  allow_back_close: boolean;
+  allow_inventory_map_explore: boolean;
+  allow_training_movement: boolean;
+  allow_wasd_mouse: boolean;
+  enable_game_explorer: boolean;
+  safe_scene_confirmed: boolean;
+  safe_game_scene_confirmed: boolean;
+  action_interval_ms: number;
+  real_input_enabled: boolean;
+  agent_config_missing: boolean;
   min_target_reached: boolean;
   soft_target_reached: boolean;
   max_target_reached: boolean;
@@ -242,6 +259,26 @@ export interface V3CollectionRecord {
   run_ids: string[];
   latest_run_id?: string | null;
 }
+
+export type V3AgentConfigRequest = Partial<
+  Pick<
+    V3TaskConfig,
+    | "enable_game_agent"
+    | "game_agent_mode"
+    | "allow_ui_click"
+    | "allow_hotkeys"
+    | "allow_wasd"
+    | "allow_mouse_look"
+    | "allow_back_close"
+    | "allow_inventory_map_explore"
+    | "allow_training_movement"
+    | "allow_wasd_mouse"
+    | "enable_game_explorer"
+    | "safe_scene_confirmed"
+    | "safe_game_scene_confirmed"
+    | "action_interval_ms"
+  >
+>;
 
 export interface V3CollectionExportResult {
   collection_id: string;

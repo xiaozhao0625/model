@@ -172,6 +172,23 @@ class V3CollectionCreateRequest(BaseModel):
     start_immediately: bool = False
 
 
+class V3AgentConfigRequest(BaseModel):
+    enable_game_agent: bool | None = None
+    game_agent_mode: GameAgentMode | None = None
+    allow_ui_click: bool | None = None
+    allow_hotkeys: bool | None = None
+    allow_wasd: bool | None = None
+    allow_mouse_look: bool | None = None
+    allow_back_close: bool | None = None
+    allow_inventory_map_explore: bool | None = None
+    allow_training_movement: bool | None = None
+    allow_wasd_mouse: bool | None = None
+    enable_game_explorer: bool | None = None
+    safe_scene_confirmed: bool | None = None
+    safe_game_scene_confirmed: bool | None = None
+    action_interval_ms: int | None = Field(default=None, ge=300, le=10000)
+
+
 class V3CollectionRecord(BaseModel):
     collection_id: str
     status: Literal[
@@ -233,6 +250,22 @@ class V3CollectionSummary(BaseModel):
     game_agent_status: str = "未启用"
     game_agent_state: str = "unknown"
     game_agent_enabled_capabilities: list[str] = Field(default_factory=list)
+    enable_game_agent: bool = False
+    game_agent_mode: str = "off"
+    allow_ui_click: bool = False
+    allow_hotkeys: bool = False
+    allow_wasd: bool = False
+    allow_mouse_look: bool = False
+    allow_back_close: bool = False
+    allow_inventory_map_explore: bool = False
+    allow_training_movement: bool = False
+    allow_wasd_mouse: bool = False
+    enable_game_explorer: bool = False
+    safe_scene_confirmed: bool = False
+    safe_game_scene_confirmed: bool = False
+    action_interval_ms: int = 1500
+    real_input_enabled: bool = False
+    agent_config_missing: bool = False
     min_target_reached: bool = False
     soft_target_reached: bool = False
     max_target_reached: bool = False
@@ -512,6 +545,7 @@ class V3Health(BaseModel):
     click_backend: str = "dry_run_backend"
     input_gateway_blockers: list[str] = Field(default_factory=list)
     input_gateway_diagnosis_path: str | None = None
+    real_input_enabled: bool = False
     readiness_blockers: list[str] = Field(default_factory=list)
     ocr_performance: dict[str, object] = Field(default_factory=dict)
     frame_pump: dict[str, object] = Field(default_factory=dict)

@@ -11,6 +11,7 @@ from ai_screenshot_platform.v3.runtime import V3Runtime
 from ai_screenshot_platform.v3.schemas import (
     ModelRequest,
     V3ActionAuditRequest,
+    V3AgentConfigRequest,
     V3CollectionCreateRequest,
     V3FramePumpStartRequest,
     V3ImageIngestRequest,
@@ -65,6 +66,10 @@ def create_v3_router() -> APIRouter:
     @router.get("/collections/{collection_id}/summary")
     def collection_summary(collection_id: str, request: Request):
         return v3_ok(get_runtime(request).collection_summary(collection_id).model_dump())
+
+    @router.patch("/collections/{collection_id}/agent-config")
+    def update_collection_agent_config(collection_id: str, payload: V3AgentConfigRequest, request: Request):
+        return v3_ok(get_runtime(request).update_collection_agent_config(collection_id, payload).model_dump())
 
     @router.get("/collections/{collection_id}/gallery")
     def collection_gallery(collection_id: str, request: Request):

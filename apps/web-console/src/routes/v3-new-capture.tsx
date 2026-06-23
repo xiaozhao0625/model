@@ -96,9 +96,38 @@ export function V3NewCaptureRoute() {
       merged.allow_wasd = true;
       merged.allow_mouse_look = true;
     }
-    if (next.allow_wasd_mouse === true || next.allow_wasd === true || next.allow_mouse_look === true || next.allow_training_movement === true) {
+    if (
+      next.allow_ui_click === true ||
+      next.allow_hotkeys === true ||
+      next.allow_wasd_mouse === true ||
+      next.allow_wasd === true ||
+      next.allow_mouse_look === true ||
+      next.allow_back_close === true ||
+      next.allow_inventory_map_explore === true ||
+      next.allow_training_movement === true
+    ) {
       merged.enable_game_explorer = true;
       merged.enable_game_agent = true;
+      merged.game_agent_mode = "auto_explore";
+      if (merged.game_action_preset === "screenshot_only") {
+        merged.game_action_preset = "custom";
+      }
+    }
+    if (next.enable_game_agent === false) {
+      merged.enable_game_explorer = false;
+      merged.game_agent_mode = "off";
+      merged.allow_ui_click = false;
+      merged.allow_hotkeys = false;
+      merged.allow_wasd_mouse = false;
+      merged.allow_wasd = false;
+      merged.allow_mouse_look = false;
+      merged.allow_back_close = false;
+      merged.allow_inventory_map_explore = false;
+      merged.allow_training_movement = false;
+    }
+    if (next.enable_game_agent === true || next.enable_game_explorer === true) {
+      merged.enable_game_agent = true;
+      merged.enable_game_explorer = true;
       merged.game_agent_mode = "auto_explore";
     }
     if (next.safe_game_scene_confirmed === true) {
@@ -201,6 +230,12 @@ export function V3NewCaptureRoute() {
       prepared.allow_training_movement = false;
       prepared.enable_auto_click = false;
       prepared.observe_only = true;
+    }
+    if (prepared.enable_game_agent || prepared.enable_game_explorer || prepared.allow_wasd_mouse || prepared.allow_wasd || prepared.allow_mouse_look || prepared.allow_training_movement) {
+      prepared.enable_game_agent = true;
+      prepared.enable_game_explorer = true;
+      prepared.game_agent_mode = "auto_explore";
+      prepared.observe_only = false;
     }
     const validation = validate(prepared);
     if (validation) {
@@ -328,8 +363,8 @@ export function V3NewCaptureRoute() {
             <div className="mt-3 grid gap-2 md:grid-cols-2">
               <Toggle label="允许 UI 点击" checked={config.allow_ui_click} onChange={(value) => patch({ allow_ui_click: value, enable_game_agent: value || config.enable_game_agent, game_agent_mode: value ? "auto_explore" : config.game_agent_mode })} />
               <Toggle label="允许热键探索" checked={config.allow_hotkeys} onChange={(value) => patch({ allow_hotkeys: value, enable_game_agent: value || config.enable_game_agent, game_agent_mode: value ? "auto_explore" : config.game_agent_mode })} />
-              <Toggle label="允许 WASD 移动" checked={config.allow_wasd} onChange={(value) => patch({ allow_wasd: value, allow_wasd_mouse: value || config.allow_wasd_mouse })} />
-              <Toggle label="允许鼠标视角变化" checked={config.allow_mouse_look} onChange={(value) => patch({ allow_mouse_look: value, allow_wasd_mouse: value || config.allow_wasd_mouse })} />
+              <Toggle label="允许 WASD 移动" checked={config.allow_wasd} onChange={(value) => patch({ allow_wasd: value, allow_wasd_mouse: value || config.allow_mouse_look })} />
+              <Toggle label="允许鼠标视角变化" checked={config.allow_mouse_look} onChange={(value) => patch({ allow_mouse_look: value, allow_wasd_mouse: value || config.allow_wasd })} />
               <Toggle label="允许返回/关闭弹窗" checked={config.allow_back_close} onChange={(value) => patch({ allow_back_close: value })} />
               <Toggle label="允许地图/背包/仓库/装备页探索" checked={config.allow_inventory_map_explore} onChange={(value) => patch({ allow_inventory_map_explore: value })} />
               <Toggle label="允许训练场移动探索" checked={config.allow_training_movement} onChange={(value) => patch({ allow_training_movement: value })} />

@@ -91,12 +91,15 @@ class GameAgentLoop:
             return self._blocked_plan("wait", "game_agent_disabled", state)
         if not (config.safe_scene_confirmed or config.safe_game_scene_confirmed):
             return self._blocked_plan("wait", "safe_scene_not_confirmed", state)
-        if not before_image:
-            return self._blocked_plan("wait", "frame_pump_no_frame", state)
         if state in RISK_STATES:
             return self._blocked_plan("wait", f"unsafe_state_{state}", state)
         if not self._has_any_capability(config):
             return self._blocked_plan("wait", "no_action_capability_enabled", state)
+        if not before_image:
+            disabled_probe = self._real_input_disabled_probe_plan(config, state)
+            if disabled_probe is not None:
+                return disabled_probe
+            return self._blocked_plan("wait", "frame_pump_no_frame", state)
         if state in {"inventory", "warehouse", "equipment", "weapon", "skill", "mission"} and config.allow_inventory_map_explore and config.allow_hotkeys:
             return {"action_type": "key_press", "planned_action": "key_press", "keys": ["Tab"], "duration_ms": 80, "reason": f"{state} 页面低风险切换面板", "observed_state": state}
         if state == "map" and config.allow_inventory_map_explore and config.allow_mouse_look:
@@ -117,7 +120,7 @@ class GameAgentLoop:
         if blocked_reason:
             return {"executed": False, "reason": blocked_reason, "status": "blocked"}
         if not self.allow_real_input:
-            return {"executed": False, "reason": "real_input_disabled_by_default", "status": "blocked"}
+            return {"executed": False, "reason": "real_input_disabled", "status": "blocked"}
         readiness = self.readiness_loader()
         if not getattr(readiness, "input_gateway_ready", False):
             blockers = getattr(readiness, "blockers", []) or []
@@ -202,6 +205,19 @@ class GameAgentLoop:
             "blocked_reason": reason,
             "observed_state": state,
         }
+
+    def _real_input_disabled_probe_plan(self, config: V3TaskConfig, state: str) -> dict[str, object] | None:
+        if self.allow_real_input:
+            return None
+        if config.allow_wasd or config.allow_training_movement:
+            return {"action_type": "key_hold", "planned_action": "key_hold", "keys": ["W"], "duration_ms": 500, "reason": "real_input_disabled", "observed_state": state}
+        if config.allow_mouse_look:
+            return {"action_type": "mouse_move_small", "planned_action": "mouse_move_small", "mouse_dx": 40, "mouse_dy": 0, "duration_ms": 120, "reason": "real_input_disabled", "observed_state": state}
+        if config.allow_hotkeys:
+            return {"action_type": "key_press", "planned_action": "key_press", "keys": ["Tab"], "duration_ms": 80, "reason": "real_input_disabled", "observed_state": state}
+        if config.allow_ui_click or config.enable_auto_click:
+            return {"action_type": "ui_click", "planned_action": "ui_click", "duration_ms": 80, "reason": "real_input_disabled", "observed_state": state}
+        return None
 
     def _has_any_capability(self, config: V3TaskConfig) -> bool:
         return any(

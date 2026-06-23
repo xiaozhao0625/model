@@ -52,6 +52,7 @@ def build_v3_health(model_registry: UiModelRegistry | None = None) -> V3Health:
         click_backend=input_gateway.click_backend,
         input_gateway_blockers=input_gateway.blockers,
         input_gateway_diagnosis_path=input_gateway.diagnosis_path,
+        real_input_enabled=os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() == "1",
         readiness_blockers=readiness_blockers,
         ocr_performance=_ocr_performance_summary(),
         frame_pump=_frame_pump_summary(),

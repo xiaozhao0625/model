@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 from ai_screenshot_platform.v3.schemas import (
+    V3AgentConfigRequest,
     V3CollectionExportResult,
     V3CollectionRecord,
     V3CollectionSummary,
@@ -37,6 +38,7 @@ class V3RunStore:
         display_name = config.display_name or config.task_name or config.app_name or collection_id
         config.display_name = display_name
         self._ensure_collection_io_dirs(config, collection_id, display_name)
+        _normalize_game_agent_config(config)
         record = V3CollectionRecord(
             collection_id=collection_id,
             config=config,
@@ -87,6 +89,7 @@ class V3RunStore:
         config.display_name = display_name
         config.collection_id = collection.collection_id
         self._ensure_collection_io_dirs(config, collection.collection_id, display_name)
+        _normalize_game_agent_config(config)
         round_index = len(collection.run_ids) + 1
         record = V3RunRecord(
             run_id=run_id,
@@ -160,7 +163,33 @@ class V3RunStore:
         collection = self.get_collection(collection_id)
         config = collection.config.model_copy(deep=True)
         config.collection_id = collection_id
+        _normalize_game_agent_config(config)
         return self.create_run(config, collection_id=collection_id)
+
+    def update_collection_agent_config(self, collection_id: str, payload: V3AgentConfigRequest) -> V3CollectionSummary:
+        collection = self.get_collection(collection_id)
+        updates = payload.model_dump(exclude_unset=True, exclude_none=True)
+        explicit_fields = set(updates)
+        for key, value in updates.items():
+            if hasattr(collection.config, key):
+                setattr(collection.config, key, value)
+        if updates.get("enable_game_agent") is False:
+            collection.config.enable_game_agent = False
+            collection.config.enable_game_explorer = False
+            collection.config.game_agent_mode = "off"
+            collection.config.allow_ui_click = False
+            collection.config.allow_hotkeys = False
+            collection.config.allow_wasd = False
+            collection.config.allow_mouse_look = False
+            collection.config.allow_back_close = False
+            collection.config.allow_inventory_map_explore = False
+            collection.config.allow_training_movement = False
+            collection.config.allow_wasd_mouse = False
+        else:
+            _normalize_game_agent_config(collection.config, explicit_fields=explicit_fields)
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        return self.refresh_collection_summary(collection_id)
 
     def stop_collection(self, collection_id: str) -> V3CollectionRecord:
         collection = self.get_collection(collection_id)
@@ -322,6 +351,7 @@ class V3RunStore:
             any(row.get("status") in {"running", "waiting_for_input", "waiting_for_input_timeout"} for row in run_summaries),
         )
         suggestion = _continue_suggestion(latest_round, accepted_unique_total, config)
+        real_input_enabled = _real_input_enabled()
         summary = V3CollectionSummary(
             collection_id=collection_id,
             status=status,
@@ -357,9 +387,25 @@ class V3RunStore:
             latest_round_top_reject_reasons=list(latest_round.get("top_reject_reasons", [])) if latest_round else [],
             latest_action=latest_action,
             latest_blocked_reason=_action_blocked_reason(latest_action),
-            game_agent_status=_game_agent_status(config, latest_action),
+            game_agent_status=_game_agent_status(config, latest_action, real_input_enabled=real_input_enabled),
             game_agent_state=str((latest_action or {}).get("observed_state") or "unknown"),
             game_agent_enabled_capabilities=_game_agent_capabilities(config),
+            enable_game_agent=config.enable_game_agent,
+            game_agent_mode=config.game_agent_mode,
+            allow_ui_click=config.allow_ui_click if _game_agent_config_enabled(config) else False,
+            allow_hotkeys=config.allow_hotkeys if _game_agent_config_enabled(config) else False,
+            allow_wasd=config.allow_wasd if _game_agent_config_enabled(config) else False,
+            allow_mouse_look=config.allow_mouse_look if _game_agent_config_enabled(config) else False,
+            allow_back_close=config.allow_back_close if _game_agent_config_enabled(config) else False,
+            allow_inventory_map_explore=config.allow_inventory_map_explore if _game_agent_config_enabled(config) else False,
+            allow_training_movement=config.allow_training_movement if _game_agent_config_enabled(config) else False,
+            allow_wasd_mouse=config.allow_wasd_mouse if _game_agent_config_enabled(config) else False,
+            enable_game_explorer=config.enable_game_explorer,
+            safe_scene_confirmed=config.safe_scene_confirmed,
+            safe_game_scene_confirmed=config.safe_game_scene_confirmed,
+            action_interval_ms=config.action_interval_ms,
+            real_input_enabled=real_input_enabled,
+            agent_config_missing=_collection_agent_config_missing(self._collection_dir(collection_id)),
             min_target_reached=accepted_unique_total >= config.target_accepted_min,
             soft_target_reached=accepted_unique_total >= config.target_accepted_soft,
             max_target_reached=accepted_unique_total >= config.target_accepted_max,
@@ -653,15 +699,7 @@ class V3RunStore:
         config.input_dir = resolved
         config.frame_pump_output_dir = resolved
         config.watch_dir = resolved
-        if config.enable_game_explorer and not config.enable_game_agent:
-            config.enable_game_agent = True
-        if config.enable_game_agent and config.game_agent_mode == "off":
-            config.game_agent_mode = "auto_explore"
-        if config.allow_wasd_mouse:
-            config.allow_wasd = True
-            config.allow_mouse_look = True
-        if config.safe_game_scene_confirmed and not config.safe_scene_confirmed:
-            config.safe_scene_confirmed = True
+        _normalize_game_agent_config(config)
         return previous != (config.input_dir, config.frame_pump_output_dir, config.watch_dir)
 
     def _collection_id_for(self, config: V3TaskConfig) -> str:
@@ -870,7 +908,70 @@ def _safe_windows_name(value: str) -> str:
     return cleaned[:40] or "collection"
 
 
+_AGENT_CAPABILITY_FIELDS = {
+    "allow_ui_click",
+    "allow_hotkeys",
+    "allow_wasd",
+    "allow_mouse_look",
+    "allow_back_close",
+    "allow_inventory_map_explore",
+    "allow_training_movement",
+    "allow_wasd_mouse",
+}
+
+
+def _normalize_game_agent_config(config: V3TaskConfig, explicit_fields: set[str] | None = None) -> None:
+    explicit_fields = explicit_fields or set()
+    if config.allow_wasd_mouse:
+        config.allow_wasd = True
+        config.allow_mouse_look = True
+    if config.safe_game_scene_confirmed and not config.safe_scene_confirmed:
+        config.safe_scene_confirmed = True
+    if config.safe_scene_confirmed and not config.safe_game_scene_confirmed:
+        config.safe_game_scene_confirmed = True
+    explicit_capability_enabled = any(field in explicit_fields and bool(getattr(config, field, False)) for field in _AGENT_CAPABILITY_FIELDS)
+    movement_capability_enabled = any(
+        [
+            config.allow_wasd_mouse,
+            config.allow_wasd,
+            config.allow_mouse_look,
+            config.allow_training_movement,
+        ]
+    )
+    if config.enable_game_explorer or config.enable_game_agent or movement_capability_enabled or explicit_capability_enabled:
+        config.enable_game_agent = True
+        config.enable_game_explorer = True
+        if config.game_agent_mode == "off":
+            config.game_agent_mode = "auto_explore"
+    elif config.game_agent_mode != "off":
+        config.game_agent_mode = "off"
+
+
+def _game_agent_config_enabled(config: V3TaskConfig) -> bool:
+    return bool(config.enable_game_agent or config.enable_game_explorer or config.game_agent_mode != "off")
+
+
+def _real_input_enabled() -> bool:
+    return os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() == "1"
+
+
+def _collection_agent_config_missing(collection_dir: Path) -> bool:
+    path = collection_dir / "collection.json"
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    config = payload.get("config") if isinstance(payload, dict) else None
+    if not isinstance(config, dict):
+        return True
+    return "enable_game_agent" not in config or "allow_wasd" not in config or "allow_mouse_look" not in config
+
+
 def _game_agent_capabilities(config: V3TaskConfig) -> list[str]:
+    if not _game_agent_config_enabled(config):
+        return []
     capabilities: list[str] = []
     if config.allow_ui_click or config.enable_auto_click:
         capabilities.append("UI 点击")
@@ -897,21 +998,35 @@ def _action_blocked_reason(action: dict[str, object] | None) -> str | None:
         return None
     reason = action.get("blocked_reason")
     if reason:
-        return str(reason)
+        return _normalize_blocked_reason(str(reason))
     if isinstance(result, dict) and result.get("reason"):
-        return str(result["reason"])
+        return _normalize_blocked_reason(str(result["reason"]))
     return None
 
 
-def _game_agent_status(config: V3TaskConfig, latest_action: dict[str, object] | None) -> str:
-    if not config.enable_game_agent and not config.enable_game_explorer:
+def _normalize_blocked_reason(reason: str) -> str:
+    if reason == "real_input_disabled_by_default":
+        return "real_input_disabled"
+    return reason
+
+
+def _game_agent_status(config: V3TaskConfig, latest_action: dict[str, object] | None, *, real_input_enabled: bool) -> str:
+    if not _game_agent_config_enabled(config):
         return "未启用"
+    if not real_input_enabled:
+        return "已启用，但真实输入未授权"
     reason = _action_blocked_reason(latest_action)
     if reason:
-        return "被阻止"
+        if reason == "input_gateway_not_ready":
+            return "已启用，但 Input Gateway 不可用"
+        if reason.startswith("unsafe_state_"):
+            return "已启用，但风险页面阻止"
+        if reason in {"target_window_not_foreground", "target_window_not_found"}:
+            return "已启用，但游戏窗口不可操作"
+        return "已启用，但动作被阻止"
     if latest_action:
-        return "运行中"
-    return "等待首帧"
+        return "已启用，运行中"
+    return "已启用，等待采集开始"
 
 
 def _count_meta_values(images: list[V3ImageRecord], key: str, default: str) -> dict[str, int]:

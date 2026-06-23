@@ -59,6 +59,7 @@ export function V3DashboardRoute() {
             <Metric label="OCR GPU" value={labelStatus(health?.ocr_gpu_ready)} />
             <Metric label="ShowUI" value={labelStatus(health?.models?.some((item) => item.provider === "showui" && item.status === "ready" && item.enabled))} />
             <Metric label="Input Gateway" value={labelStatus(health?.input_gateway_ready)} />
+            <Metric label="真实输入权限" value={health?.real_input_enabled ? "已开启" : "未开启"} />
           </div>
           <p className="mt-3 text-sm text-slate-400">V3 单机模式不需要 Redis、PostgreSQL 或 Docker。</p>
         </Card>

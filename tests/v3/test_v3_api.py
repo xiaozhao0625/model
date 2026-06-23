@@ -4,6 +4,13 @@ from fastapi.testclient import TestClient
 
 from ai_screenshot_platform.master.api.app import create_app
 from ai_screenshot_platform.master.core.config import MasterSettings
+from ai_screenshot_platform.v3.game import agent_loop as game_agent_module
+from ai_screenshot_platform.v3.schemas import V3TaskConfig
+
+
+class _ReadyInputGateway:
+    input_gateway_ready = True
+    blockers = []
 
 
 def test_v3_api_create_start_summary(tmp_path, monkeypatch):
@@ -23,6 +30,7 @@ def test_v3_api_create_start_summary(tmp_path, monkeypatch):
         assert data["same_integrity_ready"] is False
         assert data["interactive_desktop_ready"] is False
         assert data["input_gateway_blockers"]
+        assert data["real_input_enabled"] is False
         assert data["full_auto_capture_ready"] is False
         assert data["readiness_blockers"]
         action_health = client.get("/api/v3/action/health").json()["data"]
@@ -113,6 +121,7 @@ def test_v3_collection_export_without_unique_images_returns_chinese_error(tmp_pa
 
 def test_v3_game_agent_start_records_blocked_reason_when_no_frame(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    monkeypatch.delenv("APP_SHOT_ALLOW_REAL_INPUT", raising=False)
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
     with TestClient(create_app(settings)) as client:
         created = client.post(
@@ -146,9 +155,130 @@ def test_v3_game_agent_start_records_blocked_reason_when_no_frame(tmp_path, monk
 
         assert actions
         assert actions[0]["executed"] is False
-        assert actions[0]["blocked_reason"] == "frame_pump_no_frame"
-        assert summary["game_agent_status"] == "被阻止"
+        assert actions[0]["blocked_reason"] == "real_input_disabled"
+        assert summary["game_agent_status"] == "已启用，但真实输入未授权"
         assert "WASD" in summary["game_agent_enabled_capabilities"]
+        assert summary["real_input_enabled"] is False
+
+
+def test_v3_agent_config_patch_persists_and_continue_inherits(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_RUNS", str(tmp_path / "v3"))
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    monkeypatch.delenv("APP_SHOT_ALLOW_REAL_INPUT", raising=False)
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "agent_patch",
+                    "app_name": "agent_patch",
+                    "app_type": "pc_game",
+                    "save_root": str(tmp_path / "v3"),
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+
+        patched = client.patch(
+            f"/api/v3/collections/{collection_id}/agent-config",
+            json={
+                "enable_game_agent": True,
+                "allow_ui_click": True,
+                "allow_hotkeys": True,
+                "allow_wasd": True,
+                "allow_mouse_look": True,
+                "allow_inventory_map_explore": True,
+                "safe_scene_confirmed": True,
+                "action_interval_ms": 1500,
+            },
+        ).json()["data"]
+
+        assert patched["enable_game_agent"] is True
+        assert patched["game_agent_mode"] == "auto_explore"
+        assert patched["allow_wasd"] is True
+        assert patched["allow_mouse_look"] is True
+        assert patched["safe_scene_confirmed"] is True
+        assert patched["game_agent_status"] == "已启用，但真实输入未授权"
+        assert "WASD" in patched["game_agent_enabled_capabilities"]
+        assert "鼠标视角" in patched["game_agent_enabled_capabilities"]
+
+        collection_file = tmp_path / "v3" / "collections" / collection_id / "collection.json"
+        text = collection_file.read_text(encoding="utf-8")
+        assert '"enable_game_agent": true' in text
+        assert '"allow_wasd": true' in text
+        assert '"allow_mouse_look": true' in text
+
+        run = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+        assert run["config"]["enable_game_agent"] is True
+        assert run["config"]["allow_wasd"] is True
+        assert run["config"]["allow_mouse_look"] is True
+        assert run["config"]["safe_scene_confirmed"] is True
+
+
+def test_v3_agent_config_patch_disable_clears_capabilities(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_RUNS", str(tmp_path / "v3"))
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "agent_disable",
+                    "app_name": "agent_disable",
+                    "app_type": "pc_game",
+                    "save_root": str(tmp_path / "v3"),
+                    "enable_game_agent": True,
+                    "allow_wasd": True,
+                    "allow_mouse_look": True,
+                    "safe_scene_confirmed": True,
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+
+        disabled = client.patch(f"/api/v3/collections/{collection_id}/agent-config", json={"enable_game_agent": False}).json()["data"]
+
+        assert disabled["enable_game_agent"] is False
+        assert disabled["game_agent_status"] == "未启用"
+        assert disabled["allow_wasd"] is False
+        assert disabled["allow_mouse_look"] is False
+        assert disabled["game_agent_enabled_capabilities"] == []
+
+
+def test_v3_game_agent_authorized_input_can_execute_without_real_keyboard(tmp_path, monkeypatch):
+    before = tmp_path / "before.png"
+    after = tmp_path / "after.png"
+    before.write_bytes(b"before")
+    after.write_bytes(b"after")
+    calls: list[tuple[list[str], int]] = []
+    monkeypatch.setattr(game_agent_module, "_key_hold", lambda keys, duration_ms: calls.append((keys, duration_ms)))
+    agent = game_agent_module.GameAgentLoop(allow_real_input=True, readiness_loader=lambda: _ReadyInputGateway())
+
+    action = agent.step(
+        collection_id="col_exec",
+        run_id="run_exec",
+        agent_step=1,
+        config=V3TaskConfig(
+            app_type="pc_game",
+            enable_game_agent=True,
+            game_agent_mode="auto_explore",
+            safe_scene_confirmed=True,
+            allow_wasd=True,
+            allow_hotkeys=True,
+            action_interval_ms=300,
+        ),
+        before_image=str(before),
+        after_image=None,
+        latest_image_fn=lambda: str(after),
+        action_interval_ms=300,
+    )
+
+    assert action["executed"] is True
+    assert action["blocked_reason"] is None
+    assert action["planned_action"] == "key_hold"
+    assert calls == [(["W"], 800)]
 
 
 def test_v3_runs_list_skips_corrupt_metadata(tmp_path, monkeypatch):

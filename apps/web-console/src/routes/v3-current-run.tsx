@@ -6,7 +6,7 @@ import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 import { ObsFramePumpPanel } from "../components/v3/obs-frame-pump-panel";
 import { apiClient } from "../lib/api-client";
-import type { V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord } from "../lib/api-types";
+import type { V3AgentConfigRequest, V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord } from "../lib/api-types";
 import { isDebugRun, labelAppType, labelLanguage, labelRejectReason, labelStatus, textPolicyLabels } from "../lib/labels";
 
 export function V3CurrentRunRoute() {
@@ -64,12 +64,63 @@ export function V3CurrentRunRoute() {
   const legacyRuns = useMemo(() => runs.filter((run) => !run.collection_id && !isDebugRun(run)), [runs]);
   const debugRuns = useMemo(() => runs.filter((run) => isDebugRun(run)), [runs]);
 
+  function replaceCollection(next: V3CollectionSummary) {
+    setCollections((current) => current.map((item) => (item.collection_id === next.collection_id ? next : item)));
+  }
+
+  async function updateAgentConfig(collection: V3CollectionSummary, patch: V3AgentConfigRequest = {}, showSaved = true) {
+    if (busyAction) return collection;
+    setBusyAction(`agent:${collection.collection_id}`);
+    try {
+      const updated = await apiClient.updateV3CollectionAgentConfig(collection.collection_id, buildAgentConfigPayload(collection, patch));
+      replaceCollection(updated);
+      if (showSaved) setMessage("AI 自动探索配置已保存到 collection，后续轮次会继承。");
+      return updated;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+      return collection;
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function enableAgentAndContinue(collection: V3CollectionSummary) {
+    if (!window.confirm("请确认已经手动进入训练场、靶场、单机、局外背包/仓库/地图等安全场景；系统不会自动登录、充值、匹配、排位或聊天。")) return;
+    setBusyAction(`agent-continue:${collection.collection_id}`);
+    try {
+      const updated = await apiClient.updateV3CollectionAgentConfig(collection.collection_id, buildAgentConfigPayload(collection, {
+        enable_game_agent: true,
+        enable_game_explorer: true,
+        game_agent_mode: "auto_explore",
+        allow_ui_click: true,
+        allow_hotkeys: true,
+        allow_wasd: true,
+        allow_mouse_look: true,
+        allow_back_close: true,
+        allow_inventory_map_explore: true,
+        allow_training_movement: true,
+        allow_wasd_mouse: true,
+        safe_scene_confirmed: true,
+        safe_game_scene_confirmed: true
+      }));
+      replaceCollection(updated);
+      setBusyAction(null);
+      await continueCollection(updated.collection_id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+      setBusyAction(null);
+    }
+  }
+
   async function continueCollection(collectionId: string) {
     if (busyAction) return;
     setBusyAction(`continue:${collectionId}`);
     try {
       const collection = collections.find((item) => item.collection_id === collectionId);
-      const outputDir = collection?.watch_dir || collection?.input_dir || collection?.frame_pump_output_dir || undefined;
+      const synced = collection ? await apiClient.updateV3CollectionAgentConfig(collection.collection_id, buildAgentConfigPayload(collection)) : null;
+      if (synced) replaceCollection(synced);
+      const effectiveCollection = synced || collection;
+      const outputDir = effectiveCollection?.watch_dir || effectiveCollection?.input_dir || effectiveCollection?.frame_pump_output_dir || undefined;
       if (framePump && framePump.status !== "running") {
         const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
         if (!shouldStart) return;
@@ -301,7 +352,22 @@ export function V3CurrentRunRoute() {
                 <Metric label="当前识别状态" value={collection.game_agent_state || "unknown"} />
                 <Metric label="本轮动作次数" value={`${collection.latest_round_action_count} 次`} />
                 <Metric label="累计动作次数" value={`${collection.action_total} 次`} />
+                <Metric label="真实输入权限" value={collection.real_input_enabled ? "已开启" : "未开启"} />
               </div>
+              {!collection.real_input_enabled && (collection.enable_game_agent || collection.enable_game_explorer) ? (
+                <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  真实输入未开启。需要用 APP_SHOT_ALLOW_REAL_INPUT=1 重启后端后，WASD、鼠标视角和真实点击才会执行。
+                  启动命令：cd D:\work\app-shot\model；$env:APP_SHOT_ALLOW_REAL_INPUT="1"；powershell -ExecutionPolicy Bypass -File .\start_v3_app_shot.ps1
+                </p>
+              ) : null}
+              {collection.agent_config_missing ? (
+                <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  <p>该任务创建于旧版本，需要更新 AI 自动探索配置后才能自动操作。</p>
+                  <button className="mt-2 rounded-lg border border-amber-300/40 px-3 py-2 text-sm text-amber-50" disabled={Boolean(busyAction)} onClick={() => void enableAgentAndContinue(collection)}>
+                    启用 AI 自动探索并继续
+                  </button>
+                </div>
+              ) : null}
               <div className="mt-3 grid gap-2 text-sm text-slate-400">
                 <span>已启用能力：{collection.game_agent_enabled_capabilities?.join("、") || "无"}</span>
                 <span>最近动作：{String(collection.latest_action?.action_type || collection.latest_action?.planned_action || "-")}</span>
@@ -309,6 +375,29 @@ export function V3CurrentRunRoute() {
                 <span>最近阻止原因：{collection.latest_blocked_reason || "-"}</span>
                 <span>visual_diff_score：{String(collection.latest_action?.visual_diff_score ?? "-")}</span>
               </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                <AgentToggle label="启用 AI 自动探索" checked={collection.enable_game_agent || collection.enable_game_explorer} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { enable_game_agent: value, enable_game_explorer: value, game_agent_mode: value ? "auto_explore" : "off" })} />
+                <AgentToggle label="安全场景确认" checked={collection.safe_scene_confirmed || collection.safe_game_scene_confirmed} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { safe_scene_confirmed: value, safe_game_scene_confirmed: value })} />
+                <AgentToggle label="允许 UI 点击" checked={collection.allow_ui_click} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_ui_click: value })} />
+                <AgentToggle label="允许热键探索" checked={collection.allow_hotkeys} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_hotkeys: value })} />
+                <AgentToggle label="允许 WASD 移动" checked={collection.allow_wasd} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_wasd: value, allow_wasd_mouse: value || collection.allow_mouse_look })} />
+                <AgentToggle label="允许鼠标视角变化" checked={collection.allow_mouse_look} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_mouse_look: value, allow_wasd_mouse: value || collection.allow_wasd })} />
+                <AgentToggle label="允许返回/关闭" checked={collection.allow_back_close} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_back_close: value })} />
+                <AgentToggle label="允许地图/背包/仓库探索" checked={collection.allow_inventory_map_explore} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_inventory_map_explore: value })} />
+                <AgentToggle label="允许训练场移动探索" checked={collection.allow_training_movement} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { allow_training_movement: value })} />
+              </div>
+              <label className="mt-3 grid gap-1 text-sm text-slate-300">
+                <span className="text-xs text-slate-500">动作间隔（毫秒）</span>
+                <input
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500"
+                  type="number"
+                  min={300}
+                  max={10000}
+                  value={collection.action_interval_ms}
+                  disabled={Boolean(busyAction)}
+                  onChange={(event) => void updateAgentConfig(collection, { action_interval_ms: Math.max(300, Math.min(Number(event.target.value), 10000)) })}
+                />
+              </label>
             </div>
 
             {collection.continue_suggestion ? <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{collection.continue_suggestion}</p> : null}
@@ -379,6 +468,64 @@ export function V3CurrentRunRoute() {
   );
 }
 
+function buildAgentConfigPayload(collection: V3CollectionSummary, patch: V3AgentConfigRequest = {}): V3AgentConfigRequest {
+  const merged = {
+    enable_game_agent: collection.enable_game_agent || collection.enable_game_explorer,
+    enable_game_explorer: collection.enable_game_explorer,
+    game_agent_mode: collection.game_agent_mode === "auto_explore" ? "auto_explore" : "off",
+    allow_ui_click: collection.allow_ui_click,
+    allow_hotkeys: collection.allow_hotkeys,
+    allow_wasd: collection.allow_wasd,
+    allow_mouse_look: collection.allow_mouse_look,
+    allow_back_close: collection.allow_back_close,
+    allow_inventory_map_explore: collection.allow_inventory_map_explore,
+    allow_training_movement: collection.allow_training_movement,
+    allow_wasd_mouse: collection.allow_wasd_mouse,
+    safe_scene_confirmed: collection.safe_scene_confirmed,
+    safe_game_scene_confirmed: collection.safe_game_scene_confirmed,
+    action_interval_ms: collection.action_interval_ms,
+    ...patch
+  } satisfies Required<V3AgentConfigRequest>;
+
+  if (merged.allow_wasd_mouse || merged.allow_wasd || merged.allow_mouse_look) {
+    merged.allow_wasd_mouse = true;
+  }
+  const anyCapability = [
+    merged.allow_ui_click,
+    merged.allow_hotkeys,
+    merged.allow_wasd,
+    merged.allow_mouse_look,
+    merged.allow_back_close,
+    merged.allow_inventory_map_explore,
+    merged.allow_training_movement,
+    merged.allow_wasd_mouse
+  ].some(Boolean);
+  if (patch.enable_game_agent === false) {
+    merged.enable_game_agent = false;
+    merged.enable_game_explorer = false;
+    merged.game_agent_mode = "off";
+    merged.allow_ui_click = false;
+    merged.allow_hotkeys = false;
+    merged.allow_wasd = false;
+    merged.allow_mouse_look = false;
+    merged.allow_back_close = false;
+    merged.allow_inventory_map_explore = false;
+    merged.allow_training_movement = false;
+    merged.allow_wasd_mouse = false;
+    return merged;
+  }
+  if (anyCapability || merged.enable_game_agent || merged.enable_game_explorer) {
+    merged.enable_game_agent = true;
+    merged.enable_game_explorer = true;
+    merged.game_agent_mode = "auto_explore";
+  } else {
+    merged.enable_game_agent = false;
+    merged.enable_game_explorer = false;
+    merged.game_agent_mode = "off";
+  }
+  return merged;
+}
+
 function collectionStatusText(collection: V3CollectionSummary) {
   if (collection.max_target_reached) return "达到最大扩充目标，建议停止";
   if (collection.soft_target_reached) return "标准目标达标";
@@ -416,6 +563,15 @@ function Notice({ title, lines }: { title: string; lines: string[] }) {
         {lines.map((line) => <span key={line}>{line}</span>)}
       </div>
     </div>
+  );
+}
+
+function AgentToggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return (
+    <label className={`flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm ${disabled ? "border-slate-800 text-slate-600" : "border-slate-800 bg-slate-950 text-slate-300"}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      {label}
+    </label>
   );
 }
 

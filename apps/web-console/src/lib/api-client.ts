@@ -12,6 +12,7 @@ import type {
   ToolHealthRecord,
   UploadRecord,
   V3Health,
+  V3AgentConfigRequest,
   V3InputStatus,
   V3FramePumpStartRequest,
   V3FramePumpStatus,
@@ -84,6 +85,7 @@ export interface ApiClient {
   createV3Collection(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>;
   getV3Collection(collectionId: string): Promise<V3CollectionRecord>;
   getV3CollectionSummary(collectionId: string): Promise<V3CollectionSummary>;
+  updateV3CollectionAgentConfig(collectionId: string, payload: V3AgentConfigRequest): Promise<V3CollectionSummary>;
   getV3CollectionGallery(collectionId: string): Promise<V3ImageRecord[]>;
   continueV3Collection(collectionId: string): Promise<V3RunRecord>;
   stopV3Collection(collectionId: string): Promise<V3CollectionRecord>;
@@ -292,6 +294,8 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
       requestV3<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>("/api/v3/collections", { method: "POST", body: JSON.stringify(payload) }),
     getV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}`),
     getV3CollectionSummary: (collectionId) => requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/summary`),
+    updateV3CollectionAgentConfig: (collectionId, payload) =>
+      requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/agent-config`, { method: "PATCH", body: JSON.stringify(payload) }),
     getV3CollectionGallery: (collectionId) => requestV3<V3ImageRecord[]>(`/api/v3/collections/${collectionId}/gallery`),
     continueV3Collection: (collectionId) => requestV3<V3RunRecord>(`/api/v3/collections/${collectionId}/continue`, { method: "POST" }),
     stopV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}/stop`, { method: "POST" }),
