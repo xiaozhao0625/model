@@ -54,6 +54,121 @@ def test_v3_frame_pump_api_status_start_stop(tmp_path, monkeypatch):
         assert stopped["status"] == "stopped"
 
 
+def test_v3_collection_creates_dedicated_input_dir_and_opens_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    monkeypatch.setenv("APP_SHOT_DISABLE_OPEN_FOLDER", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "三角洲",
+                    "app_name": "三角洲",
+                    "app_type": "pc_game",
+                    "save_root": str(tmp_path / "v3"),
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+        summary = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
+        opened = client.post(f"/api/v3/collections/{collection_id}/open-input-folder?dry_run=true").json()["data"]
+
+        assert summary["input_dir"] == summary["watch_dir"] == summary["frame_pump_output_dir"]
+        assert summary["input_dir"].startswith(str(tmp_path / "obs-output"))
+        assert "三角洲" in Path(summary["input_dir"]).name
+        assert Path(summary["input_dir"]).is_dir()
+        assert opened["path"] == summary["input_dir"]
+        assert opened["status"] == "dry_run"
+
+
+def test_v3_frame_pump_start_accepts_explicit_output_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    output_dir = tmp_path / "obs-output" / "collection_a"
+    with TestClient(create_app(settings)) as client:
+        started = client.post(
+            "/api/v3/frame-pump/start",
+            json={"fps": 1, "source_mode": "obs_websocket", "output_dir": str(output_dir)},
+        ).json()["data"]
+
+        assert started["status"] == "stopped"
+        assert started["output_dir"] == str(output_dir)
+        assert "disabled" in started["message"]
+
+
+def test_v3_collection_export_without_unique_images_returns_chinese_error(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={"config": {"task_name": "empty_export", "app_name": "empty_export", "save_root": str(tmp_path / "v3")}},
+        ).json()["data"]
+        payload = client.post(f"/api/v3/collections/{created['collection_id']}/export").json()
+
+        assert payload["ok"] is False
+        assert payload["error_code"] == "no_accepted_unique_images"
+        assert "当前没有最终有效图" in payload["message"]
+
+
+def test_v3_game_agent_start_records_blocked_reason_when_no_frame(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_DISABLE_FRAME_PUMP", "1")
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "start_immediately": True,
+                "config": {
+                    "task_name": "agent_case",
+                    "app_name": "agent_case",
+                    "app_type": "pc_game",
+                    "save_root": str(tmp_path / "v3"),
+                    "enable_game_agent": True,
+                    "game_agent_mode": "auto_explore",
+                    "safe_scene_confirmed": True,
+                    "allow_hotkeys": True,
+                    "allow_wasd": True,
+                    "action_interval_ms": 300,
+                },
+            },
+        ).json()["data"]
+        run_id = created["run"]["run_id"]
+        actions = []
+        for _ in range(20):
+            actions = client.get(f"/api/v3/runs/{run_id}/actions").json()["data"]
+            if actions:
+                break
+            import time
+
+            time.sleep(0.1)
+        summary = client.get(f"/api/v3/collections/{created['collection']['collection_id']}/summary").json()["data"]
+
+        assert actions
+        assert actions[0]["executed"] is False
+        assert actions[0]["blocked_reason"] == "frame_pump_no_frame"
+        assert summary["game_agent_status"] == "被阻止"
+        assert "WASD" in summary["game_agent_enabled_capabilities"]
+
+
+def test_v3_runs_list_skips_corrupt_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_RUNS", str(tmp_path / "runs"))
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    corrupt_dir = tmp_path / "runs" / "v3" / "v3_corrupt"
+    corrupt_dir.mkdir(parents=True)
+    (corrupt_dir / "run.json").write_bytes(b"\x00" * 128)
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/v3/runs")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ok"] is True
+        assert payload["data"] == []
+    audit = tmp_path / "runs" / "v3" / "trash" / "corrupt_metadata_audit.jsonl"
+    assert audit.is_file()
+    assert "v3_corrupt" in audit.read_text(encoding="utf-8")
+
+
 def test_v3_obs_api_returns_friendly_status_without_obs(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
     settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
@@ -515,6 +630,9 @@ def test_v3_collection_multi_round_counts_unique_and_exports(tmp_path):
         assert [image["image_id"] for image in gallery] == ["start_wps_001", "ok_wps_002"]
 
         exported = client.post(f"/api/v3/collections/{collection_id}/export").json()["data"]
+        opened_export = client.post(f"/api/v3/collections/{collection_id}/open-export-folder?dry_run=true").json()["data"]
         assert exported["accepted_unique_total"] == 2
+        assert exported["zip_path"].endswith(".zip")
         assert Path(summary["accepted_unique_dir"]).is_dir()
         assert exported["manifest_path"].endswith("manifest.json")
+        assert opened_export["path"] == summary["export_dir"]

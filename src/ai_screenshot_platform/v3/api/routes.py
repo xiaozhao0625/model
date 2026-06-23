@@ -84,7 +84,35 @@ def create_v3_router() -> APIRouter:
 
     @router.post("/collections/{collection_id}/export")
     def export_collection(collection_id: str, request: Request):
-        return v3_ok(get_runtime(request).export_collection(collection_id).model_dump())
+        try:
+            return v3_ok(get_runtime(request).export_collection(collection_id).model_dump())
+        except ValueError as exc:
+            if str(exc) == "no_accepted_unique_images":
+                message = "当前没有最终有效图，无法导出。请先完成采集或查看被拒绝原因。"
+                return {
+                    "ok": False,
+                    "data": None,
+                    "error": message,
+                    "error_code": "no_accepted_unique_images",
+                    "message": message,
+                }
+            raise
+
+    @router.post("/collections/{collection_id}/open-input-folder")
+    def open_collection_input_folder(collection_id: str, request: Request, dry_run: bool = False):
+        runtime = get_runtime(request)
+        path = runtime.collection_input_dir(collection_id).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        status = "dry_run" if dry_run else _open_in_file_manager(path)
+        return v3_ok({"status": status, "path": str(path)})
+
+    @router.post("/collections/{collection_id}/open-export-folder")
+    def open_collection_export_folder(collection_id: str, request: Request, dry_run: bool = False):
+        runtime = get_runtime(request)
+        path = runtime.collection_export_dir(collection_id).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        status = "dry_run" if dry_run else _open_in_file_manager(path)
+        return v3_ok({"status": status, "path": str(path)})
 
     @router.delete("/collections/{collection_id}")
     def delete_collection(collection_id: str, request: Request, delete_files: bool = False):
@@ -213,8 +241,8 @@ def create_v3_router() -> APIRouter:
         return v3_ok(get_runtime(request).action_health())
 
     @router.get("/input/status")
-    def input_status(request: Request):
-        return v3_ok(get_runtime(request).input_status().model_dump())
+    def input_status(request: Request, collection_id: str | None = None, run_id: str | None = None):
+        return v3_ok(get_runtime(request).input_status(collection_id=collection_id, run_id=run_id).model_dump())
 
     @router.get("/obs/status")
     def obs_status(request: Request, obs_host: str = "127.0.0.1", obs_port: int = 4455):
@@ -233,8 +261,8 @@ def create_v3_router() -> APIRouter:
         return v3_ok(get_runtime(request).obs_test_screenshot(payload))
 
     @router.get("/frame-pump/status")
-    def frame_pump_status(request: Request):
-        return v3_ok(get_runtime(request).frame_pump_status().model_dump())
+    def frame_pump_status(request: Request, collection_id: str | None = None, run_id: str | None = None):
+        return v3_ok(get_runtime(request).frame_pump_status(collection_id=collection_id, run_id=run_id).model_dump())
 
     @router.post("/frame-pump/start")
     def frame_pump_start(payload: V3FramePumpStartRequest, request: Request):
@@ -259,8 +287,8 @@ def create_v3_router() -> APIRouter:
         return FileResponse(path)
 
     @router.post("/input/open-folder")
-    def open_input_folder(request: Request, dry_run: bool = False):
-        status = get_runtime(request).input_status()
+    def open_input_folder(request: Request, dry_run: bool = False, collection_id: str | None = None, run_id: str | None = None):
+        status = get_runtime(request).input_status(collection_id=collection_id, run_id=run_id)
         path = Path(status.watch_dir).resolve()
         path.mkdir(parents=True, exist_ok=True)
         open_status = "dry_run" if dry_run else _open_in_file_manager(path)

@@ -32,6 +32,11 @@ export function V3NewCaptureRoute() {
           target_accepted_soft: 1000,
           target_accepted_max: 2000,
           capture_source: "obs_websocket",
+          obs_host: "127.0.0.1",
+          obs_port: 4455,
+          screenshot_target: "source",
+          image_format: "png",
+          image_quality: 90,
           max_images: 1500,
           max_actions: 20,
           max_game_actions: 50,
@@ -44,7 +49,17 @@ export function V3NewCaptureRoute() {
           text_policy: "strict_text",
           game_action_preset: "screenshot_only",
           allow_wasd_mouse: false,
-          safe_game_scene_confirmed: false
+          safe_game_scene_confirmed: false,
+          enable_game_agent: false,
+          game_agent_mode: "off",
+          allow_ui_click: true,
+          allow_hotkeys: true,
+          allow_wasd: false,
+          allow_mouse_look: false,
+          allow_back_close: true,
+          allow_inventory_map_explore: true,
+          allow_training_movement: false,
+          safe_scene_confirmed: false
         })
       )
       .catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
@@ -67,13 +82,30 @@ export function V3NewCaptureRoute() {
       merged.allow_wasd_mouse = false;
       merged.enable_auto_click = false;
       merged.observe_only = true;
+      merged.enable_game_agent = false;
+      merged.game_agent_mode = "off";
+      merged.allow_wasd = false;
+      merged.allow_mouse_look = false;
+      merged.allow_training_movement = false;
     }
     if (next.game_action_preset === "wasd_mouse") {
       merged.enable_game_explorer = true;
       merged.allow_wasd_mouse = true;
+      merged.enable_game_agent = true;
+      merged.game_agent_mode = "auto_explore";
+      merged.allow_wasd = true;
+      merged.allow_mouse_look = true;
     }
-    if (next.allow_wasd_mouse === true) {
+    if (next.allow_wasd_mouse === true || next.allow_wasd === true || next.allow_mouse_look === true || next.allow_training_movement === true) {
       merged.enable_game_explorer = true;
+      merged.enable_game_agent = true;
+      merged.game_agent_mode = "auto_explore";
+    }
+    if (next.safe_game_scene_confirmed === true) {
+      merged.safe_scene_confirmed = true;
+    }
+    if (next.safe_scene_confirmed === true) {
+      merged.safe_game_scene_confirmed = true;
     }
     setConfig(merged);
   }
@@ -114,8 +146,17 @@ export function V3NewCaptureRoute() {
         no_text_fill_ratio: 0.1,
         text_policy: "text_priority_with_fill",
         enable_game_explorer: false,
+        enable_game_agent: false,
+        game_agent_mode: "off",
         game_action_preset: "screenshot_only",
-        allow_wasd_mouse: false
+        allow_wasd_mouse: false,
+        allow_ui_click: true,
+        allow_hotkeys: true,
+        allow_wasd: false,
+        allow_mouse_look: false,
+        allow_back_close: true,
+        allow_inventory_map_explore: true,
+        allow_training_movement: false
       });
     }
   }
@@ -130,7 +171,7 @@ export function V3NewCaptureRoute() {
     if (next.no_text_fill_ratio > 0.2) {
       return "无文字补充图比例最多 20%。";
     }
-    if ((next.game_action_preset === "wasd_mouse" || next.enable_game_explorer) && !next.safe_game_scene_confirmed) {
+    if ((next.allow_wasd || next.allow_mouse_look || next.allow_training_movement || next.allow_wasd_mouse) && !(next.safe_game_scene_confirmed || next.safe_scene_confirmed)) {
       return "启用游戏键鼠探索前，必须确认已经进入训练场、靶场、单机或局外安全页面。";
     }
     return "";
@@ -141,7 +182,7 @@ export function V3NewCaptureRoute() {
     const prepared = {
       ...config,
       display_name: config.display_name || config.task_name || config.app_name,
-      observe_only: !config.enable_auto_click && !config.enable_game_explorer,
+      observe_only: !config.enable_auto_click && !config.enable_game_explorer && !config.enable_game_agent,
       max_actions: Math.min(config.max_actions, 100),
       max_game_actions: Math.min(config.max_game_actions, 200)
     };
@@ -152,7 +193,12 @@ export function V3NewCaptureRoute() {
     }
     if (prepared.game_action_preset === "screenshot_only") {
       prepared.enable_game_explorer = false;
+      prepared.enable_game_agent = false;
+      prepared.game_agent_mode = "off";
       prepared.allow_wasd_mouse = false;
+      prepared.allow_wasd = false;
+      prepared.allow_mouse_look = false;
+      prepared.allow_training_movement = false;
       prepared.enable_auto_click = false;
       prepared.observe_only = true;
     }
@@ -261,8 +307,8 @@ export function V3NewCaptureRoute() {
                   {Object.entries(gameActionPresetLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
               </Field>
-              <Field label="动作间隔">
-                <input className={inputClass} type="number" min={200} max={60000} value={config.action_interval_ms} onChange={(event) => patch({ action_interval_ms: Number(event.target.value) })} />
+              <Field label="动作间隔（毫秒）">
+                <input className={inputClass} type="number" min={300} max={10000} value={config.action_interval_ms} onChange={(event) => patch({ action_interval_ms: Math.max(300, Math.min(Number(event.target.value), 10000)) })} />
               </Field>
             </>
           ) : null}
@@ -276,8 +322,25 @@ export function V3NewCaptureRoute() {
         </div>
 
         {(tab === "game" || config.app_type === "pc_game") ? (
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3">
+            <p className="text-sm font-semibold text-slate-200">AI 自动探索能力</p>
+            <p className="mt-1 text-xs text-slate-500">这些能力可以同时开启。AI 会根据当前画面自动选择点击、热键、WASD 或鼠标视角变化，不是固定顺序乱按。</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <Toggle label="允许 UI 点击" checked={config.allow_ui_click} onChange={(value) => patch({ allow_ui_click: value, enable_game_agent: value || config.enable_game_agent, game_agent_mode: value ? "auto_explore" : config.game_agent_mode })} />
+              <Toggle label="允许热键探索" checked={config.allow_hotkeys} onChange={(value) => patch({ allow_hotkeys: value, enable_game_agent: value || config.enable_game_agent, game_agent_mode: value ? "auto_explore" : config.game_agent_mode })} />
+              <Toggle label="允许 WASD 移动" checked={config.allow_wasd} onChange={(value) => patch({ allow_wasd: value, allow_wasd_mouse: value || config.allow_wasd_mouse })} />
+              <Toggle label="允许鼠标视角变化" checked={config.allow_mouse_look} onChange={(value) => patch({ allow_mouse_look: value, allow_wasd_mouse: value || config.allow_wasd_mouse })} />
+              <Toggle label="允许返回/关闭弹窗" checked={config.allow_back_close} onChange={(value) => patch({ allow_back_close: value })} />
+              <Toggle label="允许地图/背包/仓库/装备页探索" checked={config.allow_inventory_map_explore} onChange={(value) => patch({ allow_inventory_map_explore: value })} />
+              <Toggle label="允许训练场移动探索" checked={config.allow_training_movement} onChange={(value) => patch({ allow_training_movement: value })} />
+              <Toggle label="启用 AI 自动探索" checked={config.enable_game_agent} onChange={(value) => patch({ enable_game_agent: value, enable_game_explorer: value, game_agent_mode: value ? "auto_explore" : "off" })} />
+            </div>
+          </div>
+        ) : null}
+
+        {(tab === "game" || config.app_type === "pc_game") ? (
           <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-50">
-            <input className="mt-1" type="checkbox" checked={config.safe_game_scene_confirmed} onChange={(event) => patch({ safe_game_scene_confirmed: event.target.checked })} />
+            <input className="mt-1" type="checkbox" checked={config.safe_game_scene_confirmed || config.safe_scene_confirmed} onChange={(event) => patch({ safe_game_scene_confirmed: event.target.checked, safe_scene_confirmed: event.target.checked })} />
             <span>我已手动进入训练场、靶场、单机、局外背包/仓库/地图等安全场景；系统不会自动登录、充值、匹配、排位或聊天。</span>
           </label>
         ) : null}

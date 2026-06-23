@@ -83,6 +83,16 @@ export interface V3TaskConfig {
   app_type: "software" | "pc_app" | "pc_game" | "game" | "web" | "auto";
   target_language: string;
   capture_source: "obs" | "obs_websocket" | "folder_watch" | "window" | "screen" | "obs_projector";
+  input_dir?: string | null;
+  frame_pump_output_dir?: string | null;
+  watch_dir?: string | null;
+  obs_host?: string;
+  obs_port?: number;
+  obs_scene_name?: string | null;
+  obs_source_name?: string | null;
+  screenshot_target?: "source" | "scene";
+  image_format?: "png" | "jpg" | "jpeg";
+  image_quality?: number;
   capture_interval_ms: number;
   save_root: string;
   enable_ocr: boolean;
@@ -108,6 +118,16 @@ export interface V3TaskConfig {
   game_action_preset: "screenshot_only" | "low_risk_ui_click" | "wasd_mouse" | "hotkey_explore" | "custom";
   allow_wasd_mouse: boolean;
   safe_game_scene_confirmed: boolean;
+  enable_game_agent: boolean;
+  game_agent_mode: "off" | "auto_explore";
+  allow_ui_click: boolean;
+  allow_hotkeys: boolean;
+  allow_wasd: boolean;
+  allow_mouse_look: boolean;
+  allow_back_close: boolean;
+  allow_inventory_map_explore: boolean;
+  allow_training_movement: boolean;
+  safe_scene_confirmed: boolean;
   action_interval_ms: number;
 }
 
@@ -168,6 +188,9 @@ export interface V3CollectionSummary {
   app_type: V3TaskConfig["app_type"];
   target_language: string;
   text_policy: V3TaskConfig["text_policy"];
+  input_dir?: string | null;
+  frame_pump_output_dir?: string | null;
+  watch_dir?: string | null;
   target_accepted_min: number;
   target_accepted_soft: number;
   target_accepted_max: number;
@@ -189,6 +212,11 @@ export interface V3CollectionSummary {
   latest_round_failed: number;
   latest_round_action_count: number;
   latest_round_top_reject_reasons: Array<{ reason: string; count: number }>;
+  latest_action?: Record<string, unknown> | null;
+  latest_blocked_reason?: string | null;
+  game_agent_status?: string;
+  game_agent_state?: string;
+  game_agent_enabled_capabilities?: string[];
   min_target_reached: boolean;
   soft_target_reached: boolean;
   max_target_reached: boolean;
@@ -220,11 +248,13 @@ export interface V3CollectionExportResult {
   status: string;
   export_dir: string;
   archive_path?: string | null;
+  zip_path?: string | null;
   manifest_path: string;
   summary_path: string;
   rejection_summary_path: string;
   duplicate_summary_path: string;
   accepted_unique_total: number;
+  message?: string;
 }
 
 export interface V3InputStatus {

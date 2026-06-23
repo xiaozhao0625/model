@@ -27,6 +27,7 @@ class V3RunStore:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def create_collection(self, config: V3TaskConfig) -> V3CollectionRecord:
+        config = config.model_copy(deep=True)
         collection_id = config.collection_id or self._collection_id_for(config)
         try:
             return self.get_collection(collection_id)
@@ -35,6 +36,7 @@ class V3RunStore:
         config.collection_id = collection_id
         display_name = config.display_name or config.task_name or config.app_name or collection_id
         config.display_name = display_name
+        self._ensure_collection_io_dirs(config, collection_id, display_name)
         record = V3CollectionRecord(
             collection_id=collection_id,
             config=config,
@@ -49,7 +51,9 @@ class V3RunStore:
     def list_collections(self) -> list[V3CollectionRecord]:
         records: list[V3CollectionRecord] = []
         for path in sorted(self._collections_root().glob("*/collection.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            record = V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            record = self._read_collection_file(path)
+            if record is None:
+                continue
             if record.status != "deleted":
                 records.append(record)
         return records
@@ -57,7 +61,9 @@ class V3RunStore:
     def list_deleted_collections(self) -> list[V3CollectionRecord]:
         records: list[V3CollectionRecord] = []
         for path in sorted(self._collections_root().glob("*/collection.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            record = V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            record = self._read_collection_file(path)
+            if record is None:
+                continue
             if record.status == "deleted":
                 records.append(record)
         return records
@@ -66,9 +72,13 @@ class V3RunStore:
         path = self._collection_dir(collection_id) / "collection.json"
         if not path.is_file():
             raise KeyError(f"v3 collection not found: {collection_id}")
-        return V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        record = self._read_collection_file(path)
+        if record is None:
+            raise KeyError(f"v3 collection metadata is corrupted: {collection_id}")
+        return record
 
     def create_run(self, config: V3TaskConfig, collection_id: str | None = None) -> V3RunRecord:
+        config = config.model_copy(deep=True)
         if collection_id is not None:
             config.collection_id = collection_id
         collection = self.create_collection(config)
@@ -76,6 +86,7 @@ class V3RunStore:
         display_name = config.display_name or config.task_name or config.app_name or run_id
         config.display_name = display_name
         config.collection_id = collection.collection_id
+        self._ensure_collection_io_dirs(config, collection.collection_id, display_name)
         round_index = len(collection.run_ids) + 1
         record = V3RunRecord(
             run_id=run_id,
@@ -97,7 +108,9 @@ class V3RunStore:
     def list_runs(self) -> list[V3RunRecord]:
         records: list[V3RunRecord] = []
         for path in sorted(self.root.glob("*/run.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            record = V3RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            record = self._read_run_file(path)
+            if record is None:
+                continue
             if record.status != "deleted":
                 records.append(record)
         return records
@@ -106,7 +119,10 @@ class V3RunStore:
         path = self._run_path(run_id)
         if not path.is_file():
             raise KeyError(f"v3 run not found: {run_id}")
-        return V3RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        record = self._read_run_file(path)
+        if record is None:
+            raise KeyError(f"v3 run metadata is corrupted: {run_id}")
+        return record
 
     def update_status(self, run_id: str, status: str, error: str | None = None) -> V3RunRecord:
         record = self.get_run(run_id)
@@ -244,10 +260,17 @@ class V3RunStore:
 
     def collection_summary(self, collection_id: str) -> V3CollectionSummary:
         collection = self.get_collection(collection_id)
+        if self._ensure_collection_io_dirs(
+            collection.config,
+            collection.collection_id,
+            collection.display_name or collection.task_name or collection.app_name or collection.collection_id,
+        ):
+            self._write_collection(collection)
         run_summaries: list[dict[str, object]] = []
         processed_total = accepted_total = rejected_total = failed_total = action_total = 0
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
+        latest_action: dict[str, object] | None = None
         for index, run_id in enumerate(collection.run_ids, start=1):
             try:
                 run_record = self.get_run(run_id)
@@ -257,6 +280,8 @@ class V3RunStore:
                 continue
             images = self.list_images(run_id)
             actions = self.list_meta_jsonl(run_id, "actions.jsonl")
+            if actions:
+                latest_action = actions[-1]
             accepted = [image for image in images if image.bucket == "accepted"]
             rejected = [image for image in images if image.bucket == "rejected"]
             new_unique = [image for image in accepted if bool(image.meta.get("collection_unique"))]
@@ -306,6 +331,9 @@ class V3RunStore:
             app_type=config.app_type,
             target_language=config.target_language,
             text_policy=config.text_policy,
+            input_dir=config.input_dir,
+            frame_pump_output_dir=config.frame_pump_output_dir,
+            watch_dir=config.watch_dir,
             target_accepted_min=config.target_accepted_min,
             target_accepted_soft=config.target_accepted_soft,
             target_accepted_max=config.target_accepted_max,
@@ -327,6 +355,11 @@ class V3RunStore:
             latest_round_failed=int(latest_round.get("failed", 0)) if latest_round else 0,
             latest_round_action_count=int(latest_round.get("actions", 0)) if latest_round else 0,
             latest_round_top_reject_reasons=list(latest_round.get("top_reject_reasons", [])) if latest_round else [],
+            latest_action=latest_action,
+            latest_blocked_reason=_action_blocked_reason(latest_action),
+            game_agent_status=_game_agent_status(config, latest_action),
+            game_agent_state=str((latest_action or {}).get("observed_state") or "unknown"),
+            game_agent_enabled_capabilities=_game_agent_capabilities(config),
             min_target_reached=accepted_unique_total >= config.target_accepted_min,
             soft_target_reached=accepted_unique_total >= config.target_accepted_soft,
             max_target_reached=accepted_unique_total >= config.target_accepted_max,
@@ -335,19 +368,22 @@ class V3RunStore:
             visual_fill_total=visual_fill_total,
             visual_fill_ratio=round(visual_fill_total / accepted_unique_total, 4) if accepted_unique_total else 0.0,
             continue_suggestion=suggestion,
-            accepted_unique_dir=str(self._collection_dir(collection_id) / "accepted_unique"),
-            export_dir=str(self._collection_dir(collection_id) / "exports"),
+            accepted_unique_dir=str((self._collection_dir(collection_id) / "accepted_unique").resolve()),
+            export_dir=str((self._collection_dir(collection_id) / "exports").resolve()),
             runs=run_summaries,
         )
         return summary
 
     def export_collection(self, collection_id: str) -> V3CollectionExportResult:
         summary = self.refresh_collection_summary(collection_id)
+        unique_images = self.collection_images(collection_id, unique_only=True)
+        if not unique_images:
+            raise ValueError("no_accepted_unique_images")
         export_dir = self._collection_dir(collection_id) / "exports" / utc_now().replace(":", "").replace("+", "_").replace(".", "_")
         images_dir = export_dir / "accepted_unique"
         images_dir.mkdir(parents=True, exist_ok=True)
         manifest: list[dict[str, object]] = []
-        for image in self.collection_images(collection_id, unique_only=True):
+        for image in unique_images:
             source = Path(image.path)
             dest = images_dir / source.name
             if source.is_file() and not dest.exists():
@@ -389,18 +425,28 @@ class V3RunStore:
             status="exported",
             export_dir=str(export_dir),
             archive_path=str(archive_path),
+            zip_path=str(archive_path),
             manifest_path=str(manifest_path),
             summary_path=str(summary_path),
             rejection_summary_path=str(rejection_path),
             duplicate_summary_path=str(duplicate_path),
             accepted_unique_total=summary.accepted_unique_total,
+            message="导出成功",
         )
 
     def list_images(self, run_id: str) -> list[V3ImageRecord]:
         path = self._run_dir(run_id) / "images.jsonl"
         if not path.is_file():
             return []
-        return [V3ImageRecord.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        records: list[V3ImageRecord] = []
+        for index, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                records.append(V3ImageRecord.model_validate_json(line))
+            except Exception as exc:
+                self._write_corrupt_metadata_audit(path, exc, line=index)
+        return records
 
     def append_event(self, run_id: str, event: str, details: dict[str, object] | None = None) -> V3Event:
         entry = V3Event(event=event, details=details or {})
@@ -414,7 +460,15 @@ class V3RunStore:
         path = self._run_dir(run_id) / "events.jsonl"
         if not path.is_file():
             return []
-        return [V3Event.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        records: list[V3Event] = []
+        for index, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                records.append(V3Event.model_validate_json(line))
+            except Exception as exc:
+                self._write_corrupt_metadata_audit(path, exc, line=index)
+        return records
 
     def run_dir(self, run_id: str) -> Path:
         self.get_run(run_id)
@@ -439,7 +493,17 @@ class V3RunStore:
         path = self._run_dir(run_id) / "meta" / name
         if not path.is_file():
             return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        records: list[dict[str, object]] = []
+        for index, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                if isinstance(item, dict):
+                    records.append(item)
+            except Exception as exc:
+                self._write_corrupt_metadata_audit(path, exc, line=index)
+        return records
 
     def summary(
         self,
@@ -575,6 +639,31 @@ class V3RunStore:
             (path / name).mkdir(parents=True, exist_ok=True)
         return path
 
+    def _ensure_collection_io_dirs(self, config: V3TaskConfig, collection_id: str, display_name: str) -> bool:
+        previous = (config.input_dir, config.frame_pump_output_dir, config.watch_dir)
+        configured = config.input_dir or config.frame_pump_output_dir or config.watch_dir
+        if configured:
+            input_dir = Path(configured)
+        else:
+            short_id = _collection_short_id(collection_id)
+            safe_name = _safe_windows_name(display_name or collection_id)
+            input_dir = _default_obs_output_root() / f"{safe_name}_{short_id}"
+        input_dir.mkdir(parents=True, exist_ok=True)
+        resolved = str(input_dir)
+        config.input_dir = resolved
+        config.frame_pump_output_dir = resolved
+        config.watch_dir = resolved
+        if config.enable_game_explorer and not config.enable_game_agent:
+            config.enable_game_agent = True
+        if config.enable_game_agent and config.game_agent_mode == "off":
+            config.game_agent_mode = "auto_explore"
+        if config.allow_wasd_mouse:
+            config.allow_wasd = True
+            config.allow_mouse_look = True
+        if config.safe_game_scene_confirmed and not config.safe_scene_confirmed:
+            config.safe_scene_confirmed = True
+        return previous != (config.input_dir, config.frame_pump_output_dir, config.watch_dir)
+
     def _collection_id_for(self, config: V3TaskConfig) -> str:
         base = "|".join(
             [
@@ -664,6 +753,20 @@ class V3RunStore:
         path = self._run_path(record.run_id)
         path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
 
+    def _read_collection_file(self, path: Path) -> V3CollectionRecord | None:
+        try:
+            return V3CollectionRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self._write_corrupt_metadata_audit(path, exc)
+            return None
+
+    def _read_run_file(self, path: Path) -> V3RunRecord | None:
+        try:
+            return V3RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self._write_corrupt_metadata_audit(path, exc)
+            return None
+
     def _trash_root(self) -> Path:
         path = self.root / "trash"
         path.mkdir(parents=True, exist_ok=True)
@@ -706,6 +809,18 @@ class V3RunStore:
         with audit.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
+    def _write_corrupt_metadata_audit(self, path: Path, exc: Exception, line: int | None = None) -> None:
+        audit = self._trash_root() / "corrupt_metadata_audit.jsonl"
+        payload = {
+            "path": str(path),
+            "line": line,
+            "error": str(exc),
+            "detected_at": utc_now(),
+            "operator": "local",
+        }
+        with audit.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
     def _increment(self, run_id: str, key: str) -> None:
         try:
             record = self.get_run(run_id)
@@ -731,6 +846,72 @@ def _default_v3_runs_root() -> Path:
         return Path("runs/v3")
     root = Path(app_shot_runs)
     return root if root.name.lower() == "v3" else root / "v3"
+
+
+def _default_obs_output_root() -> Path:
+    explicit = os.environ.get("APP_SHOT_OBS_OUTPUT")
+    if explicit:
+        return Path(explicit)
+    home = os.environ.get("APP_SHOT_HOME")
+    if home:
+        return Path(home) / "obs-output"
+    return Path("obs-output")
+
+
+def _collection_short_id(collection_id: str) -> str:
+    tail = collection_id.rsplit("_", 1)[-1]
+    return (tail or collection_id)[0:6]
+
+
+def _safe_windows_name(value: str) -> str:
+    cleaned = "".join("_" if char in '/\\:*?"<>|' else char for char in value.strip())
+    cleaned = "_".join(part for part in cleaned.split() if part)
+    cleaned = cleaned.strip(" ._")
+    return cleaned[:40] or "collection"
+
+
+def _game_agent_capabilities(config: V3TaskConfig) -> list[str]:
+    capabilities: list[str] = []
+    if config.allow_ui_click or config.enable_auto_click:
+        capabilities.append("UI 点击")
+    if config.allow_hotkeys:
+        capabilities.append("热键探索")
+    if config.allow_wasd:
+        capabilities.append("WASD")
+    if config.allow_mouse_look:
+        capabilities.append("鼠标视角")
+    if config.allow_back_close:
+        capabilities.append("返回/关闭")
+    if config.allow_inventory_map_explore:
+        capabilities.append("地图/背包/仓库探索")
+    if config.allow_training_movement:
+        capabilities.append("训练场移动探索")
+    return capabilities
+
+
+def _action_blocked_reason(action: dict[str, object] | None) -> str | None:
+    if not action:
+        return None
+    result = action.get("result", {})
+    if isinstance(result, dict) and result.get("executed") is True:
+        return None
+    reason = action.get("blocked_reason")
+    if reason:
+        return str(reason)
+    if isinstance(result, dict) and result.get("reason"):
+        return str(result["reason"])
+    return None
+
+
+def _game_agent_status(config: V3TaskConfig, latest_action: dict[str, object] | None) -> str:
+    if not config.enable_game_agent and not config.enable_game_explorer:
+        return "未启用"
+    reason = _action_blocked_reason(latest_action)
+    if reason:
+        return "被阻止"
+    if latest_action:
+        return "运行中"
+    return "等待首帧"
 
 
 def _count_meta_values(images: list[V3ImageRecord], key: str, default: str) -> dict[str, int]:

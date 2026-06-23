@@ -20,6 +20,7 @@ export function V3CurrentRunRoute() {
   const [message, setMessage] = useState("正在读取当前采集项目。");
   const [showLegacyRuns, setShowLegacyRuns] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [exportResult, setExportResult] = useState<{ collectionId: string; text: string } | null>(null);
 
   useEffect(() => {
     void load();
@@ -58,6 +59,7 @@ export function V3CurrentRunRoute() {
       .filter((item) => item.collection_id === preferredCollectionId)
       .concat(collections.filter((item) => item.collection_id !== preferredCollectionId));
   }, [collections, preferredCollectionId]);
+  const primaryCollection = orderedCollections[0];
 
   const legacyRuns = useMemo(() => runs.filter((run) => !run.collection_id && !isDebugRun(run)), [runs]);
   const debugRuns = useMemo(() => runs.filter((run) => isDebugRun(run)), [runs]);
@@ -66,10 +68,12 @@ export function V3CurrentRunRoute() {
     if (busyAction) return;
     setBusyAction(`continue:${collectionId}`);
     try {
+      const collection = collections.find((item) => item.collection_id === collectionId);
+      const outputDir = collection?.watch_dir || collection?.input_dir || collection?.frame_pump_output_dir || undefined;
       if (framePump && framePump.status !== "running") {
         const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
         if (!shouldStart) return;
-        await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket" });
+        await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket", output_dir: outputDir });
       }
       const run = await apiClient.continueV3Collection(collectionId);
       await load(false);
@@ -99,12 +103,36 @@ export function V3CurrentRunRoute() {
     }
   }
 
-  async function exportCollection(collectionId: string) {
+  async function exportCollection(collection: V3CollectionSummary) {
+    if (busyAction) return;
+    setBusyAction(`export:${collection.collection_id}`);
+    setExportResult(null);
+    if (collection.accepted_unique_total <= 0) {
+      const text = "当前没有最终有效图，无法导出。请先完成采集或查看被拒绝原因。";
+      setMessage(text);
+      setExportResult({ collectionId: collection.collection_id, text });
+      setBusyAction(null);
+      return;
+    }
     try {
-      const result = await apiClient.exportV3Collection(collectionId);
-      setMessage(`最终有效截图已导出：${result.accepted_unique_total} 张，目录 ${result.export_dir}`);
+      setMessage("正在导出最终有效图...");
+      const result = await apiClient.exportV3Collection(collection.collection_id);
+      const text = [
+        result.message || "导出成功",
+        `最终有效图数量：${result.accepted_unique_total}`,
+        `导出目录：${result.export_dir}`,
+        `zip 包：${result.zip_path || result.archive_path || "-"}`,
+        `manifest：${result.manifest_path}`,
+        `summary：${result.summary_path}`
+      ].join("\n");
+      setExportResult({ collectionId: collection.collection_id, text });
+      setMessage(text);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      const text = error instanceof Error ? error.message : String(error);
+      setExportResult({ collectionId: collection.collection_id, text });
+      setMessage(text);
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -143,16 +171,22 @@ export function V3CurrentRunRoute() {
     }
   }
 
-  async function openInputFolder() {
-    const result = await apiClient.openV3InputFolder();
+  async function openInputFolder(collectionId?: string) {
+    const result = await apiClient.openV3InputFolder(collectionId);
     setMessage(`OBS 输出目录：${result.status} ${result.path}`);
+  }
+
+  async function openExportFolder(collectionId: string) {
+    const result = await apiClient.openV3CollectionExportFolder(collectionId);
+    setMessage(`导出目录：${result.status} ${result.path}`);
   }
 
   async function startFramePump() {
     if (busyAction) return;
     setBusyAction("frame-pump:start");
     try {
-      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket" });
+      const outputDir = primaryCollection?.watch_dir || primaryCollection?.input_dir || primaryCollection?.frame_pump_output_dir || undefined;
+      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket", output_dir: outputDir });
       setFramePump(status);
       await load(false);
       setMessage(status.message);
@@ -191,17 +225,17 @@ export function V3CurrentRunRoute() {
         </div>
         <p className="mt-3 text-sm text-amber-200">{inputStatus?.message}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder()}>打开 OBS 输出目录</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder(primaryCollection?.collection_id)}>打开 OBS 输出目录</button>
           <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void load()}>刷新输入状态</button>
         </div>
       </Card>
 
-      <ObsFramePumpPanel onMessage={setMessage} />
+      <ObsFramePumpPanel collectionId={primaryCollection?.collection_id} outputDir={primaryCollection?.watch_dir || primaryCollection?.input_dir} onMessage={setMessage} />
 
       <Card title="Frame Pump" className="mt-4">
         <div className="grid gap-3 md:grid-cols-5">
           <Metric label="状态" value={framePumpStatusText(framePump?.status)} />
-          <Metric label="输出目录" value={framePump?.output_dir || inputStatus?.watch_dir || "D:\\work\\app-shot\\obs-output"} />
+          <Metric label="输出目录" value={primaryCollection?.watch_dir || primaryCollection?.input_dir || framePump?.output_dir || inputStatus?.watch_dir || "D:\\work\\app-shot\\obs-output"} />
           <Metric label="最近输出帧" value={framePump?.latest_frame || "暂无"} />
           <Metric label="最近输出时间" value={framePump?.latest_frame_time || "-"} />
           <Metric label="已输出帧数" value={String(framePump?.frame_count ?? 0)} />
@@ -212,8 +246,8 @@ export function V3CurrentRunRoute() {
         {framePump?.status === "stale" || inputStatus?.status === "stale" ? <p className="mt-2 text-sm text-amber-200">等待 Frame Pump 输出截图</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="rounded-lg border border-blue-500/40 px-3 py-2 text-sm text-blue-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void startFramePump()}>{busyAction === "frame-pump:start" ? "启动中..." : "启动 Frame Pump"}</button>
-          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || framePump?.status !== "running"} onClick={() => void stopFramePump()}>{busyAction === "frame-pump:stop" ? "停止中..." : "停止 Frame Pump"}</button>
-          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder()}>打开输出目录</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !["running", "stale", "error"].includes(framePump?.status || "")} onClick={() => void stopFramePump()}>{busyAction === "frame-pump:stop" ? "停止中..." : "停止 Frame Pump"}</button>
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder(primaryCollection?.collection_id)}>打开输出目录</button>
         </div>
       </Card>
 
@@ -260,6 +294,23 @@ export function V3CurrentRunRoute() {
               ]} />
             </div>
 
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <p className="text-sm font-semibold text-slate-200">AI 自动探索状态</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <Metric label="AI 自动探索" value={collection.game_agent_status || "未启用"} />
+                <Metric label="当前识别状态" value={collection.game_agent_state || "unknown"} />
+                <Metric label="本轮动作次数" value={`${collection.latest_round_action_count} 次`} />
+                <Metric label="累计动作次数" value={`${collection.action_total} 次`} />
+              </div>
+              <div className="mt-3 grid gap-2 text-sm text-slate-400">
+                <span>已启用能力：{collection.game_agent_enabled_capabilities?.join("、") || "无"}</span>
+                <span>最近动作：{String(collection.latest_action?.action_type || collection.latest_action?.planned_action || "-")}</span>
+                <span>最近动作原因：{String(collection.latest_action?.reason || "-")}</span>
+                <span>最近阻止原因：{collection.latest_blocked_reason || "-"}</span>
+                <span>visual_diff_score：{String(collection.latest_action?.visual_diff_score ?? "-")}</span>
+              </div>
+            </div>
+
             {collection.continue_suggestion ? <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{collection.continue_suggestion}</p> : null}
 
             <p className="mt-3 text-xs text-slate-500">
@@ -271,17 +322,24 @@ export function V3CurrentRunRoute() {
               <ActionButton icon={<Square size={15} />} label={collection.status === "stopped" ? "已停止" : busyAction === `stop:${collection.collection_id}` ? "停止中..." : "停止项目"} disabled={Boolean(busyAction) || collection.status === "stopped"} onClick={() => void stopCollection(collection)} />
               <LinkButton icon={<Images size={15} />} label="查看累计图库" to={`/v3/collections/${collection.collection_id}/gallery`} />
               <LinkButton icon={<ClipboardList size={15} />} label="查看所有轮次" to={`/v3/collections/${collection.collection_id}/runs`} />
-              <ActionButton icon={<Archive size={15} />} label="导出最终有效图" onClick={() => void exportCollection(collection.collection_id)} />
+              <ActionButton icon={<Archive size={15} />} label={busyAction === `export:${collection.collection_id}` ? "正在导出..." : "导出最终有效图"} disabled={Boolean(busyAction)} onClick={() => void exportCollection(collection)} />
               <ActionButton
                 icon={<Trash2 size={15} />}
                 label={busyAction === `delete:${collection.collection_id}` ? "删除中..." : "删除项目"}
                 disabled={Boolean(busyAction) || ["running", "collecting", "waiting_for_input", "waiting_for_input_timeout"].includes(collection.status)}
                 onClick={() => void deleteCollection(collection)}
               />
-              <button className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => setMessage(`最终有效图库：${collection.accepted_unique_dir || "-"}`)}>
+              <button className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openInputFolder(collection.collection_id)}>
                 <FolderOpen size={15} />打开文件夹
               </button>
             </div>
+
+            {exportResult?.collectionId === collection.collection_id ? (
+              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <pre className="whitespace-pre-wrap text-sm text-slate-300">{exportResult.text}</pre>
+                <button className="mt-3 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" onClick={() => void openExportFolder(collection.collection_id)}>打开导出目录</button>
+              </div>
+            ) : null}
 
             <details className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3">
               <summary className="cursor-pointer text-sm text-slate-300">所有轮次 / 高级调试</summary>

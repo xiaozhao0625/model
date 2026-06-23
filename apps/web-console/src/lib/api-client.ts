@@ -108,7 +108,9 @@ export interface ApiClient {
   stopV3FramePump(): Promise<V3FramePumpStatus>;
   testV3FramePumpShot(payload?: V3FramePumpStartRequest): Promise<V3ObsScreenshotResult>;
   getV3FramePumpLatestFrameUrl(): string;
-  openV3InputFolder(): Promise<V3OpenPathResult>;
+  openV3InputFolder(collectionId?: string): Promise<V3OpenPathResult>;
+  openV3CollectionInputFolder(collectionId: string): Promise<V3OpenPathResult>;
+  openV3CollectionExportFolder(collectionId: string): Promise<V3OpenPathResult>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
   getV3Images(runId: string): Promise<V3ImageRecord[]>;
@@ -322,7 +324,12 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     testV3FramePumpShot: (payload = {}) =>
       requestV3<V3ObsScreenshotResult>("/api/v3/frame-pump/test-shot", { method: "POST", body: JSON.stringify(payload) }),
     getV3FramePumpLatestFrameUrl: () => `${root}/api/v3/frame-pump/latest-frame`,
-    openV3InputFolder: () => requestV3<V3OpenPathResult>("/api/v3/input/open-folder", { method: "POST", body: JSON.stringify({}) }),
+    openV3InputFolder: (collectionId) =>
+      requestV3<V3OpenPathResult>(`/api/v3/input/open-folder${collectionId ? `?collection_id=${encodeURIComponent(collectionId)}` : ""}`, { method: "POST", body: JSON.stringify({}) }),
+    openV3CollectionInputFolder: (collectionId) =>
+      requestV3<V3OpenPathResult>(`/api/v3/collections/${collectionId}/open-input-folder`, { method: "POST", body: JSON.stringify({}) }),
+    openV3CollectionExportFolder: (collectionId) =>
+      requestV3<V3OpenPathResult>(`/api/v3/collections/${collectionId}/open-export-folder`, { method: "POST", body: JSON.stringify({}) }),
     getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
     getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),
     getV3Images: (runId) => requestV3<V3ImageRecord[]>(`/api/v3/runs/${runId}/images`),
@@ -371,6 +378,16 @@ function mockV3Defaults(): V3TaskConfig {
     app_type: "auto",
     target_language: "zh",
     capture_source: "folder_watch",
+    input_dir: null,
+    frame_pump_output_dir: null,
+    watch_dir: null,
+    obs_host: "127.0.0.1",
+    obs_port: 4455,
+    obs_scene_name: null,
+    obs_source_name: null,
+    screenshot_target: "source",
+    image_format: "png",
+    image_quality: 90,
     capture_interval_ms: 1000,
     save_root: "runs/v3",
     enable_ocr: true,
@@ -396,6 +413,16 @@ function mockV3Defaults(): V3TaskConfig {
     game_action_preset: "screenshot_only",
     allow_wasd_mouse: false,
     safe_game_scene_confirmed: false,
+    enable_game_agent: false,
+    game_agent_mode: "off",
+    allow_ui_click: true,
+    allow_hotkeys: true,
+    allow_wasd: false,
+    allow_mouse_look: false,
+    allow_back_close: true,
+    allow_inventory_map_explore: true,
+    allow_training_movement: false,
+    safe_scene_confirmed: false,
     action_interval_ms: 1500
   };
 }

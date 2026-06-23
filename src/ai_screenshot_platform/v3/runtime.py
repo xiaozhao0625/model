@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ai_screenshot_platform.v3.capture.folder_watch import list_new_images
 from ai_screenshot_platform.v3.capture.obs_websocket import config_from_payload, list_scenes, list_sources, obs_status, take_obs_screenshot
+from ai_screenshot_platform.v3.game.agent_loop import GameAgentLoop
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
 from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.action.rollback import rollback_plan
@@ -69,6 +70,8 @@ class V3Runtime:
         self._watch_threads: dict[str, threading.Thread] = {}
         self._watch_seen: dict[str, set[str]] = {}
         self._watch_waiting_since: dict[str, float] = {}
+        self._game_agent_threads: dict[str, threading.Thread] = {}
+        self._game_agent_last_blocked_reason: dict[str, str] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -93,6 +96,14 @@ class V3Runtime:
 
     def collection_gallery(self, collection_id: str) -> list[V3ImageRecord]:
         return self.store.collection_images(collection_id, unique_only=True)
+
+    def collection_input_dir(self, collection_id: str) -> Path:
+        collection = self.store.refresh_collection_summary(collection_id)
+        return Path(collection.watch_dir or collection.input_dir or self._watch_dir())
+
+    def collection_export_dir(self, collection_id: str) -> Path:
+        summary = self.store.refresh_collection_summary(collection_id)
+        return Path(summary.export_dir or self.store._collection_dir(collection_id) / "exports")
 
     def continue_collection(self, collection_id: str) -> V3RunRecord:
         return self.store.continue_collection(collection_id)
@@ -144,12 +155,12 @@ class V3Runtime:
 
     def start_run(self, run_id: str) -> V3RunRecord:
         record = self.get_run(run_id)
-        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
-            self.start_frame_pump(self._frame_pump_request_for_config(record.config))
-        watch_dir = self._watch_dir()
+        watch_dir = self._watch_dir_for_run(run_id)
+        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status(output_dir=watch_dir).status != "running":
+            self.start_frame_pump(self._frame_pump_request_for_config(record.config, output_dir=watch_dir))
         watch_dir.mkdir(parents=True, exist_ok=True)
         self._watch_seen[run_id] = {str(path.resolve()) for path in list_new_images(watch_dir)}
-        input_status = self.input_status()
+        input_status = self.input_status(run_id=run_id)
         status = "waiting_for_input" if input_status.status in {"waiting_for_input", "stale"} else "running"
         record = self.store.update_status(run_id, status)
         self.store.append_event(
@@ -158,6 +169,7 @@ class V3Runtime:
             {"observe_only": record.config.observe_only, "watch_dir": str(watch_dir), "input_status": input_status.model_dump()},
         )
         self._ensure_watch_thread(run_id)
+        self._ensure_game_agent_thread(run_id)
         return record
 
     def pause_run(self, run_id: str) -> V3RunRecord:
@@ -166,11 +178,14 @@ class V3Runtime:
         return record
 
     def resume_run(self, run_id: str) -> V3RunRecord:
-        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status().status != "running":
-            self.start_frame_pump(self._frame_pump_request_for_config(record.config))
+        record = self.get_run(run_id)
+        watch_dir = self._watch_dir_for_run(run_id)
+        if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") != "1" and self.frame_pump_status(output_dir=watch_dir).status != "running":
+            self.start_frame_pump(self._frame_pump_request_for_config(record.config, output_dir=watch_dir))
         record = self.store.update_status(run_id, "waiting_for_input")
         self.store.append_event(run_id, "run_resumed", {})
         self._ensure_watch_thread(run_id)
+        self._ensure_game_agent_thread(run_id)
         return record
 
     def stop_run(self, run_id: str) -> V3RunRecord:
@@ -181,15 +196,20 @@ class V3Runtime:
     def run_status(self, run_id: str) -> dict[str, object]:
         record = self.get_run(run_id)
         summary = self.summary(run_id)
-        input_status = self.input_status()
+        input_status = self.input_status(run_id=run_id)
         return {
             "run": record.model_dump(),
             "summary": summary.model_dump(),
             "input_status": input_status.model_dump(),
         }
 
-    def frame_pump_status(self) -> V3FramePumpStatus:
-        output_dir = self._watch_dir()
+    def frame_pump_status(
+        self,
+        collection_id: str | None = None,
+        run_id: str | None = None,
+        output_dir: str | Path | None = None,
+    ) -> V3FramePumpStatus:
+        output_dir = self._frame_pump_status_output_dir(collection_id=collection_id, run_id=run_id, output_dir=output_dir)
         heartbeat = self._frame_pump_heartbeat_path()
         pid_file = self._frame_pump_pid_path()
         pid = _read_int(pid_file)
@@ -255,14 +275,18 @@ class V3Runtime:
 
     def start_frame_pump(self, request: V3FramePumpStartRequest | None = None) -> V3FramePumpStatus:
         request = request or V3FramePumpStartRequest()
+        requested_output_dir = Path(request.output_dir) if request.output_dir else self._active_watch_dir()
         if os.environ.get("APP_SHOT_DISABLE_FRAME_PUMP") == "1":
-            status = self.frame_pump_status()
+            status = self.frame_pump_status(output_dir=requested_output_dir)
             status.message = "Frame Pump disabled by APP_SHOT_DISABLE_FRAME_PUMP"
             return status
-        status = self.frame_pump_status()
-        if status.status == "running":
+        status = self.frame_pump_status(output_dir=requested_output_dir)
+        heartbeat_output = _frame_pump_heartbeat_output_dir(self._frame_pump_heartbeat_path())
+        if status.status == "running" and heartbeat_output and _same_path(heartbeat_output, requested_output_dir):
             return status
-        output_dir = self._watch_dir()
+        if status.pid:
+            self.stop_frame_pump()
+        output_dir = requested_output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         stop_file = self._frame_pump_stop_path()
         stop_file.unlink(missing_ok=True)
@@ -331,7 +355,7 @@ class V3Runtime:
     def obs_test_screenshot(self, request: V3ObsConfigRequest | None = None) -> dict[str, object]:
         config = config_from_payload(request.model_dump() if request else None)
         try:
-            return take_obs_screenshot(config, self._watch_dir(), frame_index=int(time.time()))
+            return take_obs_screenshot(config, self._test_watch_dir(), frame_index=int(time.time()))
         except Exception as exc:
             return {
                 "ok": False,
@@ -359,9 +383,9 @@ class V3Runtime:
             return self.obs_test_screenshot(obs_request)
         from PIL import ImageGrab
 
-        self._watch_dir().mkdir(parents=True, exist_ok=True)
+        self._test_watch_dir().mkdir(parents=True, exist_ok=True)
         image = ImageGrab.grab(all_screens=request.full_screen)
-        frame_path = self._watch_dir() / f"frame_{time.strftime('%Y%m%d_%H%M%S')}_test_{request.source_mode}.png"
+        frame_path = self._test_watch_dir() / f"frame_{time.strftime('%Y%m%d_%H%M%S')}_test_{request.source_mode}.png"
         image.save(frame_path)
         return {"ok": True, "image_path": str(frame_path), "width": image.width, "height": image.height, "source_mode": request.source_mode}
 
@@ -371,6 +395,8 @@ class V3Runtime:
         deadline = time.time() + 3.0
         while pid and _process_exists(pid) and time.time() < deadline:
             time.sleep(0.1)
+        if pid and _process_exists(pid):
+            _terminate_process(pid)
         heartbeat_status = ""
         heartbeat = self._frame_pump_heartbeat_path()
         if heartbeat.is_file():
@@ -406,12 +432,17 @@ class V3Runtime:
             input_gateway_blockers=health.input_gateway_blockers,
             readiness_blockers=health.readiness_blockers,
         )
-        summary.input_status = self.input_status()
+        summary.input_status = self.input_status(run_id=run_id)
         summary.status = self._derived_status(self.get_run(run_id), summary, summary.input_status)
         return summary
 
-    def input_status(self) -> V3InputStatus:
-        watch_dir = self._watch_dir()
+    def input_status(
+        self,
+        collection_id: str | None = None,
+        run_id: str | None = None,
+        output_dir: str | Path | None = None,
+    ) -> V3InputStatus:
+        watch_dir = self._resolve_watch_dir(collection_id=collection_id, run_id=run_id, output_dir=output_dir)
         if not watch_dir.exists():
             return V3InputStatus(
                 watch_dir=str(watch_dir),
@@ -651,6 +682,63 @@ class V3Runtime:
             return Path(home) / "obs-output"
         return Path("obs-output")
 
+    def _test_watch_dir(self) -> Path:
+        return self._watch_dir() / "_test"
+
+    def _watch_dir_for_config(self, config: V3TaskConfig) -> Path:
+        return Path(config.watch_dir or config.input_dir or config.frame_pump_output_dir or self._watch_dir())
+
+    def _watch_dir_for_run(self, run_id: str) -> Path:
+        return self._watch_dir_for_config(self.get_run(run_id).config)
+
+    def _watch_dir_for_collection(self, collection_id: str) -> Path:
+        collection = self.store.refresh_collection_summary(collection_id)
+        return Path(collection.watch_dir or collection.input_dir or self._watch_dir())
+
+    def _active_watch_dir(self) -> Path:
+        active_statuses = {"running", "waiting_for_input", "waiting_for_input_timeout"}
+        default_dir = self._watch_dir()
+        for run in self.list_runs():
+            if run.status in active_statuses:
+                candidate = self._watch_dir_for_config(run.config)
+                if not os.environ.get("APP_SHOT_OBS_OUTPUT") or _path_is_relative_to(candidate, default_dir):
+                    return candidate
+        collections = self.list_collections()
+        if collections:
+            candidate = self._watch_dir_for_config(collections[0].config)
+            if not os.environ.get("APP_SHOT_OBS_OUTPUT") or _path_is_relative_to(candidate, default_dir):
+                return candidate
+        return default_dir
+
+    def _resolve_watch_dir(
+        self,
+        collection_id: str | None = None,
+        run_id: str | None = None,
+        output_dir: str | Path | None = None,
+    ) -> Path:
+        if output_dir:
+            return Path(output_dir)
+        if run_id:
+            return self._watch_dir_for_run(run_id)
+        if collection_id:
+            return self._watch_dir_for_collection(collection_id)
+        return self._active_watch_dir()
+
+    def _frame_pump_status_output_dir(
+        self,
+        collection_id: str | None = None,
+        run_id: str | None = None,
+        output_dir: str | Path | None = None,
+    ) -> Path:
+        if output_dir or run_id or collection_id:
+            return self._resolve_watch_dir(collection_id=collection_id, run_id=run_id, output_dir=output_dir)
+        pid = _read_int(self._frame_pump_pid_path())
+        if pid and _process_exists(pid):
+            heartbeat_dir = _frame_pump_heartbeat_output_dir(self._frame_pump_heartbeat_path())
+            if heartbeat_dir is not None:
+                return heartbeat_dir
+        return self._active_watch_dir()
+
     def _frame_pump_root(self) -> Path:
         home = os.environ.get("APP_SHOT_HOME")
         root = Path(home) if home else Path("runs")
@@ -675,13 +763,24 @@ class V3Runtime:
         home = os.environ.get("APP_SHOT_HOME")
         return (Path(home) if home else Path(".")) / "logs" / "frame_pump_status.json"
 
-    def _frame_pump_request_for_config(self, config: V3TaskConfig) -> V3FramePumpStartRequest:
+    def _frame_pump_request_for_config(self, config: V3TaskConfig, output_dir: str | Path | None = None) -> V3FramePumpStartRequest:
         fps = max(0.2, min(10.0, 1000 / max(config.capture_interval_ms, 100)))
         if config.capture_source in {"obs", "obs_websocket"}:
-            return V3FramePumpStartRequest(source_mode="obs_websocket", fps=fps)
+            return V3FramePumpStartRequest(
+                source_mode="obs_websocket",
+                fps=fps,
+                output_dir=str(output_dir or self._watch_dir_for_config(config)),
+                obs_host=config.obs_host,
+                obs_port=config.obs_port,
+                obs_scene_name=config.obs_scene_name,
+                obs_source_name=config.obs_source_name,
+                screenshot_target=config.screenshot_target,
+                image_format=config.image_format,
+                image_quality=config.image_quality,
+            )
         if config.capture_source == "window":
-            return V3FramePumpStartRequest(source_mode="window", fps=fps, full_screen=False)
-        return V3FramePumpStartRequest(source_mode="screen", fps=fps)
+            return V3FramePumpStartRequest(source_mode="window", fps=fps, full_screen=False, output_dir=str(output_dir or self._watch_dir_for_config(config)))
+        return V3FramePumpStartRequest(source_mode="screen", fps=fps, output_dir=str(output_dir or self._watch_dir_for_config(config)))
 
     def _ensure_watch_thread(self, run_id: str) -> None:
         thread = self._watch_threads.get(run_id)
@@ -691,8 +790,84 @@ class V3Runtime:
         self._watch_threads[run_id] = thread
         thread.start()
 
+    def _ensure_game_agent_thread(self, run_id: str) -> None:
+        try:
+            record = self.get_run(run_id)
+        except KeyError:
+            return
+        if not (record.config.enable_game_agent or record.config.enable_game_explorer):
+            return
+        thread = self._game_agent_threads.get(run_id)
+        if thread and thread.is_alive():
+            return
+        thread = threading.Thread(target=self._game_agent_loop, args=(run_id,), daemon=True)
+        self._game_agent_threads[run_id] = thread
+        thread.start()
+
+    def _game_agent_loop(self, run_id: str) -> None:
+        agent = GameAgentLoop()
+        last_effect: str | None = None
+        while True:
+            try:
+                record = self.get_run(run_id)
+            except KeyError:
+                return
+            if record.status in {"stopped", "completed", "failed", "deleted"}:
+                return
+            if record.status == "paused":
+                time.sleep(0.5)
+                continue
+            actions = self.store.list_meta_jsonl(run_id, "actions.jsonl")
+            if sum(1 for action in actions if str(action.get("action_id") or "").startswith("game_agent_")) >= record.config.max_game_actions:
+                return
+            watch_dir = self._watch_dir_for_run(run_id)
+            before = _latest_image(watch_dir)
+            before_image = str(before) if before else None
+
+            def latest_image_path() -> str | None:
+                latest = _latest_image(watch_dir)
+                return str(latest) if latest else None
+
+            action = agent.step(
+                collection_id=record.collection_id,
+                run_id=run_id,
+                agent_step=sum(1 for item in actions if str(item.get("action_id") or "").startswith("game_agent_")) + 1,
+                config=record.config,
+                before_image=before_image,
+                after_image=None,
+                latest_image_fn=latest_image_path,
+                action_interval_ms=record.config.action_interval_ms,
+                ocr_text=_ocr_text_from_latest_action_or_image(actions, self.images(run_id)),
+                last_action_effect=last_effect,
+            )
+            blocked_reason = str(action.get("blocked_reason") or "")
+            if blocked_reason and self._game_agent_last_blocked_reason.get(run_id) == blocked_reason:
+                time.sleep(max(0.5, record.config.action_interval_ms / 1000))
+                continue
+            if blocked_reason:
+                self._game_agent_last_blocked_reason[run_id] = blocked_reason
+            else:
+                self._game_agent_last_blocked_reason.pop(run_id, None)
+            self._write_action_audit(run_id, action)
+            last_effect = str(action.get("verify", {}).get("status")) if isinstance(action.get("verify"), dict) else None
+            after_image = action.get("after_image")
+            if action.get("executed") is True and isinstance(after_image, str) and after_image:
+                self._collect_agent_after_image(run_id, after_image, str(action.get("action_id")), str(action.get("observed_state") or "unknown"))
+            time.sleep(max(0.2, record.config.action_interval_ms / 1000))
+
+    def _collect_agent_after_image(self, run_id: str, image_path: str, action_id: str, ui_state_hint: str) -> None:
+        target = Path(image_path)
+        if not target.is_file():
+            return
+        if any(Path(image.path).resolve() == target.resolve() for image in self.images(run_id)):
+            return
+        try:
+            self.ingest_image(run_id, str(target), capture_reason="after_action", action_id=action_id, ui_state_hint=ui_state_hint)
+        except Exception as exc:
+            self.store.append_event(run_id, "game_agent_collect_failed", {"image": str(target), "error": str(exc)})
+
     def _watch_loop(self, run_id: str) -> None:
-        watch_dir = self._watch_dir()
+        watch_dir = self._watch_dir_for_run(run_id)
         seen = self._watch_seen.setdefault(run_id, set())
         while True:
             try:
@@ -723,7 +898,7 @@ class V3Runtime:
                         "seen": len(seen),
                         "stopped_reason": status,
                         "last_poll_at": utc_now(),
-                        "frame_pump": self.frame_pump_status().model_dump(),
+                        "frame_pump": self.frame_pump_status(run_id=run_id).model_dump(),
                     },
                 )
                 time.sleep(max(0.2, record.config.capture_interval_ms / 1000))
@@ -1586,11 +1761,72 @@ def _process_exists(pid: int) -> bool:
         return False
 
 
+def _terminate_process(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        else:
+            os.kill(pid, 15)
+    except Exception:
+        return
+
+
 def _latest_image(folder: Path) -> Path | None:
     images = list_new_images(folder)
     if not images:
         return None
     return max(images, key=lambda item: item.stat().st_mtime)
+
+
+def _frame_pump_heartbeat_output_dir(path: Path) -> Path | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    output_dir = payload.get("output_dir")
+    return Path(str(output_dir)) if output_dir else None
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return str(left) == str(right)
+
+
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+    except OSError:
+        return str(path).startswith(str(root))
+
+
+def _ocr_text_from_latest_action_or_image(actions: list[dict[str, object]], images: list[V3ImageRecord]) -> str:
+    for action in reversed(actions):
+        observation = action.get("observation")
+        if isinstance(observation, dict) and observation.get("ocr_text"):
+            return str(observation["ocr_text"])
+    for image in reversed(images):
+        ocr = image.meta.get("ocr")
+        if not isinstance(ocr, dict):
+            continue
+        boxes = ocr.get("text_boxes")
+        if not isinstance(boxes, list):
+            continue
+        texts = [str(box.get("text") or "") for box in boxes if isinstance(box, dict)]
+        text = " ".join(item for item in texts if item).strip()
+        if text:
+            return text
+    return ""
 
 
 def _build_duplicate_decision(

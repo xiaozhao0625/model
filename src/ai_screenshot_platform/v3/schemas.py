@@ -12,6 +12,7 @@ AppType = Literal["software", "pc_app", "pc_game", "game", "web", "auto"]
 GameMode = Literal["menu", "gameplay", "auto"]
 TextPolicy = Literal["strict_text", "text_priority_with_fill", "visual_gameplay"]
 GameActionPreset = Literal["screenshot_only", "low_risk_ui_click", "wasd_mouse", "hotkey_explore", "custom"]
+GameAgentMode = Literal["off", "auto_explore"]
 CaptureSource = Literal["obs", "obs_websocket", "folder_watch", "window", "screen", "obs_projector"]
 SafetyMode = Literal["strict", "review", "off"]
 CaptureReason = Literal[
@@ -62,6 +63,16 @@ class V3TaskConfig(BaseModel):
     app_type: AppType = "auto"
     target_language: str = "zh"
     capture_source: CaptureSource = "folder_watch"
+    input_dir: str | None = None
+    frame_pump_output_dir: str | None = None
+    watch_dir: str | None = None
+    obs_host: str = "127.0.0.1"
+    obs_port: int = Field(default=4455, ge=1, le=65535)
+    obs_scene_name: str | None = None
+    obs_source_name: str | None = None
+    screenshot_target: Literal["source", "scene"] = "source"
+    image_format: Literal["png", "jpg", "jpeg"] = "png"
+    image_quality: int = Field(default=90, ge=1, le=100)
     capture_interval_ms: int = Field(default=1000, ge=100, le=60000)
     save_root: str = "runs/v3"
     enable_ocr: bool = True
@@ -87,7 +98,17 @@ class V3TaskConfig(BaseModel):
     game_action_preset: GameActionPreset = "screenshot_only"
     allow_wasd_mouse: bool = False
     safe_game_scene_confirmed: bool = False
-    action_interval_ms: int = Field(default=1500, ge=200, le=60000)
+    enable_game_agent: bool = False
+    game_agent_mode: GameAgentMode = "off"
+    allow_ui_click: bool = True
+    allow_hotkeys: bool = True
+    allow_wasd: bool = False
+    allow_mouse_look: bool = False
+    allow_back_close: bool = True
+    allow_inventory_map_explore: bool = True
+    allow_training_movement: bool = False
+    safe_scene_confirmed: bool = False
+    action_interval_ms: int = Field(default=1500, ge=300, le=10000)
 
 
 class V3RunCreateRequest(BaseModel):
@@ -183,6 +204,9 @@ class V3CollectionSummary(BaseModel):
     app_type: str = "auto"
     target_language: str = "zh"
     text_policy: str = "strict_text"
+    input_dir: str | None = None
+    frame_pump_output_dir: str | None = None
+    watch_dir: str | None = None
     target_accepted_min: int = 800
     target_accepted_soft: int = 1000
     target_accepted_max: int = 2000
@@ -204,6 +228,11 @@ class V3CollectionSummary(BaseModel):
     latest_round_failed: int = 0
     latest_round_action_count: int = 0
     latest_round_top_reject_reasons: list[dict[str, object]] = Field(default_factory=list)
+    latest_action: dict[str, object] | None = None
+    latest_blocked_reason: str | None = None
+    game_agent_status: str = "未启用"
+    game_agent_state: str = "unknown"
+    game_agent_enabled_capabilities: list[str] = Field(default_factory=list)
     min_target_reached: bool = False
     soft_target_reached: bool = False
     max_target_reached: bool = False
@@ -222,11 +251,13 @@ class V3CollectionExportResult(BaseModel):
     status: str
     export_dir: str
     archive_path: str | None = None
+    zip_path: str | None = None
     manifest_path: str
     summary_path: str
     rejection_summary_path: str
     duplicate_summary_path: str
     accepted_unique_total: int
+    message: str = "导出成功"
 
 
 class V3InputStatus(BaseModel):
@@ -245,6 +276,7 @@ class V3FramePumpStartRequest(BaseModel):
     source_mode: Literal["obs_websocket", "screen", "window", "obs_projector"] = "obs_websocket"
     window_title: str | None = None
     full_screen: bool = True
+    output_dir: str | None = None
     obs_host: str = "127.0.0.1"
     obs_port: int = Field(default=4455, ge=1, le=65535)
     obs_password: str | None = None

@@ -22,7 +22,17 @@ export function V3DashboardRoute() {
       setHealth(nextHealth);
       setRuns(visible);
       setInputStatus(nextInput);
-      setSummary(visible[0] ? await apiClient.getV3Summary(visible[0].run_id) : null);
+      if (visible[0]) {
+        try {
+          setSummary(await apiClient.getV3Summary(visible[0].run_id));
+        } catch (summaryError) {
+          setSummary(null);
+          setMessage(`本机 V3 采集服务正常；最近任务摘要暂不可读：${summaryError instanceof Error ? summaryError.message : String(summaryError)}`);
+          return;
+        }
+      } else {
+        setSummary(null);
+      }
       setMessage("本机 V3 采集服务正常。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));

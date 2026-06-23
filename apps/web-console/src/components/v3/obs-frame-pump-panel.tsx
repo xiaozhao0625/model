@@ -14,7 +14,15 @@ import type {
 
 const inputClass = "rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500";
 
-export function ObsFramePumpPanel({ onMessage }: { onMessage?: (message: string) => void }) {
+export function ObsFramePumpPanel({
+  collectionId,
+  outputDir,
+  onMessage
+}: {
+  collectionId?: string;
+  outputDir?: string | null;
+  onMessage?: (message: string) => void;
+}) {
   const [obsConfig, setObsConfig] = useState<V3ObsConfigRequest>({ obs_host: "127.0.0.1", obs_port: 4455, obs_password: "", screenshot_target: "source", image_format: "png" });
   const [sourceMode, setSourceMode] = useState<NonNullable<V3FramePumpStartRequest["source_mode"]>>("obs_websocket");
   const [fps, setFps] = useState(1);
@@ -89,7 +97,7 @@ export function ObsFramePumpPanel({ onMessage }: { onMessage?: (message: string)
 
   async function startFramePump() {
     try {
-      const payload: V3FramePumpStartRequest = { ...obsConfig, source_mode: sourceMode, fps, full_screen: true };
+      const payload: V3FramePumpStartRequest = { ...obsConfig, source_mode: sourceMode, fps, full_screen: true, output_dir: outputDir || undefined };
       const result = await apiClient.startV3FramePump(payload);
       setFramePump(result);
       await refresh();
@@ -112,7 +120,7 @@ export function ObsFramePumpPanel({ onMessage }: { onMessage?: (message: string)
 
   async function openOutputDir() {
     try {
-      const result = await apiClient.openV3InputFolder();
+      const result = collectionId ? await apiClient.openV3CollectionInputFolder(collectionId) : await apiClient.openV3InputFolder();
       show(`输出目录：${result.path}`);
     } catch (error) {
       show(error instanceof Error ? error.message : String(error));
@@ -135,7 +143,7 @@ export function ObsFramePumpPanel({ onMessage }: { onMessage?: (message: string)
       <div className="mt-3 grid gap-3 md:grid-cols-5">
         <Metric label="OBS WebSocket" value={obs?.connected ? "已连接" : "未连接"} />
         <Metric label="Frame Pump" value={framePumpStatusText(framePump?.status)} />
-        <Metric label="输出目录" value={framePump?.output_dir || input?.watch_dir || "D:\\work\\app-shot\\obs-output"} />
+        <Metric label="输出目录" value={outputDir || framePump?.output_dir || input?.watch_dir || "D:\\work\\app-shot\\obs-output"} />
         <Metric label="最近输出帧" value={framePump?.latest_frame || input?.latest_file || "暂无"} />
         <Metric label="已输出帧数" value={String(framePump?.frame_count ?? 0)} />
       </div>
