@@ -385,7 +385,10 @@ export function V3CurrentRunRoute() {
         {orderedCollections.length === 0 ? <Card title="暂无采集项目"><p className="text-sm text-slate-500">请先创建 WPS、WinMerge 或游戏采集项目。</p></Card> : null}
         {orderedCollections.map((collection) => {
           const sameCollectionHealth = primaryCollection?.collection_id === collection.collection_id ? actionHealth : null;
-          const blockers = sameCollectionHealth?.blockers || [];
+          const blockers = sameCollectionHealth?.current_blockers || sameCollectionHealth?.blockers || [];
+          const currentWindowBlocked = sameCollectionHealth ? !sameCollectionHealth.target_window_found || !sameCollectionHealth.target_window_foreground : !collection.target_window_found || !collection.target_window_foreground;
+          const currentBlockers = currentWindowBlocked ? blockers : blockers.filter((item) => !["target_window_not_foreground", "target_window_not_found"].includes(item));
+          const hasBoundTargetWindow = Boolean(collection.target_window_hwnd || collection.target_window_title || collection.target_process_name);
           return (
           <Card key={collection.collection_id} title={collection.display_name || collection.task_name || collection.app_name || "采集项目"} eyebrow="collection 采集项目">
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
@@ -459,6 +462,10 @@ export function V3CurrentRunRoute() {
                 <Metric label="热键动作" value={`${collection.hotkey_action_total} 次`} />
                 <Metric label="UI 动作" value={`${collection.ui_action_total} 次`} />
                 <Metric label="UI 页面探索" value={`${collection.ui_explore_action_total || 0} 次`} />
+                <Metric label="进入 UI 页面" value={`${collection.ui_panel_enter_total || 0} 次`} />
+                <Metric label="UI 无进展" value={`${collection.ui_no_progress_total || 0} 次`} />
+                <Metric label="UI Esc 返回" value={`${collection.ui_escape_total || 0} 次`} />
+                <Metric label="面板开关冷却" value={`${collection.panel_switch_cooldown_hit_total || 0} 次`} />
                 <Metric label="恢复动作" value={`${collection.recovery_action_total ?? collection.stuck_recovery_total} 次`} />
                 <Metric label="after_frame_timeout" value={`${collection.after_frame_timeout_total || 0} 次`} />
                 <Metric label="after_frame_stale" value={`${collection.after_frame_stale_total || 0} 次`} />
@@ -476,7 +483,7 @@ export function V3CurrentRunRoute() {
                   尚未绑定目标游戏窗口。请先点击“检测窗口”，选择正在运行的游戏窗口；也可以手动切到游戏窗口后再继续采集。
                 </p>
               ) : null}
-              {(collection.agent_paused || collection.latest_blocked_reason === "target_window_not_foreground") ? (
+              {(collection.agent_paused || currentWindowBlocked || collection.latest_blocked_reason === "target_window_not_foreground") ? (
                 <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                   <p>目标游戏窗口未处于前台，自动探索已暂停；Frame Pump、OCR 和去重仍可继续。</p>
                   <p className="mt-1 text-amber-200">下一步建议：点击“切回目标窗口并继续”。当前前台窗口：{foregroundWindowLabel(collection.current_foreground_window || sameCollectionHealth?.current_foreground_window)}</p>
@@ -506,18 +513,18 @@ export function V3CurrentRunRoute() {
                 <span>最近动作：{String(collection.latest_action?.action_type || collection.latest_action?.planned_action || "-")}</span>
                 <span>最近动作原因：{String(collection.latest_action?.reason || "-")}</span>
                 <span>最近阻止原因：{collection.latest_blocked_reason || "-"}</span>
-                <span>Input Gateway 阻塞项：{blockers.join("、") || "-"}</span>
+                <span>Input Gateway 当前阻塞项：{currentBlockers.join("、") || "-"}</span>
                 <span>visual_diff_score：{String(collection.latest_action?.visual_diff_score ?? "-")}</span>
-                <span>after_frame_fresh：{String(collection.latest_action?.after_frame_fresh ?? "-")}</span>
+                <span>动作后新帧：{afterFrameFreshLabel(collection.latest_action)}{collection.latest_action?.verify_reason ? `（${afterFrameReasonLabel(String(collection.latest_action.verify_reason))}）` : ""}</span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void detectWindows(collection)}>
                   {busyAction === `windows:${collection.collection_id}` ? "检测中..." : "检测窗口"}
                 </button>
-                <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !collection.target_window_found} onClick={() => void focusTargetWindow(collection)}>
+                <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !hasBoundTargetWindow} onClick={() => void focusTargetWindow(collection)}>
                   {busyAction === `focus:${collection.collection_id}` ? "切换中..." : "尝试切到目标窗口"}
                 </button>
-                <button className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-sm text-blue-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !collection.target_window_found} onClick={() => void focusTargetWindow(collection)}>
+                <button className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-sm text-blue-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !hasBoundTargetWindow} onClick={() => void focusTargetWindow(collection)}>
                   {busyAction === `focus:${collection.collection_id}` ? "切换中..." : "切回目标窗口并继续"}
                 </button>
                 <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void continueScreenshotOnly(collection)}>
@@ -535,7 +542,7 @@ export function V3CurrentRunRoute() {
                         <span>执行：{action.executed ? "是" : "否"}</span>
                         <span>阻止：{String(action.blocked_reason || "-")}</span>
                         <span>diff：{formatMaybeNumber(Number(action.visual_diff_score))}</span>
-                        <span>新帧：{action.after_frame_fresh === true ? "是" : action.after_frame_fresh === false ? "否" : "-"}</span>
+                        <span>新帧：{action.after_frame_fresh === true ? "是" : "否"}</span>
                       </div>
                     ))}
                   </div>
@@ -761,6 +768,16 @@ function actionLabel(action: Record<string, unknown>) {
   const type = String(action.action_type || "-");
   const keys = Array.isArray(action.keys) ? action.keys.map(String).join("+") : "";
   return keys ? `${type} ${keys}` : type;
+}
+
+function afterFrameFreshLabel(action?: Record<string, unknown> | null) {
+  return action?.after_frame_fresh === true ? "是" : "否";
+}
+
+function afterFrameReasonLabel(reason: string) {
+  if (reason === "after_frame_timeout") return "等待动作后新截图超时";
+  if (reason === "after_frame_stale") return "动作后截图未刷新";
+  return reason;
 }
 
 function delay(ms: number) {

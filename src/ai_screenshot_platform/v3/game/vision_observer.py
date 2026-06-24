@@ -10,10 +10,10 @@ from ai_screenshot_platform.v3.schemas import V3TaskConfig
 
 
 UI_KEYWORDS = {
-    "inventory": ("inventory", "backpack", "bag", "item", "items", "背包", "道具"),
-    "warehouse": ("warehouse", "stash", "storage", "仓库"),
+    "inventory": ("inventory", "backpack", "bag", "item", "items", "背包", "道具", "物品", "库存", "详情", "属性"),
+    "warehouse": ("warehouse", "stash", "storage", "仓库", "库存"),
     "map": ("map", "地图"),
-    "equipment": ("equipment", "weapon", "gear", "loadout", "装备", "武器"),
+    "equipment": ("equipment", "weapon", "gear", "loadout", "装备", "武器", "数据面板", "面板", "切换倍率"),
     "weapon": ("weapon", "gun", "firearm", "ammo", "loadout", "attachment", "m4a1", "武器", "枪械", "配件", "弹药"),
     "skill": ("skill", "ability", "talent", "perk", "技能", "天赋"),
     "character": ("character", "operator", "profile", "appearance", "角色", "干员", "外观"),
@@ -211,14 +211,14 @@ def classify_context(
         return "ui_settings"
     if "mission" in ui_hits:
         return "ui_mission"
+    if (text_features.get("text_area_ratio") or 0) >= 0.16 and ocr_text.strip():
+        return "hud_with_text"
     if stuck_score >= 0.72:
         return "training_stuck" if _is_training_config(config) else "gameplay_no_change"
     if possible_wall_ahead:
         return "training_blocked_ahead" if _is_training_config(config) else "gameplay_no_change"
     if near_duplicate_ratio >= 0.7:
         return "unknown_repeated"
-    if (text_features.get("text_area_ratio") or 0) >= 0.16 and ocr_text.strip():
-        return "hud_with_text"
     if _is_training_config(config):
         return "training_open_area"
     if config.game_mode == "gameplay":
@@ -351,6 +351,8 @@ def _stuck_score(
 def _suggested_context(state: str, stuck_score: float, possible_wall: bool, near_duplicate_ratio: float, risk_flags: list[str]) -> str:
     if risk_flags:
         return "risk_page"
+    if state.startswith("ui_") or state == "hud_with_text":
+        return state
     if stuck_score >= 0.72:
         return "training_stuck"
     if possible_wall:

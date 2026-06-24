@@ -298,6 +298,10 @@ class V3CollectionSummary(BaseModel):
     hotkey_action_total: int = 0
     ui_action_total: int = 0
     ui_explore_action_total: int = 0
+    ui_panel_enter_total: int = 0
+    ui_no_progress_total: int = 0
+    ui_escape_total: int = 0
+    panel_switch_cooldown_hit_total: int = 0
     after_frame_timeout_total: int = 0
     after_frame_stale_total: int = 0
     agent_paused: bool = False

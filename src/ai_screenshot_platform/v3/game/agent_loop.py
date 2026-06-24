@@ -28,6 +28,15 @@ UI_STATES = {
     "ui_character",
     "ui_dialog",
     "hud_with_text",
+    "ui_panel_explore",
+}
+PANEL_OPEN_REASONS = {"switch_inventory_panel", "open_inventory", "open_map", "open_equipment", "open_panel", "open_bag", "periodic_panel_explore_for_text"}
+ACTION_COOLDOWN_STEPS = {
+    "switch_inventory_panel": 8,
+    "open_map": 6,
+    "open_inventory": 6,
+    "open_bag": 6,
+    "esc_back": 3,
 }
 
 
@@ -83,6 +92,9 @@ class GameAgentLoop:
     ) -> dict[str, object]:
         recent_actions = recent_actions or self.last_actions
         state = str(observation.get("state") or "unknown_safe")
+        mode_lock = _ui_mode_lock_from_history(recent_actions, current_state=state)
+        if mode_lock and state not in RISK_STATES:
+            state = str(mode_lock.get("state") or "ui_panel_explore")
         if not config.enable_game_agent and not config.enable_game_explorer:
             return self._blocked_plan("wait", "game_agent_disabled", state)
         if not (config.safe_scene_confirmed or config.safe_game_scene_confirmed):
@@ -102,7 +114,10 @@ class GameAgentLoop:
             state = "training_stuck" if state.startswith("training") or config.allow_training_movement else "gameplay_no_change"
 
         if state in UI_STATES:
-            return self._ui_plan(config, state, recent_actions)
+            plan = self._ui_plan(config, state, recent_actions)
+            if mode_lock:
+                plan.update(mode_lock)
+            return plan
         if state in RECOVERY_STATES:
             return self._recovery_plan(config, state, recent_actions, observation)
         if state in OPEN_AREA_STATES:
@@ -204,6 +219,9 @@ class GameAgentLoop:
         elif after_image:
             after_frame_timestamp = _file_mtime(after_image)
             after_frame_fresh = bool(after_image != before_image and (before_frame_timestamp is None or (after_frame_timestamp or 0.0) > before_frame_timestamp))
+        if after_frame_fresh is None:
+            after_frame_fresh = False
+            after_frame_timeout = True
         verify = self.verify(
             before_image=before_image,
             after_image=after_image,
@@ -213,13 +231,27 @@ class GameAgentLoop:
         blocked_reason = plan.get("blocked_reason") or (None if result.get("executed") else result.get("reason"))
         stuck_before = float(observation.get("stuck_score") or 0.0)
         stuck_after = _stuck_after(stuck_before, verify)
+        effective_state = str(plan.get("observed_state") or observation["state"])
+        action_observation = dict(observation)
+        if effective_state != str(observation.get("state") or ""):
+            action_observation["raw_state"] = observation.get("state")
+            action_observation["state"] = effective_state
+            action_observation["suggested_context"] = effective_state
+        accepted_unique_delta = int(plan.get("accepted_unique_delta") or 0)
+        state_after = _state_after_action(state_before=str(observation.get("state") or ""), plan=plan, verify=verify)
+        useful_changed = bool(
+            accepted_unique_delta > 0
+            or state_after.startswith("ui_")
+            or effective_state in UI_STATES
+        )
         action = {
             "action_id": f"game_agent_{uuid.uuid4().hex[:12]}",
             "collection_id": collection_id,
             "run_id": run_id,
             "agent_step": agent_step,
-            "observed_state": observation["state"],
-            "observation": observation,
+            "observed_state": effective_state,
+            "raw_observed_state": observation.get("state"),
+            "observation": action_observation,
             "planned_action": plan.get("planned_action"),
             "action_type": plan.get("action_type"),
             "keys": plan.get("keys", []),
@@ -230,10 +262,20 @@ class GameAgentLoop:
             "action_category": plan.get("action_category"),
             "ui_explore": bool(plan.get("ui_explore")),
             "recovery_action": bool(plan.get("recovery_action")),
+            "mode_lock": plan.get("mode_lock"),
+            "mode_lock_ttl_steps": plan.get("mode_lock_ttl_steps"),
+            "opened_by_action": plan.get("opened_by_action"),
+            "entered_ui_at_step": plan.get("entered_ui_at_step"),
+            "panel_switch_cooldown_hit": bool(plan.get("panel_switch_cooldown_hit")),
             "next_plan": plan.get("next_plan") or plan.get("planned_action"),
             "next_plan_reason": plan.get("reason"),
             "executed": bool(result.get("executed")),
             "blocked_reason": str(blocked_reason) if blocked_reason else None,
+            "changed": bool(verify.get("changed")),
+            "useful_changed": useful_changed,
+            "accepted_unique_delta": accepted_unique_delta,
+            "state_before": observation.get("state"),
+            "state_after": state_after,
             "before_image": before_image,
             "after_image": after_image,
             "before_frame_timestamp": before_frame_timestamp,
@@ -254,22 +296,38 @@ class GameAgentLoop:
 
     def _open_area_plan(self, config: V3TaskConfig, state: str, recent_actions: list[dict[str, object]]) -> dict[str, object]:
         step_index = _agent_step_index(recent_actions)
+        panel_cooldown = _cooldown_active("switch_inventory_panel", recent_actions)
         if config.allow_back_close and config.allow_hotkeys and step_index > 0 and step_index % 12 == 0:
             return self._key_plan("Esc", 80, "periodic_safe_close_panel", state)
-        if config.allow_inventory_map_explore and config.allow_hotkeys and step_index > 0 and step_index % 8 == 0:
-            return self._key_plan("Tab", 80, "periodic_panel_explore_for_text", state)
+        if config.allow_inventory_map_explore and config.allow_hotkeys and step_index > 0 and step_index % 8 == 0 and not panel_cooldown:
+            return self._key_plan("Tab", 80, "switch_inventory_panel", state)
         if config.allow_mouse_look and step_index > 0 and step_index % 5 == 0:
             direction = -450 if _last_mouse_dx(recent_actions) > 0 else 450
-            return self._mouse_plan(direction, 0, 220, "periodic_visual_scan", state)
+            plan = self._mouse_plan(direction, 0, 220, "periodic_visual_scan", state)
+            if panel_cooldown:
+                plan["panel_switch_cooldown_hit"] = True
+            return plan
         if config.allow_mouse_look and self._ineffective_repeats("key_hold:W", recent_actions) >= 2:
-            return self._mouse_plan(650, 0, 250, "forward_no_change_turn_right", state)
+            plan = self._mouse_plan(650, 0, 250, "forward_no_change_turn_right", state)
+            if panel_cooldown:
+                plan["panel_switch_cooldown_hit"] = True
+            return plan
         if (config.allow_wasd or config.allow_training_movement) and self._ineffective_repeats("key_hold:W", recent_actions) < 2:
-            return self._key_plan("W", 800, "open_area_forward_probe", state, hold=True)
+            plan = self._key_plan("W", 800, "open_area_forward_probe", state, hold=True)
+            if panel_cooldown:
+                plan["panel_switch_cooldown_hit"] = True
+            return plan
         if config.allow_mouse_look:
             direction = -500 if _last_mouse_dx(recent_actions) > 0 else 500
-            return self._mouse_plan(direction, 0, 220, "scan_open_area", state)
+            plan = self._mouse_plan(direction, 0, 220, "scan_open_area", state)
+            if panel_cooldown:
+                plan["panel_switch_cooldown_hit"] = True
+            return plan
         if config.allow_wasd or config.allow_training_movement:
-            return self._key_plan("D", 350, "open_area_strafe_probe", state, hold=True)
+            plan = self._key_plan("D", 350, "open_area_strafe_probe", state, hold=True)
+            if panel_cooldown:
+                plan["panel_switch_cooldown_hit"] = True
+            return plan
         return self._unknown_plan(config, state, recent_actions)
 
     def _recovery_plan(
@@ -322,28 +380,31 @@ class GameAgentLoop:
                 ("Tab", "ui_focus_next"),
                 ("ArrowDown", "ui_list_down"),
                 ("PageDown", "ui_page_down_for_text"),
+                ("PageUp", "ui_page_up_for_text"),
                 ("ArrowUp", "ui_list_up"),
                 ("Esc", "close_ui_after_sampling"),
             ]
         elif state == "hud_with_text":
             sequence = [
-                ("Tab", "hud_panel_probe"),
-                ("I", "open_inventory_from_hud"),
-                ("M", "open_map_from_hud"),
-                ("B", "open_bag_from_hud"),
+                ("Tab", "open_panel"),
+                ("I", "open_inventory"),
+                ("M", "open_map"),
+                ("B", "open_bag"),
             ]
         else:
             sequence = [
-                ("Tab", "switch_inventory_panel"),
+                ("Tab", "ui_focus_next"),
                 ("ArrowRight", "switch_item_or_tab_right"),
                 ("ArrowDown", "move_item_focus_down"),
                 ("PageDown", "scroll_ui_page_down"),
+                ("PageUp", "scroll_ui_page_up"),
                 ("ArrowLeft", "switch_item_or_tab_left"),
                 ("ArrowUp", "move_item_focus_up"),
-                ("Shift+Tab", "switch_inventory_panel_back"),
+                ("Shift+Tab", "ui_focus_previous"),
                 ("Esc", "close_ui_after_sampling"),
             ]
 
+        sequence = _sequence_without_cooldowns(sequence, recent_actions)
         preferred = _next_ui_key(sequence, recent_actions, state=state, no_change_count=no_change_count)
         key, reason = preferred
         if key == "Esc" and not config.allow_back_close:
@@ -606,6 +667,79 @@ def _action_key(action: dict[str, object]) -> str:
     return action_type
 
 
+def _ui_mode_lock_from_history(recent_actions: list[dict[str, object]], *, current_state: str) -> dict[str, object] | None:
+    for index, action in enumerate(reversed(recent_actions[-8:]), start=1):
+        reason = str(action.get("reason") or "")
+        keys = [str(key).upper() for key in action.get("keys", [])] if isinstance(action.get("keys"), list) else []
+        if "ESC" in keys or reason.startswith("close_"):
+            return None
+        state_after = str(action.get("state_after") or "")
+        state = str(action.get("observed_state") or "")
+        changed = bool(action.get("changed") or (isinstance(action.get("verify"), dict) and action["verify"].get("changed") is True))
+        diff = float(action.get("visual_diff_score") or 0.0)
+        accepted_delta = int(action.get("accepted_unique_delta") or 0)
+        current_is_ui = current_state.startswith("ui_") or current_state == "hud_with_text"
+        if reason in PANEL_OPEN_REASONS and (changed or diff > 0.05 or accepted_delta > 0 or state_after.startswith("ui_") or state.startswith("ui_") or current_is_ui):
+            ttl = max(1, 9 - index)
+            return {
+                "mode_lock": "ui_panel_explore",
+                "mode_lock_ttl_steps": ttl,
+                "opened_by_action": reason,
+                "entered_ui_at_step": action.get("agent_step"),
+                "observed_state": current_state if current_is_ui else "ui_panel_explore",
+            }
+    return None
+
+
+def _last_panel_open_reason(recent_actions: list[dict[str, object]]) -> str | None:
+    for action in reversed(recent_actions[-8:]):
+        reason = str(action.get("reason") or "")
+        if reason in PANEL_OPEN_REASONS:
+            return reason
+    return None
+
+
+def _last_panel_open_step(recent_actions: list[dict[str, object]]) -> object | None:
+    for action in reversed(recent_actions[-8:]):
+        if str(action.get("reason") or "") in PANEL_OPEN_REASONS:
+            return action.get("agent_step")
+    return None
+
+
+def _cooldown_active(reason: str, recent_actions: list[dict[str, object]]) -> bool:
+    cooldown = ACTION_COOLDOWN_STEPS.get(reason, 0)
+    if cooldown <= 0:
+        return False
+    for action in recent_actions[-cooldown:]:
+        if reason == "esc_back":
+            keys = [str(key).upper() for key in action.get("keys", [])] if isinstance(action.get("keys"), list) else []
+            if "ESC" in keys:
+                return True
+        if str(action.get("reason") or "") == reason:
+            return True
+    return False
+
+
+def _sequence_without_cooldowns(sequence: list[tuple[str, str]], recent_actions: list[dict[str, object]]) -> list[tuple[str, str]]:
+    filtered: list[tuple[str, str]] = []
+    for key, reason in sequence:
+        if reason in ACTION_COOLDOWN_STEPS and _cooldown_active(reason, recent_actions):
+            continue
+        if key == "Esc" and _cooldown_active("esc_back", recent_actions):
+            continue
+        filtered.append((key, reason))
+    return filtered or sequence
+
+
+def _state_after_action(*, state_before: str, plan: dict[str, object], verify: dict[str, object]) -> str:
+    reason = str(plan.get("reason") or "")
+    if reason in PANEL_OPEN_REASONS and bool(verify.get("changed")):
+        return "ui_panel_explore"
+    if plan.get("mode_lock"):
+        return str(plan.get("observed_state") or "ui_panel_explore")
+    return state_before
+
+
 def _split_key_combo(key: str) -> list[str]:
     return [part.strip() for part in key.split("+") if part.strip()]
 
@@ -617,7 +751,12 @@ def _next_ui_key(
     state: str,
     no_change_count: int,
 ) -> tuple[str, str]:
-    ui_actions = [action for action in recent_actions[-10:] if str(action.get("observed_state") or "") == state and action.get("ui_explore")]
+    ui_actions = [
+        action
+        for action in recent_actions[-10:]
+        if _same_ui_context(str(action.get("observed_state") or ""), state)
+        and (action.get("ui_explore") or str(action.get("reason") or "") in PANEL_OPEN_REASONS)
+    ]
     if no_change_count >= 5:
         esc = next((item for item in sequence if item[0] == "Esc"), None)
         if esc:
@@ -640,7 +779,7 @@ def _first_non_escape(sequence: list[tuple[str, str]]) -> tuple[str, str]:
 def _recent_no_change_count(recent_actions: list[dict[str, object]], *, state: str) -> int:
     count = 0
     for action in reversed(recent_actions[-10:]):
-        if str(action.get("observed_state") or "") != state:
+        if not _same_ui_context(str(action.get("observed_state") or ""), state):
             break
         verify = action.get("verify")
         status = str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "")
@@ -657,7 +796,7 @@ def _ineffective_key_combo_repeats(key: str, recent_actions: list[dict[str, obje
     expected = f"key_press:{'+'.join(part.upper() for part in _split_key_combo(key))}"
     count = 0
     for action in reversed(recent_actions[-10:]):
-        if str(action.get("observed_state") or "") != state:
+        if not _same_ui_context(str(action.get("observed_state") or ""), state):
             break
         if _action_key(action) != expected:
             break
@@ -668,6 +807,14 @@ def _ineffective_key_combo_repeats(key: str, recent_actions: list[dict[str, obje
         if status in {"no_visual_change", "after_frame_timeout", "after_frame_stale"} or (diff < 0.05 and accepted_delta == 0):
             count += 1
     return count
+
+
+def _same_ui_context(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    left_ui = left.startswith("ui_") or left == "hud_with_text"
+    right_ui = right.startswith("ui_") or right == "hud_with_text"
+    return left_ui and right_ui
 
 
 def _float_or_none(value: object) -> float | None:

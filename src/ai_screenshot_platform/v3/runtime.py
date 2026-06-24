@@ -80,7 +80,23 @@ class V3Runtime:
 
     def action_health(self, collection_id: str | None = None) -> dict[str, object]:
         config = self.get_collection(collection_id).config if collection_id else None
-        return load_input_gateway_readiness(target_config=config).model_dump()
+        readiness = load_input_gateway_readiness(target_config=config).model_dump()
+        readiness["current_blockers"] = list(readiness.get("blockers") or [])
+        readiness["last_blockers"] = []
+        if collection_id:
+            try:
+                collection = self.get_collection(collection_id)
+                if collection.latest_run_id:
+                    actions = self.store.list_meta_jsonl(collection.latest_run_id, "actions.jsonl")
+                    latest = actions[-1] if actions else {}
+                    last_reason = latest.get("blocked_reason")
+                    result = latest.get("result")
+                    if not last_reason and isinstance(result, dict):
+                        last_reason = result.get("reason")
+                    readiness["last_blockers"] = [str(last_reason)] if last_reason else []
+            except KeyError:
+                readiness["last_blockers"] = []
+        return readiness
 
     def action_windows(self) -> list[dict[str, object]]:
         return list_visible_windows()

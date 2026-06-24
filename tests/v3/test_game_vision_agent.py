@@ -147,6 +147,78 @@ def test_ui_equipment_plan_uses_keyboard_fallback_when_mouse_click_unavailable(t
     assert key_presses == [["Tab"]]
 
 
+def test_ui_keywords_take_priority_over_training_stuck(tmp_path):
+    frame = _image(tmp_path / "ui.png", (80, 80, 80))
+    recent = [_forward_action(diff=0.0), _forward_action(diff=0.0), _forward_action(diff=0.0)]
+    observer = GameVisionObserver()
+
+    observation = observer.observe(
+        config=_agent_config(),
+        current_frame=str(frame),
+        previous_frame=str(frame),
+        recent_actions=recent,
+        ocr_text="武器配置 装备 背包 道具 详情 返回 Tab 切换",
+    )
+
+    assert observation["state"] == "ui_inventory"
+    assert observation["suggested_context"] == "ui_inventory"
+    assert observation["stuck_score"] >= 0.72
+
+
+def test_switch_inventory_panel_enters_ui_mode_lock(tmp_path):
+    frame = _image(tmp_path / "lock.png", (100, 120, 140))
+    recent = [
+        {
+            "action_id": "game_agent_open",
+            "agent_step": 12,
+            "action_type": "key_press",
+            "keys": ["Tab"],
+            "reason": "switch_inventory_panel",
+            "observed_state": "training_open_area",
+            "visual_diff_score": 0.12,
+            "changed": True,
+            "verify": {"status": "changed", "changed": True, "visual_diff_score": 0.12},
+            "accepted_unique_delta": 0,
+        }
+    ]
+    config = _agent_config()
+    agent = GameAgentLoop(allow_real_input=False)
+    observation = {"state": "training_stuck", "risk_flags": [], "stuck_score": 0.9}
+
+    plan = agent.plan(config=config, observation=observation, before_image=str(frame), recent_actions=recent)
+
+    assert plan["mode_lock"] == "ui_panel_explore"
+    assert plan["opened_by_action"] == "switch_inventory_panel"
+    assert plan["entered_ui_at_step"] == 12
+    assert plan["observed_state"] == "ui_panel_explore"
+    assert plan["reason"] != "switch_inventory_panel"
+    assert plan["keys"] in (["ArrowRight"], ["ArrowDown"], ["PageDown"], ["PageUp"], ["Tab"], ["ArrowLeft"], ["ArrowUp"], ["Shift", "Tab"], ["Esc"])
+
+
+def test_panel_switch_cooldown_prevents_repeated_switch(tmp_path):
+    frame = _image(tmp_path / "cooldown.png", (50, 60, 70))
+    recent = [
+        {
+            "action_id": "game_agent_open",
+            "agent_step": 7,
+            "action_type": "key_press",
+            "keys": ["Tab"],
+            "reason": "switch_inventory_panel",
+            "observed_state": "training_open_area",
+            "visual_diff_score": 0.01,
+            "verify": {"status": "no_visual_change", "changed": False},
+        }
+    ]
+    config = _agent_config()
+    agent = GameAgentLoop(allow_real_input=False)
+    observation = {"state": "training_open_area", "risk_flags": [], "stuck_score": 0.2}
+
+    plan = agent.plan(config=config, observation=observation, before_image=str(frame), recent_actions=recent)
+
+    assert plan["reason"] != "switch_inventory_panel"
+    assert plan.get("panel_switch_cooldown_hit") is True
+
+
 def test_ui_equipment_no_change_recovers_with_escape(tmp_path):
     frame = _image(tmp_path / "equipment-stale.png", (90, 90, 90))
     config = _agent_config()
@@ -196,6 +268,27 @@ def test_after_image_requires_fresh_frame(tmp_path, monkeypatch):
     assert stale["after_image"] is None
     assert stale["after_frame_fresh"] is False
     assert stale["verify"]["status"] == "after_frame_timeout"
+
+
+def test_after_frame_fresh_is_always_recorded(tmp_path):
+    before = _image(tmp_path / "single.png", (33, 44, 55))
+    config = _agent_config()
+    agent = GameAgentLoop(allow_real_input=False, observer=_OpenAreaObserver())
+
+    action = agent.step(
+        collection_id="col",
+        run_id="run",
+        agent_step=1,
+        config=config,
+        before_image=str(before),
+        after_image=None,
+        latest_image_fn=None,
+        action_interval_ms=300,
+        recent_actions=[],
+    )
+
+    assert action["after_frame_fresh"] is False
+    assert action["verify_reason"] == "after_frame_timeout"
 
 
 def test_target_window_not_foreground_pause_action_is_single_paused_record():

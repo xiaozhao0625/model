@@ -53,7 +53,7 @@ for (const phrase of ["V3CollectionSummary", "accepted_unique_total", "duplicate
 for (const phrase of ["latest_vision_state", "latest_stuck_score", "mouse_move_relative_total", "mouse_move_relative_ready"]) {
   assert(apiTypes.includes(phrase), `missing vision api type phrase ${phrase}`);
 }
-for (const phrase of ["ui_explore_action_total", "recovery_action_total", "recent_actions", "agent_paused_reason"]) {
+for (const phrase of ["ui_explore_action_total", "recovery_action_total", "recent_actions", "agent_paused_reason", "ui_panel_enter_total", "panel_switch_cooldown_hit_total"]) {
   assert(apiTypes.includes(phrase), `missing recovery api type phrase ${phrase}`);
 }
 
@@ -76,7 +76,7 @@ for (const phrase of [
 for (const phrase of ["视觉状态", "疑似卡住", "下一步计划", "选择原因", "mouse_move_relative"]) {
   assert(current.includes(phrase), `missing vision current phrase ${phrase}`);
 }
-for (const phrase of ["UI 页面探索", "切回目标窗口并继续", "改为只截图模式继续", "最近 10 个动作", "after_frame_fresh"]) {
+for (const phrase of ["UI 页面探索", "进入 UI 页面", "面板开关冷却", "切回目标窗口并继续", "改为只截图模式继续", "最近 10 个动作", "动作后新帧"]) {
   assert(current.includes(phrase), `missing recovery current phrase ${phrase}`);
 }
 

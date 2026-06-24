@@ -312,6 +312,7 @@ class V3RunStore:
         action_attempt_total = action_executed_total = action_blocked_total = 0
         action_changed_total = action_no_change_total = stuck_recovery_total = recovery_action_total = 0
         mouse_move_relative_total = wasd_action_total = hotkey_action_total = ui_action_total = ui_explore_action_total = 0
+        ui_panel_enter_total = ui_no_progress_total = ui_escape_total = panel_switch_cooldown_hit_total = 0
         after_frame_timeout_total = after_frame_stale_total = 0
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
@@ -378,6 +379,10 @@ class V3RunStore:
             hotkey_action_total += action_breakdown["hotkey"]
             ui_action_total += action_breakdown["ui"]
             ui_explore_action_total += action_breakdown["ui_explore"]
+            ui_panel_enter_total += action_breakdown["ui_panel_enter"]
+            ui_no_progress_total += action_breakdown["ui_no_progress"]
+            ui_escape_total += action_breakdown["ui_escape"]
+            panel_switch_cooldown_hit_total += action_breakdown["panel_switch_cooldown_hit"]
             after_frame_timeout_total += action_breakdown["after_frame_timeout"]
             after_frame_stale_total += action_breakdown["after_frame_stale"]
             accepted_unique_total += len(new_unique)
@@ -430,7 +435,7 @@ class V3RunStore:
             latest_round_top_reject_reasons=list(latest_round.get("top_reject_reasons", [])) if latest_round else [],
             latest_action=latest_action,
             latest_blocked_reason=_action_blocked_reason(latest_action),
-            game_agent_status=_game_agent_status(config, latest_action, real_input_enabled=real_input_enabled),
+            game_agent_status=_game_agent_status(config, latest_action, real_input_enabled=real_input_enabled, gateway=gateway),
             game_agent_state=str((latest_action or {}).get("observed_state") or "unknown"),
             game_agent_enabled_capabilities=_game_agent_capabilities(config),
             enable_game_agent=config.enable_game_agent,
@@ -474,6 +479,10 @@ class V3RunStore:
             hotkey_action_total=hotkey_action_total,
             ui_action_total=ui_action_total,
             ui_explore_action_total=ui_explore_action_total,
+            ui_panel_enter_total=ui_panel_enter_total,
+            ui_no_progress_total=ui_no_progress_total,
+            ui_escape_total=ui_escape_total,
+            panel_switch_cooldown_hit_total=panel_switch_cooldown_hit_total,
             after_frame_timeout_total=after_frame_timeout_total,
             after_frame_stale_total=after_frame_stale_total,
             agent_paused=bool((latest_action or {}).get("agent_paused")),
@@ -1109,11 +1118,16 @@ def _normalize_blocked_reason(reason: str) -> str:
     return reason
 
 
-def _game_agent_status(config: V3TaskConfig, latest_action: dict[str, object] | None, *, real_input_enabled: bool) -> str:
+def _game_agent_status(config: V3TaskConfig, latest_action: dict[str, object] | None, *, real_input_enabled: bool, gateway=None) -> str:
     if not _game_agent_config_enabled(config):
         return "未启用"
     if not real_input_enabled:
         return "已启用，但真实输入未授权"
+    if gateway is not None:
+        if not getattr(gateway, "target_window_found", False):
+            return "目标窗口未找到，自动探索暂停"
+        if not getattr(gateway, "target_window_foreground", False):
+            return "目标窗口不在前台，自动探索暂停"
     reason = _action_blocked_reason(latest_action)
     if reason:
         if reason == "input_gateway_not_ready":
@@ -1361,6 +1375,10 @@ def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
         "hotkey": 0,
         "ui": 0,
         "ui_explore": 0,
+        "ui_panel_enter": 0,
+        "ui_no_progress": 0,
+        "ui_escape": 0,
+        "panel_switch_cooldown_hit": 0,
         "after_frame_timeout": 0,
         "after_frame_stale": 0,
     }
@@ -1379,16 +1397,29 @@ def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
         action_type = str(action.get("action_type") or action.get("planned_action") or "")
         keys = [str(key).upper() for key in action.get("keys", [])] if isinstance(action.get("keys"), list) else []
         state = str(action.get("observed_state") or "")
+        reason = str(action.get("reason") or "")
+        is_ui_state = state.startswith("ui_") or state == "hud_with_text"
+        state_after = str(action.get("state_after") or "")
+        accepted_delta = int(action.get("accepted_unique_delta") or 0)
+        panel_open_reasons = {"switch_inventory_panel", "open_inventory", "open_map", "open_equipment", "open_panel", "open_bag", "periodic_panel_explore_for_text"}
         if action_type == "mouse_move_relative":
             counts["mouse_move_relative"] += 1
         if action_type in {"key_hold", "key_press", "hotkey"} and any(key in {"W", "A", "S", "D"} for key in keys):
             counts["wasd"] += 1
         if action_type in {"key_press", "hotkey"} and any(key in {"TAB", "ESC", "M", "I", "B"} for key in keys):
             counts["hotkey"] += 1
-        if action_type in {"ui_click", "click", "scroll", "drag"} or state.startswith("ui_"):
+        if action_type in {"ui_click", "click", "scroll", "drag"} or is_ui_state:
             counts["ui"] += 1
         if bool(action.get("ui_explore")) or str(action.get("action_category") or "") == "ui_explore":
             counts["ui_explore"] += 1
+        if reason in panel_open_reasons and (state_after.startswith("ui_") or _latest_action_changed(action) or accepted_delta > 0):
+            counts["ui_panel_enter"] += 1
+        if is_ui_state and not _latest_action_changed(action) and accepted_delta <= 0:
+            counts["ui_no_progress"] += 1
+        if is_ui_state and "ESC" in keys:
+            counts["ui_escape"] += 1
+        if action.get("panel_switch_cooldown_hit"):
+            counts["panel_switch_cooldown_hit"] += 1
         if state in {"training_stuck", "training_blocked_ahead", "gameplay_no_change", "unknown_repeated"} and action_type in {"key_hold", "mouse_move_relative"}:
             counts["stuck_recovery"] += 1
         if bool(action.get("recovery_action")) or str(action.get("action_category") or "") == "recovery":
@@ -1411,6 +1442,9 @@ def _recent_action_summaries(actions: list[dict[str, object]]) -> list[dict[str,
                 "visual_diff_score": _float_or_none(action.get("visual_diff_score")),
                 "center_diff_score": _float_or_none(action.get("center_diff_score")),
                 "changed": _latest_action_changed(action),
+                "useful_changed": bool(action.get("useful_changed")),
+                "state_after": action.get("state_after"),
+                "mode_lock": action.get("mode_lock"),
                 "after_frame_fresh": action.get("after_frame_fresh"),
                 "accepted_unique_delta": int(action.get("accepted_unique_delta") or 0),
                 "ui_explore": bool(action.get("ui_explore")),
@@ -1437,7 +1471,10 @@ def _latest_foreground_recovery(action: dict[str, object] | None) -> dict[str, o
 
 
 def _latest_vision_state(action: dict[str, object] | None) -> str | None:
-    value = _observation_value(action, "suggested_context") or (action or {}).get("observed_state")
+    observed = str((action or {}).get("observed_state") or "")
+    if observed.startswith("ui_") or observed == "hud_with_text":
+        return observed
+    value = _observation_value(action, "suggested_context") or observed
     return str(value) if value else None
 
 

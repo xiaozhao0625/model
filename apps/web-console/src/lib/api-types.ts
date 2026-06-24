@@ -274,6 +274,10 @@ export interface V3CollectionSummary {
   hotkey_action_total: number;
   ui_action_total: number;
   ui_explore_action_total?: number;
+  ui_panel_enter_total?: number;
+  ui_no_progress_total?: number;
+  ui_escape_total?: number;
+  panel_switch_cooldown_hit_total?: number;
   after_frame_timeout_total?: number;
   after_frame_stale_total?: number;
   agent_paused?: boolean;
@@ -362,6 +366,8 @@ export interface V3ActionHealth {
   interactive_desktop_ready: boolean;
   click_backend: string;
   blockers: string[];
+  current_blockers?: string[];
+  last_blockers?: string[];
   diagnosis_path?: string | null;
   details: Record<string, unknown>;
 }
