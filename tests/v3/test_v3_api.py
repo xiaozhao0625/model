@@ -13,6 +13,7 @@ class _ReadyInputGateway:
     real_input_allowed = True
     keyboard_input_ready = True
     mouse_move_ready = True
+    mouse_move_relative_ready = True
     cursor_read_ready = True
     cursor_read_access_denied = False
     mouse_click_ready = True
@@ -30,6 +31,7 @@ class _ReadyInputGateway:
             "real_input_allowed": self.real_input_allowed,
             "keyboard_input_ready": self.keyboard_input_ready,
             "mouse_move_ready": self.mouse_move_ready,
+            "mouse_move_relative_ready": self.mouse_move_relative_ready,
             "cursor_read_ready": self.cursor_read_ready,
             "cursor_read_access_denied": self.cursor_read_access_denied,
             "mouse_click_ready": self.mouse_click_ready,

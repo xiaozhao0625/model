@@ -310,6 +310,8 @@ class V3RunStore:
         run_summaries: list[dict[str, object]] = []
         processed_total = accepted_total = rejected_total = failed_total = action_total = 0
         action_attempt_total = action_executed_total = action_blocked_total = 0
+        action_changed_total = action_no_change_total = stuck_recovery_total = 0
+        mouse_move_relative_total = wasd_action_total = hotkey_action_total = ui_action_total = 0
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
         latest_action: dict[str, object] | None = None
@@ -325,6 +327,7 @@ class V3RunStore:
             action_attempts = len(actions)
             action_executed = sum(1 for action in actions if _action_executed(action))
             action_blocked = sum(1 for action in actions if _action_blocked(action))
+            action_breakdown = _action_breakdown(actions)
             if actions:
                 latest_action = actions[-1]
             accepted = [image for image in images if image.bucket == "accepted"]
@@ -363,6 +366,13 @@ class V3RunStore:
             action_attempt_total += action_attempts
             action_executed_total += action_executed
             action_blocked_total += action_blocked
+            action_changed_total += action_breakdown["changed"]
+            action_no_change_total += action_breakdown["no_change"]
+            stuck_recovery_total += action_breakdown["stuck_recovery"]
+            mouse_move_relative_total += action_breakdown["mouse_move_relative"]
+            wasd_action_total += action_breakdown["wasd"]
+            hotkey_action_total += action_breakdown["hotkey"]
+            ui_action_total += action_breakdown["ui"]
             accepted_unique_total += len(new_unique)
             duplicate_across_runs_total += len(cross_duplicates)
             visual_fill_total += sum(1 for image in new_unique if image.meta.get("accepted_class") == "accepted_visual_fill")
@@ -434,6 +444,7 @@ class V3RunStore:
             agent_config_missing=_collection_agent_config_missing(self._collection_dir(collection_id)),
             keyboard_input_ready=gateway.keyboard_input_ready,
             mouse_move_ready=gateway.mouse_move_ready,
+            mouse_move_relative_ready=gateway.mouse_move_relative_ready,
             mouse_click_ready=gateway.mouse_click_ready,
             cursor_read_ready=gateway.cursor_read_ready,
             cursor_read_access_denied=gateway.cursor_read_access_denied,
@@ -447,6 +458,23 @@ class V3RunStore:
             action_attempt_total=action_attempt_total,
             action_executed_total=action_executed_total,
             action_blocked_total=action_blocked_total,
+            action_changed_total=action_changed_total,
+            action_no_change_total=action_no_change_total,
+            stuck_recovery_total=stuck_recovery_total,
+            mouse_move_relative_total=mouse_move_relative_total,
+            wasd_action_total=wasd_action_total,
+            hotkey_action_total=hotkey_action_total,
+            ui_action_total=ui_action_total,
+            latest_vision_state=_latest_vision_state(latest_action),
+            latest_possible_stuck=_latest_possible_stuck(latest_action),
+            latest_possible_wall_ahead=bool((latest_action or {}).get("possible_wall_ahead") or _observation_value(latest_action, "possible_wall_ahead")),
+            latest_visual_diff_score=_float_or_none((latest_action or {}).get("visual_diff_score")),
+            latest_center_diff_score=_float_or_none((latest_action or {}).get("center_diff_score")),
+            latest_stuck_score=_float_or_none((latest_action or {}).get("stuck_score_after") or _observation_value(latest_action, "stuck_score")),
+            latest_action_effect=_latest_action_effect(latest_action),
+            latest_action_changed=_latest_action_changed(latest_action),
+            latest_next_plan=str((latest_action or {}).get("next_plan") or (latest_action or {}).get("planned_action") or "") or None,
+            latest_action_reason=str((latest_action or {}).get("next_plan_reason") or (latest_action or {}).get("reason") or "") or None,
             min_target_reached=accepted_unique_total >= config.target_accepted_min,
             soft_target_reached=accepted_unique_total >= config.target_accepted_soft,
             max_target_reached=accepted_unique_total >= config.target_accepted_max,
@@ -705,6 +733,7 @@ class V3RunStore:
             cursor_read_ready=gateway.cursor_read_ready,
             keyboard_input_ready=gateway.keyboard_input_ready,
             mouse_move_ready=gateway.mouse_move_ready,
+            mouse_move_relative_ready=gateway.mouse_move_relative_ready,
             cursor_read_access_denied=gateway.cursor_read_access_denied,
             mouse_click_ready=gateway.mouse_click_ready,
             target_window_found=gateway.target_window_found,
@@ -1304,6 +1333,82 @@ def _count_action_regions(actions: list[dict[str, object]]) -> dict[str, int]:
         elif region == "unsafe_chrome" and (not executed or reason == "unsafe_chrome"):
             counts["unsafe_chrome_blocked"] += 1
     return counts
+
+
+def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
+    counts = {
+        "changed": 0,
+        "no_change": 0,
+        "stuck_recovery": 0,
+        "mouse_move_relative": 0,
+        "wasd": 0,
+        "hotkey": 0,
+        "ui": 0,
+    }
+    for action in actions:
+        verify = action.get("verify", {})
+        status = str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "")
+        changed = bool(action.get("latest_action_changed") or action.get("changed") or (isinstance(verify, dict) and verify.get("changed") is True))
+        if changed or status == "changed":
+            counts["changed"] += 1
+        elif status in {"no_visual_change", "stuck"}:
+            counts["no_change"] += 1
+        action_type = str(action.get("action_type") or action.get("planned_action") or "")
+        keys = [str(key).upper() for key in action.get("keys", [])] if isinstance(action.get("keys"), list) else []
+        state = str(action.get("observed_state") or "")
+        if action_type == "mouse_move_relative":
+            counts["mouse_move_relative"] += 1
+        if action_type in {"key_hold", "key_press", "hotkey"} and any(key in {"W", "A", "S", "D"} for key in keys):
+            counts["wasd"] += 1
+        if action_type in {"key_press", "hotkey"} and any(key in {"TAB", "ESC", "M", "I", "B"} for key in keys):
+            counts["hotkey"] += 1
+        if action_type in {"ui_click", "click", "scroll", "drag"} or state.startswith("ui_"):
+            counts["ui"] += 1
+        if state in {"training_stuck", "training_blocked_ahead", "gameplay_no_change", "unknown_repeated"} and action_type in {"key_hold", "mouse_move_relative"}:
+            counts["stuck_recovery"] += 1
+    return counts
+
+
+def _latest_vision_state(action: dict[str, object] | None) -> str | None:
+    value = _observation_value(action, "suggested_context") or (action or {}).get("observed_state")
+    return str(value) if value else None
+
+
+def _latest_possible_stuck(action: dict[str, object] | None) -> bool:
+    state = str((action or {}).get("observed_state") or _observation_value(action, "suggested_context") or "")
+    return state in {"training_stuck", "gameplay_no_change", "unknown_repeated"} or float(_observation_value(action, "stuck_score") or 0.0) >= 0.72
+
+
+def _latest_action_effect(action: dict[str, object] | None) -> str | None:
+    if not action:
+        return None
+    verify = action.get("verify", {})
+    if isinstance(verify, dict) and verify.get("status"):
+        return str(verify["status"])
+    return str(action.get("verify_status") or "") or None
+
+
+def _latest_action_changed(action: dict[str, object] | None) -> bool:
+    if not action:
+        return False
+    verify = action.get("verify", {})
+    return bool(action.get("changed") or (isinstance(verify, dict) and verify.get("changed") is True))
+
+
+def _observation_value(action: dict[str, object] | None, key: str) -> object | None:
+    observation = (action or {}).get("observation")
+    if isinstance(observation, dict):
+        return observation.get(key)
+    return None
+
+
+def _float_or_none(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _action_executed(action: dict[str, object]) -> bool:

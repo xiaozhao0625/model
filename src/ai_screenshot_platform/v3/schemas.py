@@ -275,6 +275,7 @@ class V3CollectionSummary(BaseModel):
     agent_config_missing: bool = False
     keyboard_input_ready: bool = False
     mouse_move_ready: bool = False
+    mouse_move_relative_ready: bool = False
     mouse_click_ready: bool = False
     cursor_read_ready: bool = False
     cursor_read_access_denied: bool = False
@@ -288,6 +289,23 @@ class V3CollectionSummary(BaseModel):
     action_attempt_total: int = 0
     action_executed_total: int = 0
     action_blocked_total: int = 0
+    action_changed_total: int = 0
+    action_no_change_total: int = 0
+    stuck_recovery_total: int = 0
+    mouse_move_relative_total: int = 0
+    wasd_action_total: int = 0
+    hotkey_action_total: int = 0
+    ui_action_total: int = 0
+    latest_vision_state: str | None = None
+    latest_possible_stuck: bool = False
+    latest_possible_wall_ahead: bool = False
+    latest_visual_diff_score: float | None = None
+    latest_center_diff_score: float | None = None
+    latest_stuck_score: float | None = None
+    latest_action_effect: str | None = None
+    latest_action_changed: bool = False
+    latest_next_plan: str | None = None
+    latest_action_reason: str | None = None
     min_target_reached: bool = False
     soft_target_reached: bool = False
     max_target_reached: bool = False
@@ -533,6 +551,7 @@ class V3Summary(BaseModel):
     real_input_allowed: bool = False
     keyboard_input_ready: bool = False
     mouse_move_ready: bool = False
+    mouse_move_relative_ready: bool = False
     cursor_read_ready: bool = False
     cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False
@@ -562,6 +581,7 @@ class InputGatewayHealth(BaseModel):
     real_input_allowed: bool = False
     keyboard_input_ready: bool = False
     mouse_move_ready: bool = False
+    mouse_move_relative_ready: bool = False
     cursor_read_ready: bool = False
     cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False
@@ -590,6 +610,7 @@ class V3Health(BaseModel):
     real_input_allowed: bool = False
     keyboard_input_ready: bool = False
     mouse_move_ready: bool = False
+    mouse_move_relative_ready: bool = False
     cursor_read_ready: bool = False
     cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False

@@ -47,6 +47,7 @@ def build_v3_health(model_registry: UiModelRegistry | None = None) -> V3Health:
         real_input_allowed=input_gateway.real_input_allowed,
         keyboard_input_ready=input_gateway.keyboard_input_ready,
         mouse_move_ready=input_gateway.mouse_move_ready,
+        mouse_move_relative_ready=input_gateway.mouse_move_relative_ready,
         cursor_read_ready=input_gateway.cursor_read_ready,
         cursor_read_access_denied=input_gateway.cursor_read_access_denied,
         mouse_click_ready=input_gateway.mouse_click_ready,

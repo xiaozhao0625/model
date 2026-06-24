@@ -48,12 +48,14 @@ def test_input_gateway_selects_audited_sendinput_fallback_when_cursor_probe_fail
     assert readiness.cursor_read_access_denied is True
     assert readiness.keyboard_input_ready is True
     assert readiness.mouse_move_ready is True
+    assert readiness.mouse_move_relative_ready is True
     assert readiness.mouse_click_ready is False
     assert readiness.input_gateway_ready is False
     assert readiness.click_backend == "dry_run_backend"
     assert "cursor_read_access_denied" in readiness.blockers
     assert blocked_reason_for_action("key_hold", readiness) is None
     assert blocked_reason_for_action("mouse_move_small", readiness) is None
+    assert blocked_reason_for_action("mouse_move_relative", readiness) is None
     assert blocked_reason_for_action("mouse_click", readiness) == "cursor_read_access_denied"
 
 
@@ -129,5 +131,6 @@ def test_input_gateway_readiness_json_shape_is_serializable():
     assert payload["click_backend"] == "computer_use_backend"
     assert payload["keyboard_input_ready"] is True
     assert payload["mouse_move_ready"] is True
+    assert payload["mouse_move_relative_ready"] is True
     assert payload["target_window_found"] is True
     assert payload["target_window_foreground"] is True

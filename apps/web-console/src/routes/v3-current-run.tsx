@@ -420,11 +420,32 @@ export function V3CurrentRunRoute() {
                 <Metric label="真实输入权限" value={collection.real_input_enabled ? "已开启" : "未开启"} />
                 <Metric label="键盘输入" value={readinessText(collection.keyboard_input_ready || Boolean(sameCollectionHealth?.keyboard_input_ready))} />
                 <Metric label="鼠标移动" value={readinessText(collection.mouse_move_ready || Boolean(sameCollectionHealth?.mouse_move_ready))} />
+                <Metric label="鼠标相对视角" value={readinessText(collection.mouse_move_relative_ready || Boolean(sameCollectionHealth?.mouse_move_relative_ready))} />
                 <Metric label="鼠标点击" value={readinessText(collection.mouse_click_ready || Boolean(sameCollectionHealth?.mouse_click_ready))} />
                 <Metric label="光标读取" value={collection.cursor_read_access_denied || sameCollectionHealth?.cursor_read_access_denied ? "拒绝访问" : readinessText(collection.cursor_read_ready || Boolean(sameCollectionHealth?.cursor_read_ready))} />
                 <Metric label="目标窗口" value={targetWindowLabel(collection)} />
                 <Metric label="目标窗口前台" value={readinessText(collection.target_window_foreground || Boolean(sameCollectionHealth?.target_window_foreground))} />
                 <Metric label="当前前台窗口" value={foregroundWindowLabel(collection.current_foreground_window || sameCollectionHealth?.current_foreground_window)} />
+                <Metric label="视觉状态" value={collection.latest_vision_state || collection.game_agent_state || "unknown"} />
+                <Metric label="疑似卡住" value={collection.latest_possible_stuck ? "是" : "否"} />
+                <Metric label="前方疑似墙" value={collection.latest_possible_wall_ahead ? "是" : "否"} />
+                <Metric label="visual_diff" value={formatMaybeNumber(collection.latest_visual_diff_score)} />
+                <Metric label="center_diff" value={formatMaybeNumber(collection.latest_center_diff_score)} />
+                <Metric label="stuck_score" value={formatMaybeNumber(collection.latest_stuck_score)} />
+                <Metric label="有效变化次数" value={`${collection.action_changed_total} 次`} />
+                <Metric label="无变化次数" value={`${collection.action_no_change_total} 次`} />
+                <Metric label="卡住恢复次数" value={`${collection.stuck_recovery_total} 次`} />
+                <Metric label="鼠标视角动作" value={`${collection.mouse_move_relative_total} 次`} />
+                <Metric label="WASD 动作" value={`${collection.wasd_action_total} 次`} />
+                <Metric label="热键动作" value={`${collection.hotkey_action_total} 次`} />
+                <Metric label="UI 动作" value={`${collection.ui_action_total} 次`} />
+              </div>
+              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300">
+                <p>当前视觉状态：{collection.latest_vision_state || collection.game_agent_state || "unknown"}</p>
+                <p>最近动作：{String(collection.latest_action?.action_type || collection.latest_action?.planned_action || "-")}</p>
+                <p>动作效果：{collection.latest_action_effect || (collection.latest_action_changed ? "changed" : "unknown")}</p>
+                <p>下一步计划：{collection.latest_next_plan || "-"}</p>
+                <p>选择原因：{collection.latest_action_reason || String(collection.latest_action?.reason || "-")}</p>
               </div>
               {(collection.enable_game_agent || collection.enable_game_explorer) && !collection.target_window_found ? (
                 <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
@@ -650,6 +671,10 @@ function framePumpStatusText(status?: V3FramePumpStatus["status"]) {
 
 function readinessText(value?: boolean) {
   return value ? "可用" : "不可用";
+}
+
+function formatMaybeNumber(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(3) : "-";
 }
 
 function targetWindowLabel(collection: V3CollectionSummary) {

@@ -50,6 +50,9 @@ const apiTypes = read("src/lib/api-types.ts");
 for (const phrase of ["V3CollectionSummary", "accepted_unique_total", "duplicate_across_runs_total", "latest_round_new_unique", "V3CollectionExportResult"]) {
   assert(apiTypes.includes(phrase), `missing api type phrase ${phrase}`);
 }
+for (const phrase of ["latest_vision_state", "latest_stuck_score", "mouse_move_relative_total", "mouse_move_relative_ready"]) {
+  assert(apiTypes.includes(phrase), `missing vision api type phrase ${phrase}`);
+}
 
 const current = read("src/routes/v3-current-run.tsx");
 for (const phrase of [
@@ -66,6 +69,9 @@ for (const phrase of [
   "历史未归类任务 / 调试样本"
 ]) {
   assert(current.includes(phrase), `missing current phrase ${phrase}`);
+}
+for (const phrase of ["视觉状态", "疑似卡住", "下一步计划", "选择原因", "mouse_move_relative"]) {
+  assert(current.includes(phrase), `missing vision current phrase ${phrase}`);
 }
 
 const gallery = read("src/routes/v3-gallery.tsx");

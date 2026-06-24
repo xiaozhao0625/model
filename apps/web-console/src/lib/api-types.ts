@@ -156,6 +156,7 @@ export interface V3Health {
   real_input_allowed: boolean;
   keyboard_input_ready: boolean;
   mouse_move_ready: boolean;
+  mouse_move_relative_ready: boolean;
   cursor_read_ready: boolean;
   cursor_read_access_denied: boolean;
   mouse_click_ready: boolean;
@@ -250,6 +251,7 @@ export interface V3CollectionSummary {
   agent_config_missing: boolean;
   keyboard_input_ready: boolean;
   mouse_move_ready: boolean;
+  mouse_move_relative_ready: boolean;
   mouse_click_ready: boolean;
   cursor_read_ready: boolean;
   cursor_read_access_denied: boolean;
@@ -263,6 +265,23 @@ export interface V3CollectionSummary {
   action_attempt_total: number;
   action_executed_total: number;
   action_blocked_total: number;
+  action_changed_total: number;
+  action_no_change_total: number;
+  stuck_recovery_total: number;
+  mouse_move_relative_total: number;
+  wasd_action_total: number;
+  hotkey_action_total: number;
+  ui_action_total: number;
+  latest_vision_state?: string | null;
+  latest_possible_stuck: boolean;
+  latest_possible_wall_ahead: boolean;
+  latest_visual_diff_score?: number | null;
+  latest_center_diff_score?: number | null;
+  latest_stuck_score?: number | null;
+  latest_action_effect?: string | null;
+  latest_action_changed: boolean;
+  latest_next_plan?: string | null;
+  latest_action_reason?: string | null;
   min_target_reached: boolean;
   soft_target_reached: boolean;
   max_target_reached: boolean;
@@ -323,6 +342,7 @@ export interface V3ActionHealth {
   real_input_allowed: boolean;
   keyboard_input_ready: boolean;
   mouse_move_ready: boolean;
+  mouse_move_relative_ready: boolean;
   cursor_read_ready: boolean;
   cursor_read_access_denied: boolean;
   mouse_click_ready: boolean;
@@ -516,6 +536,7 @@ export interface V3Summary {
   real_input_allowed: boolean;
   keyboard_input_ready: boolean;
   mouse_move_ready: boolean;
+  mouse_move_relative_ready: boolean;
   cursor_read_ready: boolean;
   cursor_read_access_denied: boolean;
   mouse_click_ready: boolean;

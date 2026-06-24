@@ -846,16 +846,17 @@ class V3Runtime:
         readiness = load_input_gateway_readiness(target_config=config)
         if not readiness.keyboard_input_ready and (config.allow_wasd or config.allow_hotkeys or config.allow_training_movement):
             return {"game_agent_enabled": True, "blocked_reason": "keyboard_input_not_ready", "capabilities": capabilities, "blockers": readiness.blockers}
-        if not readiness.mouse_move_ready and config.allow_mouse_look:
-            return {"game_agent_enabled": True, "blocked_reason": "mouse_move_not_ready", "capabilities": capabilities, "blockers": readiness.blockers}
+        if not readiness.mouse_move_relative_ready and config.allow_mouse_look:
+            return {"game_agent_enabled": True, "blocked_reason": "mouse_move_relative_not_ready", "capabilities": capabilities, "blockers": readiness.blockers}
         if not readiness.target_window_found:
             return {"game_agent_enabled": True, "blocked_reason": "target_window_not_found", "capabilities": capabilities, "blockers": readiness.blockers}
         if not readiness.target_window_foreground:
             return {"game_agent_enabled": True, "blocked_reason": "target_window_not_foreground", "capabilities": capabilities, "blockers": readiness.blockers}
-        if not readiness.input_gateway_ready:
+        click_only = bool((config.allow_ui_click or config.enable_auto_click) and not (config.allow_wasd or config.allow_hotkeys or config.allow_mouse_look or config.allow_training_movement))
+        if click_only and not readiness.mouse_click_ready:
             return {
                 "game_agent_enabled": True,
-                "blocked_reason": "input_gateway_not_ready",
+                "blocked_reason": "mouse_click_not_ready",
                 "capabilities": capabilities,
                 "blockers": readiness.blockers,
             }
@@ -896,6 +897,7 @@ class V3Runtime:
                 action_interval_ms=record.config.action_interval_ms,
                 ocr_text=_ocr_text_from_latest_action_or_image(actions, self.images(run_id)),
                 last_action_effect=last_effect,
+                recent_actions=actions,
             )
             blocked_reason = str(action.get("blocked_reason") or "")
             if blocked_reason:

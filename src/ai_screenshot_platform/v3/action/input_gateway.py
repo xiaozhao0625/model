@@ -55,6 +55,7 @@ def input_gateway_readiness_from_diagnosis(payload: dict[str, Any], *, real_inpu
     cursor_access_denied = _is_access_denied(cursor_error)
     safe_context = same_session and same_integrity and interactive
     keyboard_input_ready = bool(real_input_allowed and safe_context and sendinput)
+    mouse_move_relative_ready = bool(real_input_allowed and safe_context and sendinput)
     mouse_move_ready = bool(real_input_allowed and safe_context and (sendinput or mouse_event))
     mouse_click_ready = bool(real_input_allowed and safe_context and cursor and ((set_cursor and (sendinput or mouse_event)) or pyautogui))
     target_window_found = _target_found(payload)
@@ -73,6 +74,11 @@ def input_gateway_readiness_from_diagnosis(payload: dict[str, Any], *, real_inpu
             blockers.append("keyboard_input_not_ready")
     if not mouse_move_ready:
         blockers.append("mouse_move_not_ready")
+    if not mouse_move_relative_ready:
+        if real_input_allowed and safe_context and not sendinput:
+            blockers.append("sendinput_not_callable")
+        else:
+            blockers.append("mouse_move_relative_not_ready")
     if not mouse_click_ready:
         blockers.append("cursor_read_access_denied" if cursor_access_denied else "mouse_click_not_ready")
     if not same_session:
@@ -101,6 +107,7 @@ def input_gateway_readiness_from_diagnosis(payload: dict[str, Any], *, real_inpu
         real_input_allowed=real_input_allowed,
         keyboard_input_ready=keyboard_input_ready,
         mouse_move_ready=mouse_move_ready,
+        mouse_move_relative_ready=mouse_move_relative_ready,
         cursor_read_ready=cursor,
         cursor_read_access_denied=cursor_access_denied,
         mouse_click_ready=mouse_click_ready,
@@ -135,6 +142,7 @@ def enrich_target_window_readiness(readiness: InputGatewayHealth, config: V3Task
     readiness.input_gateway_ready = bool(
         readiness.keyboard_input_ready
         and readiness.mouse_move_ready
+        and readiness.mouse_move_relative_ready
         and readiness.mouse_click_ready
         and readiness.target_window_found
         and readiness.target_window_foreground
@@ -163,6 +171,13 @@ def blocked_reason_for_action(action_type: str, readiness: InputGatewayHealth) -
         return None if readiness.keyboard_input_ready else _keyboard_blocker(readiness)
     if action_type in {"mouse_move", "mouse_move_small"}:
         return None if readiness.mouse_move_ready else "mouse_move_not_ready"
+    if action_type == "mouse_move_relative":
+        if readiness.mouse_move_relative_ready:
+            return None
+        details = readiness.details if isinstance(readiness.details, dict) else {}
+        if not _probe_callable(details.get("sendinput")):
+            return "sendinput_not_callable"
+        return "mouse_move_relative_not_ready"
     if action_type in {"mouse_click", "click", "ui_click", "drag", "scroll"}:
         if readiness.mouse_click_ready:
             return None
