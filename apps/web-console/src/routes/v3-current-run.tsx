@@ -6,7 +6,7 @@ import { PageHeader } from "../components/layout/page-header";
 import { Card } from "../components/ui/card";
 import { ObsFramePumpPanel } from "../components/v3/obs-frame-pump-panel";
 import { apiClient } from "../lib/api-client";
-import type { V3AgentConfigRequest, V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord } from "../lib/api-types";
+import type { V3ActionHealth, V3AgentConfigRequest, V3CollectionSummary, V3FramePumpStatus, V3InputStatus, V3RunRecord, V3TargetWindowInfo } from "../lib/api-types";
 import { isDebugRun, labelAppType, labelLanguage, labelRejectReason, labelStatus, textPolicyLabels } from "../lib/labels";
 
 export function V3CurrentRunRoute() {
@@ -17,6 +17,8 @@ export function V3CurrentRunRoute() {
   const [runs, setRuns] = useState<V3RunRecord[]>([]);
   const [inputStatus, setInputStatus] = useState<V3InputStatus | null>(null);
   const [framePump, setFramePump] = useState<V3FramePumpStatus | null>(null);
+  const [actionHealth, setActionHealth] = useState<V3ActionHealth | null>(null);
+  const [windows, setWindows] = useState<V3TargetWindowInfo[]>([]);
   const [message, setMessage] = useState("正在读取当前采集项目。");
   const [showLegacyRuns, setShowLegacyRuns] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -41,10 +43,15 @@ export function V3CurrentRunRoute() {
         apiClient.getV3FramePumpStatus()
       ]);
       const visibleCollections = nextCollections.filter((collection) => !isDebugCollection(collection));
+      const selectedCollection = preferredCollectionId
+        ? visibleCollections.find((item) => item.collection_id === preferredCollectionId) || visibleCollections[0]
+        : visibleCollections[0];
+      const nextActionHealth = selectedCollection ? await apiClient.getV3ActionHealth(selectedCollection.collection_id) : await apiClient.getV3ActionHealth();
       setCollections(visibleCollections);
       setRuns(nextRuns);
       setInputStatus(nextInput);
       setFramePump(nextFramePump);
+      setActionHealth(nextActionHealth);
       if (showMessage) setMessage(visibleCollections.length ? "已加载采集项目。继续采集会创建新轮次并自动跨轮去重。" : "暂无采集项目，请先新建任务。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -124,7 +131,15 @@ export function V3CurrentRunRoute() {
       if (framePump && framePump.status !== "running") {
         const shouldStart = window.confirm("Frame Pump 未运行。当前 V3 不依赖 OBS WebSocket，采集需要 Frame Pump 持续输出截图。是否先启动 Frame Pump？");
         if (!shouldStart) return;
-        await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket", output_dir: outputDir });
+        await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "screen", output_dir: outputDir });
+      }
+      if (effectiveCollection && (effectiveCollection.enable_game_agent || effectiveCollection.enable_game_explorer) && effectiveCollection.real_input_enabled) {
+        setMessage("3 秒后切换到目标游戏窗口并开始自动探索，请不要操作鼠标键盘。");
+        await delay(3000);
+        const focus = await apiClient.focusV3TargetWindow(effectiveCollection.collection_id);
+        if (!focus.ok) {
+          setMessage(`目标窗口切换失败：${focus.blocked_reason || "target_window_not_foreground"}。请先选择目标窗口或手动切回游戏窗口。`);
+        }
       }
       const run = await apiClient.continueV3Collection(collectionId);
       await load(false);
@@ -237,10 +252,53 @@ export function V3CurrentRunRoute() {
     setBusyAction("frame-pump:start");
     try {
       const outputDir = primaryCollection?.watch_dir || primaryCollection?.input_dir || primaryCollection?.frame_pump_output_dir || undefined;
-      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "obs_websocket", output_dir: outputDir });
+      const status = await apiClient.startV3FramePump({ fps: 1, full_screen: true, source_mode: "screen", output_dir: outputDir });
       setFramePump(status);
       await load(false);
       setMessage(status.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function detectWindows(collection: V3CollectionSummary) {
+    setBusyAction(`windows:${collection.collection_id}`);
+    try {
+      const nextWindows = await apiClient.listV3ActionWindows();
+      setWindows(nextWindows);
+      setMessage(nextWindows.length ? `检测到 ${nextWindows.length} 个可见窗口，请选择目标游戏窗口。` : "没有检测到可见窗口，请先打开游戏或测试窗口。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function bindTargetWindow(collection: V3CollectionSummary, windowInfo: V3TargetWindowInfo) {
+    setBusyAction(`target:${collection.collection_id}`);
+    try {
+      const updated = await apiClient.updateV3CollectionTargetWindow(collection.collection_id, windowInfo);
+      replaceCollection(updated);
+      const nextHealth = await apiClient.getV3ActionHealth(collection.collection_id);
+      setActionHealth(nextHealth);
+      setMessage(`已绑定目标窗口：${windowInfo.title}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function focusTargetWindow(collection: V3CollectionSummary) {
+    setBusyAction(`focus:${collection.collection_id}`);
+    try {
+      const result = await apiClient.focusV3TargetWindow(collection.collection_id);
+      const nextHealth = await apiClient.getV3ActionHealth(collection.collection_id);
+      setActionHealth(nextHealth);
+      await load(false);
+      setMessage(result.ok ? "目标窗口已切到前台。" : `目标窗口未能切到前台：${result.blocked_reason || "target_window_not_foreground"}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -306,7 +364,10 @@ export function V3CurrentRunRoute() {
 
       <div className="grid gap-4">
         {orderedCollections.length === 0 ? <Card title="暂无采集项目"><p className="text-sm text-slate-500">请先创建 WPS、WinMerge 或游戏采集项目。</p></Card> : null}
-        {orderedCollections.map((collection) => (
+        {orderedCollections.map((collection) => {
+          const sameCollectionHealth = primaryCollection?.collection_id === collection.collection_id ? actionHealth : null;
+          const blockers = sameCollectionHealth?.blockers || [];
+          return (
           <Card key={collection.collection_id} title={collection.display_name || collection.task_name || collection.app_name || "采集项目"} eyebrow="collection 采集项目">
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <Metric label="软件/游戏名称" value={collection.app_name || "-"} />
@@ -350,10 +411,31 @@ export function V3CurrentRunRoute() {
               <div className="mt-3 grid gap-3 md:grid-cols-4">
                 <Metric label="AI 自动探索" value={collection.game_agent_status || "未启用"} />
                 <Metric label="当前识别状态" value={collection.game_agent_state || "unknown"} />
-                <Metric label="本轮动作次数" value={`${collection.latest_round_action_count} 次`} />
-                <Metric label="累计动作次数" value={`${collection.action_total} 次`} />
+                <Metric label="本轮动作尝试" value={`${collection.latest_round_action_attempt_count} 次`} />
+                <Metric label="本轮成功执行" value={`${collection.latest_round_action_executed_count} 次`} />
+                <Metric label="本轮被阻止" value={`${collection.latest_round_action_blocked_count} 次`} />
+                <Metric label="累计动作尝试" value={`${collection.action_attempt_total} 次`} />
+                <Metric label="累计成功执行" value={`${collection.action_executed_total} 次`} />
+                <Metric label="累计被阻止" value={`${collection.action_blocked_total} 次`} />
                 <Metric label="真实输入权限" value={collection.real_input_enabled ? "已开启" : "未开启"} />
+                <Metric label="键盘输入" value={readinessText(collection.keyboard_input_ready || Boolean(sameCollectionHealth?.keyboard_input_ready))} />
+                <Metric label="鼠标移动" value={readinessText(collection.mouse_move_ready || Boolean(sameCollectionHealth?.mouse_move_ready))} />
+                <Metric label="鼠标点击" value={readinessText(collection.mouse_click_ready || Boolean(sameCollectionHealth?.mouse_click_ready))} />
+                <Metric label="光标读取" value={collection.cursor_read_access_denied || sameCollectionHealth?.cursor_read_access_denied ? "拒绝访问" : readinessText(collection.cursor_read_ready || Boolean(sameCollectionHealth?.cursor_read_ready))} />
+                <Metric label="目标窗口" value={targetWindowLabel(collection)} />
+                <Metric label="目标窗口前台" value={readinessText(collection.target_window_foreground || Boolean(sameCollectionHealth?.target_window_foreground))} />
+                <Metric label="当前前台窗口" value={foregroundWindowLabel(collection.current_foreground_window || sameCollectionHealth?.current_foreground_window)} />
               </div>
+              {(collection.enable_game_agent || collection.enable_game_explorer) && !collection.target_window_found ? (
+                <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  尚未绑定目标游戏窗口。请先点击“检测窗口”，选择正在运行的游戏窗口；也可以手动切到游戏窗口后再继续采集。
+                </p>
+              ) : null}
+              {collection.keyboard_input_ready && !collection.mouse_click_ready ? (
+                <p className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-100">
+                  键盘输入已经可用，鼠标点击暂不可用。GetCursorPos 或鼠标点击异常不会阻止 WASD、热键、按住按键这类键盘动作。
+                </p>
+              ) : null}
               {!collection.real_input_enabled && (collection.enable_game_agent || collection.enable_game_explorer) ? (
                 <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                   真实输入未开启。需要用 APP_SHOT_ALLOW_REAL_INPUT=1 重启后端后，WASD、鼠标视角和真实点击才会执行。
@@ -373,8 +455,32 @@ export function V3CurrentRunRoute() {
                 <span>最近动作：{String(collection.latest_action?.action_type || collection.latest_action?.planned_action || "-")}</span>
                 <span>最近动作原因：{String(collection.latest_action?.reason || "-")}</span>
                 <span>最近阻止原因：{collection.latest_blocked_reason || "-"}</span>
+                <span>Input Gateway 阻塞项：{blockers.join("、") || "-"}</span>
                 <span>visual_diff_score：{String(collection.latest_action?.visual_diff_score ?? "-")}</span>
               </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void detectWindows(collection)}>
+                  {busyAction === `windows:${collection.collection_id}` ? "检测中..." : "检测窗口"}
+                </button>
+                <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !collection.target_window_found} onClick={() => void focusTargetWindow(collection)}>
+                  {busyAction === `focus:${collection.collection_id}` ? "切换中..." : "尝试切到目标窗口"}
+                </button>
+              </div>
+              {windows.length > 0 ? (
+                <div className="mt-3 grid gap-2">
+                  {windows.slice(0, 10).map((windowInfo) => (
+                    <button
+                      key={`${windowInfo.hwnd}-${windowInfo.pid || 0}`}
+                      className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-left text-sm text-slate-300 hover:border-blue-500/50 disabled:cursor-not-allowed disabled:text-slate-600"
+                      disabled={Boolean(busyAction)}
+                      onClick={() => void bindTargetWindow(collection, windowInfo)}
+                    >
+                      <span className="font-semibold text-slate-100">{windowInfo.title || `窗口 ${windowInfo.hwnd}`}</span>
+                      <span className="text-xs text-slate-500">PID {windowInfo.pid || "-"} · {windowInfo.process_name || "-"} · {windowInfo.foreground ? "当前前台" : "后台"}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 <AgentToggle label="启用 AI 自动探索" checked={collection.enable_game_agent || collection.enable_game_explorer} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { enable_game_agent: value, enable_game_explorer: value, game_agent_mode: value ? "auto_explore" : "off" })} />
                 <AgentToggle label="安全场景确认" checked={collection.safe_scene_confirmed || collection.safe_game_scene_confirmed} disabled={Boolean(busyAction)} onChange={(value) => void updateAgentConfig(collection, { safe_scene_confirmed: value, safe_game_scene_confirmed: value })} />
@@ -453,7 +559,8 @@ export function V3CurrentRunRoute() {
               </div>
             </details>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <details className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3">
@@ -539,6 +646,32 @@ function framePumpStatusText(status?: V3FramePumpStatus["status"]) {
   if (status === "running") return "运行中";
   if (status === "stale" || status === "error") return "异常";
   return "未运行";
+}
+
+function readinessText(value?: boolean) {
+  return value ? "可用" : "不可用";
+}
+
+function targetWindowLabel(collection: V3CollectionSummary) {
+  if (!collection.target_window_hwnd && !collection.target_window_title) return "未绑定";
+  const title = collection.target_window_title || `HWND ${collection.target_window_hwnd}`;
+  if (!collection.target_window_found) return `${title}（未找到）`;
+  return collection.target_window_foreground ? `${title}（前台）` : `${title}（后台）`;
+}
+
+function foregroundWindowLabel(value?: Record<string, unknown> | null) {
+  if (!value) return "-";
+  const title = value.title || value.window_title || value.name;
+  const processName = value.process_name || value.process || value.exe;
+  if (title && processName) return `${String(title)} / ${String(processName)}`;
+  if (title) return String(title);
+  if (processName) return String(processName);
+  const hwnd = value.hwnd || value.window_handle;
+  return hwnd ? `HWND ${String(hwnd)}` : "-";
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
 function isDebugCollection(collection: V3CollectionSummary) {

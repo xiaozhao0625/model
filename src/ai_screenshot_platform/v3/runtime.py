@@ -13,7 +13,7 @@ from ai_screenshot_platform.v3.capture.folder_watch import list_new_images
 from ai_screenshot_platform.v3.capture.obs_websocket import config_from_payload, list_scenes, list_sources, obs_status, take_obs_screenshot
 from ai_screenshot_platform.v3.game.agent_loop import GameAgentLoop
 from ai_screenshot_platform.v3.ocr.base import OcrProvider
-from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
+from ai_screenshot_platform.v3.action.input_gateway import focus_target_window, list_visible_windows, load_input_gateway_readiness
 from ai_screenshot_platform.v3.action.rollback import rollback_plan
 from ai_screenshot_platform.v3.action.action_loop import ActionLoop
 from ai_screenshot_platform.v3.action.candidate_fusion import fuse_candidates
@@ -77,8 +77,19 @@ class V3Runtime:
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
 
-    def action_health(self) -> dict[str, object]:
-        return load_input_gateway_readiness().model_dump()
+    def action_health(self, collection_id: str | None = None) -> dict[str, object]:
+        config = self.get_collection(collection_id).config if collection_id else None
+        return load_input_gateway_readiness(target_config=config).model_dump()
+
+    def action_windows(self) -> list[dict[str, object]]:
+        return list_visible_windows()
+
+    def set_collection_target_window(self, collection_id: str, payload) -> V3CollectionSummary:
+        return self.store.update_collection_target_window(collection_id, payload)
+
+    def focus_target_window(self, collection_id: str | None = None) -> dict[str, object]:
+        config = self.get_collection(collection_id).config if collection_id else None
+        return focus_target_window(config)
 
     def defaults(self) -> V3TaskConfig:
         return V3TaskConfig()
@@ -177,6 +188,8 @@ class V3Runtime:
                 "game_agent": self._game_agent_start_decision(record.config),
             },
         )
+        if _should_focus_target_before_agent(record.config):
+            self.store.append_event(run_id, "target_window_focus", self.focus_target_window(record.collection_id))
         self._ensure_watch_thread(run_id)
         self._ensure_game_agent_thread(run_id)
         return record
@@ -193,6 +206,8 @@ class V3Runtime:
             self.start_frame_pump(self._frame_pump_request_for_config(record.config, output_dir=watch_dir))
         record = self.store.update_status(run_id, "waiting_for_input")
         self.store.append_event(run_id, "run_resumed", {"game_agent": self._game_agent_start_decision(record.config)})
+        if _should_focus_target_before_agent(record.config):
+            self.store.append_event(run_id, "target_window_focus", self.focus_target_window(record.collection_id))
         self._ensure_watch_thread(run_id)
         self._ensure_game_agent_thread(run_id)
         return record
@@ -774,7 +789,11 @@ class V3Runtime:
 
     def _frame_pump_request_for_config(self, config: V3TaskConfig, output_dir: str | Path | None = None) -> V3FramePumpStartRequest:
         fps = max(0.2, min(10.0, 1000 / max(config.capture_interval_ms, 100)))
-        if config.capture_source in {"obs", "obs_websocket"}:
+        should_use_obs = bool(
+            config.capture_source in {"obs", "obs_websocket"}
+            and (config.obs_scene_name or config.obs_source_name or os.environ.get("APP_SHOT_FRAME_PUMP_USE_OBS_WEBSOCKET") == "1")
+        )
+        if should_use_obs:
             return V3FramePumpStartRequest(
                 source_mode="obs_websocket",
                 fps=fps,
@@ -824,7 +843,15 @@ class V3Runtime:
             return {"game_agent_enabled": False, "blocked_reason": "no_action_capability_enabled", "capabilities": capabilities}
         if os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() != "1":
             return {"game_agent_enabled": True, "blocked_reason": "real_input_disabled", "capabilities": capabilities}
-        readiness = load_input_gateway_readiness()
+        readiness = load_input_gateway_readiness(target_config=config)
+        if not readiness.keyboard_input_ready and (config.allow_wasd or config.allow_hotkeys or config.allow_training_movement):
+            return {"game_agent_enabled": True, "blocked_reason": "keyboard_input_not_ready", "capabilities": capabilities, "blockers": readiness.blockers}
+        if not readiness.mouse_move_ready and config.allow_mouse_look:
+            return {"game_agent_enabled": True, "blocked_reason": "mouse_move_not_ready", "capabilities": capabilities, "blockers": readiness.blockers}
+        if not readiness.target_window_found:
+            return {"game_agent_enabled": True, "blocked_reason": "target_window_not_found", "capabilities": capabilities, "blockers": readiness.blockers}
+        if not readiness.target_window_foreground:
+            return {"game_agent_enabled": True, "blocked_reason": "target_window_not_foreground", "capabilities": capabilities, "blockers": readiness.blockers}
         if not readiness.input_gateway_ready:
             return {
                 "game_agent_enabled": True,
@@ -1308,6 +1335,14 @@ def _agent_capability_names(config: V3TaskConfig) -> list[str]:
     if config.allow_training_movement:
         capabilities.append("training_movement")
     return capabilities
+
+
+def _should_focus_target_before_agent(config: V3TaskConfig) -> bool:
+    if not (config.enable_game_agent or config.enable_game_explorer):
+        return False
+    if os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() != "1":
+        return False
+    return any([config.allow_wasd, config.allow_hotkeys, config.allow_mouse_look, config.allow_training_movement, config.allow_ui_click])
 
 
 _SAFE_CLICK_LABELS = [

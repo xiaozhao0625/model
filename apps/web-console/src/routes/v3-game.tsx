@@ -26,7 +26,7 @@ export function V3GameRoute() {
         target_accepted_min: 800,
         target_accepted_soft: 1000,
         target_accepted_max: 2000,
-        capture_source: "obs_websocket",
+        capture_source: "screen",
         max_images: 2000,
         max_actions: 20,
         max_game_actions: 50,
@@ -81,7 +81,7 @@ export function V3GameRoute() {
       const prepared = {
           ...config,
           display_name: config.display_name || config.task_name || config.app_name,
-          capture_source: config.capture_source || "obs_websocket",
+          capture_source: config.capture_source || "screen",
           max_game_actions: Math.min(config.max_game_actions, 200),
           no_text_fill_ratio: Math.min(config.no_text_fill_ratio, 0.2),
           observe_only: !config.enable_game_explorer && !config.enable_auto_click
@@ -119,7 +119,7 @@ export function V3GameRoute() {
             <Field label="任务名称"><input className={inputClass} value={config.task_name || ""} onChange={(event) => patch({ task_name: event.target.value, display_name: event.target.value })} /></Field>
             <Field label="游戏名称"><input className={inputClass} value={config.app_name} onChange={(event) => patch({ app_name: event.target.value })} /></Field>
             <Field label="游戏模式"><select className={inputClass} value={config.game_mode} onChange={(event) => patch({ game_mode: event.target.value as V3TaskConfig["game_mode"] })}>{Object.entries(gameModeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
-            <Field label="截图来源"><select className={inputClass} value={config.capture_source} onChange={(event) => patch({ capture_source: event.target.value as V3TaskConfig["capture_source"] })}><option value="obs_websocket">OBS WebSocket 截图</option><option value="screen">全屏截图</option><option value="window">目标窗口截图</option><option value="folder_watch">只监听 obs-output 文件夹</option></select></Field>
+            <Field label="截图来源"><select className={inputClass} value={config.capture_source} onChange={(event) => patch({ capture_source: event.target.value as V3TaskConfig["capture_source"] })}><option value="screen">全屏截图（推荐）</option><option value="window">目标窗口截图</option><option value="obs_websocket">OBS WebSocket 截图（可选）</option><option value="folder_watch">只监听 obs-output 文件夹</option></select></Field>
             <Field label="目标语言"><select className={inputClass} value={config.target_language} onChange={(event) => patch({ target_language: event.target.value })}><option value="zh">中文</option><option value="en">英文</option><option value="ja">日文</option><option value="ko">韩文</option></select></Field>
             <Field label="文字策略"><select className={inputClass} value={config.text_policy} onChange={(event) => patch({ text_policy: event.target.value as V3TaskConfig["text_policy"] })}>{Object.entries(textPolicyLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
             <Field label="目标有效截图数"><input className={inputClass} type="number" value={config.target_accepted_min} onChange={(event) => patch({ target_accepted_min: Number(event.target.value) })} /></Field>

@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ai_screenshot_platform.v3.runtime import V3Runtime
@@ -14,9 +14,11 @@ from ai_screenshot_platform.v3.schemas import (
     V3AgentConfigRequest,
     V3CollectionCreateRequest,
     V3FramePumpStartRequest,
+    V3FocusTargetWindowRequest,
     V3ImageIngestRequest,
     V3ObsConfigRequest,
     V3RunCreateRequest,
+    V3TargetWindowRequest,
 )
 
 
@@ -70,6 +72,10 @@ def create_v3_router() -> APIRouter:
     @router.patch("/collections/{collection_id}/agent-config")
     def update_collection_agent_config(collection_id: str, payload: V3AgentConfigRequest, request: Request):
         return v3_ok(get_runtime(request).update_collection_agent_config(collection_id, payload).model_dump())
+
+    @router.post("/collections/{collection_id}/target-window")
+    def update_collection_target_window(collection_id: str, payload: V3TargetWindowRequest, request: Request):
+        return v3_ok(get_runtime(request).set_collection_target_window(collection_id, payload).model_dump())
 
     @router.get("/collections/{collection_id}/gallery")
     def collection_gallery(collection_id: str, request: Request):
@@ -242,8 +248,17 @@ def create_v3_router() -> APIRouter:
         return v3_ok(get_runtime(request).record_action_audit(run_id, payload.action))
 
     @router.get("/action/health")
-    def action_health(request: Request):
-        return v3_ok(get_runtime(request).action_health())
+    def action_health(request: Request, collection_id: str | None = None):
+        return v3_ok(get_runtime(request).action_health(collection_id=collection_id))
+
+    @router.get("/action/windows")
+    def action_windows(request: Request):
+        return v3_ok(get_runtime(request).action_windows())
+
+    @router.post("/action/focus-target-window")
+    def action_focus_target_window(request: Request, payload: V3FocusTargetWindowRequest | None = Body(default=None), collection_id: str | None = None):
+        effective_collection_id = collection_id or (payload.collection_id if payload else None)
+        return v3_ok(get_runtime(request).focus_target_window(effective_collection_id))
 
     @router.get("/input/status")
     def input_status(request: Request, collection_id: str | None = None, run_id: str | None = None):

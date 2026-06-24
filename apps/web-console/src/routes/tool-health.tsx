@@ -45,7 +45,7 @@ export function ToolHealthRoute() {
   }
 
   async function startFramePump() {
-    await apiClient.startV3FramePump({ fps: frameFps, full_screen: true, source_mode: "obs_websocket", ...obsConfig });
+    await apiClient.startV3FramePump({ fps: frameFps, full_screen: true, source_mode: "screen", ...obsConfig });
     await load();
   }
 

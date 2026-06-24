@@ -11,6 +11,7 @@ import type {
   SceneClassifyResult,
   ToolHealthRecord,
   UploadRecord,
+  V3ActionHealth,
   V3Health,
   V3AgentConfigRequest,
   V3InputStatus,
@@ -20,6 +21,7 @@ import type {
   V3CollectionRecord,
   V3CollectionSummary,
   V3DeleteResult,
+  V3FocusTargetWindowResult,
   V3ActionRecord,
   V3ImageRecord,
   V3ObsConfigRequest,
@@ -30,6 +32,7 @@ import type {
   V3OpenPathResult,
   V3RunRecord,
   V3Summary,
+  V3TargetWindowInfo,
   V3TaskConfig,
   WorkerRecord
 } from "./api-types";
@@ -79,13 +82,14 @@ export interface ApiClient {
   getToolHealth(): Promise<ToolHealthRecord>;
   getV3Health(): Promise<V3Health>;
   getV3ModelHealth(): Promise<V3Health>;
-  getV3ActionHealth(): Promise<Record<string, unknown>>;
+  getV3ActionHealth(collectionId?: string): Promise<V3ActionHealth>;
   getV3Defaults(): Promise<V3TaskConfig>;
   listV3Collections(includeDeleted?: boolean): Promise<V3CollectionSummary[]>;
   createV3Collection(payload: { config: V3TaskConfig; start_immediately?: boolean }): Promise<V3CollectionRecord | { collection: V3CollectionRecord; run: V3RunRecord }>;
   getV3Collection(collectionId: string): Promise<V3CollectionRecord>;
   getV3CollectionSummary(collectionId: string): Promise<V3CollectionSummary>;
   updateV3CollectionAgentConfig(collectionId: string, payload: V3AgentConfigRequest): Promise<V3CollectionSummary>;
+  updateV3CollectionTargetWindow(collectionId: string, payload: Partial<V3TargetWindowInfo>): Promise<V3CollectionSummary>;
   getV3CollectionGallery(collectionId: string): Promise<V3ImageRecord[]>;
   continueV3Collection(collectionId: string): Promise<V3RunRecord>;
   stopV3Collection(collectionId: string): Promise<V3CollectionRecord>;
@@ -113,6 +117,8 @@ export interface ApiClient {
   openV3InputFolder(collectionId?: string): Promise<V3OpenPathResult>;
   openV3CollectionInputFolder(collectionId: string): Promise<V3OpenPathResult>;
   openV3CollectionExportFolder(collectionId: string): Promise<V3OpenPathResult>;
+  listV3ActionWindows(): Promise<V3TargetWindowInfo[]>;
+  focusV3TargetWindow(collectionId?: string): Promise<V3FocusTargetWindowResult>;
   getV3Summary(runId: string): Promise<V3Summary>;
   getV3Actions(runId: string): Promise<V3ActionRecord[]>;
   getV3Images(runId: string): Promise<V3ImageRecord[]>;
@@ -287,7 +293,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     getToolHealth: () => request("/api/tool-health", mockToolHealth),
     getV3Health: () => requestV3<V3Health>("/api/v3/health"),
     getV3ModelHealth: () => requestV3<V3Health>("/api/v3/model/health"),
-    getV3ActionHealth: () => requestV3<Record<string, unknown>>("/api/v3/action/health"),
+    getV3ActionHealth: (collectionId) => requestV3<V3ActionHealth>(`/api/v3/action/health${collectionId ? `?collection_id=${encodeURIComponent(collectionId)}` : ""}`),
     getV3Defaults: () => requestV3<V3TaskConfig>("/api/v3/config/defaults"),
     listV3Collections: (includeDeleted = false) => requestV3<V3CollectionSummary[]>(`/api/v3/collections${includeDeleted ? "?include_deleted=true" : ""}`),
     createV3Collection: (payload) =>
@@ -296,6 +302,8 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     getV3CollectionSummary: (collectionId) => requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/summary`),
     updateV3CollectionAgentConfig: (collectionId, payload) =>
       requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/agent-config`, { method: "PATCH", body: JSON.stringify(payload) }),
+    updateV3CollectionTargetWindow: (collectionId, payload) =>
+      requestV3<V3CollectionSummary>(`/api/v3/collections/${collectionId}/target-window`, { method: "POST", body: JSON.stringify(payload) }),
     getV3CollectionGallery: (collectionId) => requestV3<V3ImageRecord[]>(`/api/v3/collections/${collectionId}/gallery`),
     continueV3Collection: (collectionId) => requestV3<V3RunRecord>(`/api/v3/collections/${collectionId}/continue`, { method: "POST" }),
     stopV3Collection: (collectionId) => requestV3<V3CollectionRecord>(`/api/v3/collections/${collectionId}/stop`, { method: "POST" }),
@@ -322,7 +330,7 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
     testV3ObsScreenshot: (payload = {}) =>
       requestV3<V3ObsScreenshotResult>("/api/v3/obs/test-screenshot", { method: "POST", body: JSON.stringify(payload) }),
     getV3FramePumpStatus: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/status"),
-    startV3FramePump: (payload = { fps: 1, full_screen: true }) =>
+    startV3FramePump: (payload = { fps: 1, full_screen: true, source_mode: "screen" as const }) =>
       requestV3<V3FramePumpStatus>("/api/v3/frame-pump/start", { method: "POST", body: JSON.stringify(payload) }),
     stopV3FramePump: () => requestV3<V3FramePumpStatus>("/api/v3/frame-pump/stop", { method: "POST", body: JSON.stringify({}) }),
     testV3FramePumpShot: (payload = {}) =>
@@ -334,6 +342,12 @@ export function createApiClient(baseUrl = defaultBaseUrl, fetcher: Fetcher = fet
       requestV3<V3OpenPathResult>(`/api/v3/collections/${collectionId}/open-input-folder`, { method: "POST", body: JSON.stringify({}) }),
     openV3CollectionExportFolder: (collectionId) =>
       requestV3<V3OpenPathResult>(`/api/v3/collections/${collectionId}/open-export-folder`, { method: "POST", body: JSON.stringify({}) }),
+    listV3ActionWindows: () => requestV3<V3TargetWindowInfo[]>("/api/v3/action/windows"),
+    focusV3TargetWindow: (collectionId) =>
+      requestV3<V3FocusTargetWindowResult>(
+        `/api/v3/action/focus-target-window${collectionId ? `?collection_id=${encodeURIComponent(collectionId)}` : ""}`,
+        { method: "POST", body: JSON.stringify(collectionId ? { collection_id: collectionId } : {}) }
+      ),
     getV3Summary: (runId) => requestV3<V3Summary>(`/api/v3/runs/${runId}/summary`),
     getV3Actions: (runId) => requestV3<V3ActionRecord[]>(`/api/v3/runs/${runId}/actions`),
     getV3Images: (runId) => requestV3<V3ImageRecord[]>(`/api/v3/runs/${runId}/images`),

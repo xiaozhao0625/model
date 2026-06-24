@@ -1,7 +1,7 @@
 import json
 
 from ai_screenshot_platform.v3.action.click_executor import ClickExecutor
-from ai_screenshot_platform.v3.action.input_gateway import input_gateway_readiness_from_diagnosis
+from ai_screenshot_platform.v3.action.input_gateway import blocked_reason_for_action, input_gateway_readiness_from_diagnosis
 from ai_screenshot_platform.v3.schemas import ActionDecision, FusedCandidate
 
 
@@ -20,9 +20,13 @@ def test_input_gateway_reports_getcursorpos_access_denied_blocker():
     )
 
     assert readiness.cursor_read_ready is False
+    assert readiness.cursor_read_access_denied is True
+    assert readiness.keyboard_input_ready is False
+    assert readiness.mouse_move_ready is False
+    assert readiness.mouse_click_ready is False
     assert readiness.input_gateway_ready is False
     assert readiness.click_backend == "dry_run_backend"
-    assert "GetCursorPos access denied" in readiness.blockers
+    assert "cursor_read_access_denied" in readiness.blockers
 
 
 def test_input_gateway_selects_audited_sendinput_fallback_when_cursor_probe_fails():
@@ -36,14 +40,21 @@ def test_input_gateway_selects_audited_sendinput_fallback_when_cursor_probe_fail
             "sendinput": {"callable": True},
             "mouse_event": {"callable": True},
             "pyautogui": {"available": False},
+            "target_process": {"found": True, "foreground": True},
         }
     )
 
     assert readiness.cursor_read_ready is False
-    assert readiness.mouse_click_ready is True
-    assert readiness.input_gateway_ready is True
-    assert readiness.click_backend == "win32_sendinput_backend"
-    assert "GetCursorPos access denied" in readiness.blockers
+    assert readiness.cursor_read_access_denied is True
+    assert readiness.keyboard_input_ready is True
+    assert readiness.mouse_move_ready is True
+    assert readiness.mouse_click_ready is False
+    assert readiness.input_gateway_ready is False
+    assert readiness.click_backend == "dry_run_backend"
+    assert "cursor_read_access_denied" in readiness.blockers
+    assert blocked_reason_for_action("key_hold", readiness) is None
+    assert blocked_reason_for_action("mouse_move_small", readiness) is None
+    assert blocked_reason_for_action("mouse_click", readiness) == "cursor_read_access_denied"
 
 
 def test_click_executor_audits_selected_backend():
@@ -108,6 +119,7 @@ def test_input_gateway_readiness_json_shape_is_serializable():
             "sendinput": {"callable": True},
             "mouse_event": {"callable": True},
             "pyautogui": {"available": False},
+            "target_process": {"found": True, "foreground": True},
         }
     )
 
@@ -115,3 +127,7 @@ def test_input_gateway_readiness_json_shape_is_serializable():
 
     assert json.loads(json.dumps(payload))["input_gateway_ready"] is True
     assert payload["click_backend"] == "computer_use_backend"
+    assert payload["keyboard_input_ready"] is True
+    assert payload["mouse_move_ready"] is True
+    assert payload["target_window_found"] is True
+    assert payload["target_window_foreground"] is True

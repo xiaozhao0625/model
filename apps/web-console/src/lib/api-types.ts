@@ -129,6 +129,10 @@ export interface V3TaskConfig {
   allow_training_movement: boolean;
   safe_scene_confirmed: boolean;
   action_interval_ms: number;
+  target_window_hwnd?: number | null;
+  target_window_title?: string | null;
+  target_process_name?: string | null;
+  target_process_id?: number | null;
 }
 
 export interface V3ProviderHealth {
@@ -149,8 +153,15 @@ export interface V3Health {
   ocr_performance_ready: boolean;
   ocr_production_ready: boolean;
   input_gateway_ready: boolean;
+  real_input_allowed: boolean;
+  keyboard_input_ready: boolean;
+  mouse_move_ready: boolean;
   cursor_read_ready: boolean;
+  cursor_read_access_denied: boolean;
   mouse_click_ready: boolean;
+  target_window_found: boolean;
+  target_window_foreground: boolean;
+  current_foreground_window?: Record<string, unknown> | null;
   same_desktop_session_ready: boolean;
   same_integrity_ready: boolean;
   interactive_desktop_ready: boolean;
@@ -212,6 +223,9 @@ export interface V3CollectionSummary {
   latest_round_rejected: number;
   latest_round_failed: number;
   latest_round_action_count: number;
+  latest_round_action_attempt_count: number;
+  latest_round_action_executed_count: number;
+  latest_round_action_blocked_count: number;
   latest_round_top_reject_reasons: Array<{ reason: string; count: number }>;
   latest_action?: Record<string, unknown> | null;
   latest_blocked_reason?: string | null;
@@ -234,6 +248,21 @@ export interface V3CollectionSummary {
   action_interval_ms: number;
   real_input_enabled: boolean;
   agent_config_missing: boolean;
+  keyboard_input_ready: boolean;
+  mouse_move_ready: boolean;
+  mouse_click_ready: boolean;
+  cursor_read_ready: boolean;
+  cursor_read_access_denied: boolean;
+  target_window_hwnd?: number | null;
+  target_window_title?: string | null;
+  target_process_name?: string | null;
+  target_process_id?: number | null;
+  target_window_found: boolean;
+  target_window_foreground: boolean;
+  current_foreground_window?: Record<string, unknown> | null;
+  action_attempt_total: number;
+  action_executed_total: number;
+  action_blocked_total: number;
   min_target_reached: boolean;
   soft_target_reached: boolean;
   max_target_reached: boolean;
@@ -279,6 +308,43 @@ export type V3AgentConfigRequest = Partial<
     | "action_interval_ms"
   >
 >;
+
+export interface V3TargetWindowInfo {
+  hwnd: number;
+  title: string;
+  process_name?: string | null;
+  pid?: number | null;
+  visible: boolean;
+  foreground: boolean;
+}
+
+export interface V3ActionHealth {
+  input_gateway_ready: boolean;
+  real_input_allowed: boolean;
+  keyboard_input_ready: boolean;
+  mouse_move_ready: boolean;
+  cursor_read_ready: boolean;
+  cursor_read_access_denied: boolean;
+  mouse_click_ready: boolean;
+  target_window_found: boolean;
+  target_window_foreground: boolean;
+  current_foreground_window?: Record<string, unknown> | null;
+  same_desktop_session_ready: boolean;
+  same_integrity_ready: boolean;
+  interactive_desktop_ready: boolean;
+  click_backend: string;
+  blockers: string[];
+  diagnosis_path?: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface V3FocusTargetWindowResult {
+  ok: boolean;
+  focused: boolean;
+  blocked_reason?: string | null;
+  target_window?: V3TargetWindowInfo | null;
+  current_foreground_window?: Record<string, unknown> | null;
+}
 
 export interface V3CollectionExportResult {
   collection_id: string;
@@ -435,6 +501,9 @@ export interface V3Summary {
   latest_accepted_at?: string | null;
   top_reject_reason?: string | null;
   input_status?: V3InputStatus | null;
+  action_attempt_count?: number;
+  action_executed_count?: number;
+  action_blocked_count?: number;
   observe_only: boolean;
   auto_click_ready: boolean;
   full_auto_capture_ready: boolean;
@@ -444,8 +513,15 @@ export interface V3Summary {
   ocr_performance_ready: boolean;
   ocr_production_ready: boolean;
   input_gateway_ready: boolean;
+  real_input_allowed: boolean;
+  keyboard_input_ready: boolean;
+  mouse_move_ready: boolean;
   cursor_read_ready: boolean;
+  cursor_read_access_denied: boolean;
   mouse_click_ready: boolean;
+  target_window_found: boolean;
+  target_window_foreground: boolean;
+  current_foreground_window?: Record<string, unknown> | null;
   same_desktop_session_ready: boolean;
   same_integrity_ready: boolean;
   interactive_desktop_ready: boolean;

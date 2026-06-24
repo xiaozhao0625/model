@@ -24,7 +24,7 @@ export function ObsFramePumpPanel({
   onMessage?: (message: string) => void;
 }) {
   const [obsConfig, setObsConfig] = useState<V3ObsConfigRequest>({ obs_host: "127.0.0.1", obs_port: 4455, obs_password: "", screenshot_target: "source", image_format: "png" });
-  const [sourceMode, setSourceMode] = useState<NonNullable<V3FramePumpStartRequest["source_mode"]>>("obs_websocket");
+  const [sourceMode, setSourceMode] = useState<NonNullable<V3FramePumpStartRequest["source_mode"]>>("screen");
   const [fps, setFps] = useState(1);
   const [obs, setObs] = useState<V3ObsStatus | null>(null);
   const [scenes, setScenes] = useState<V3ObsSceneOption[]>([]);
@@ -136,7 +136,7 @@ export function ObsFramePumpPanel({
         <Field label="截图目标"><select className={inputClass} value={obsConfig.screenshot_target || "source"} onChange={(event) => setObsConfig({ ...obsConfig, screenshot_target: event.target.value as V3ObsConfigRequest["screenshot_target"] })}><option value="source">指定来源</option><option value="scene">整个场景</option></select></Field>
         <Field label="场景"><input className={inputClass} list="v3-obs-scenes" value={obsConfig.obs_scene_name || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_scene_name: event.target.value })} /><datalist id="v3-obs-scenes">{scenes.map((scene) => <option key={obsOptionName(scene)} value={obsOptionName(scene)} />)}</datalist></Field>
         <Field label="来源"><input className={inputClass} list="v3-obs-sources" value={obsConfig.obs_source_name || ""} onChange={(event) => setObsConfig({ ...obsConfig, obs_source_name: event.target.value })} /><datalist id="v3-obs-sources">{sources.map((source) => <option key={obsOptionName(source)} value={obsOptionName(source)} />)}</datalist></Field>
-        <Field label="输入源模式"><select className={inputClass} value={sourceMode} onChange={(event) => setSourceMode(event.target.value as NonNullable<V3FramePumpStartRequest["source_mode"]>)}><option value="obs_websocket">OBS WebSocket（推荐）</option><option value="obs_projector">OBS 投影窗口</option><option value="screen">当前屏幕</option><option value="window">指定窗口</option></select></Field>
+        <Field label="输入源模式"><select className={inputClass} value={sourceMode} onChange={(event) => setSourceMode(event.target.value as NonNullable<V3FramePumpStartRequest["source_mode"]>)}><option value="screen">当前屏幕（推荐）</option><option value="window">指定窗口</option><option value="obs_projector">OBS 投影窗口</option><option value="obs_websocket">OBS WebSocket（可选）</option></select></Field>
         <Field label="FPS"><select className={inputClass} value={fps} onChange={(event) => setFps(Number(event.target.value))}><option value={1}>1 FPS</option><option value={2}>2 FPS</option><option value={5}>5 FPS</option></select></Field>
       </div>
 
@@ -153,7 +153,7 @@ export function ObsFramePumpPanel({
           {framePump?.latest_frame_path ? <img className="h-full w-full object-contain" src={`${apiClient.getV3FramePumpLatestFrameUrl()}?v=${previewVersion}`} alt="最近输出帧预览" /> : <div className="flex h-full items-center justify-center text-sm text-slate-500">暂无预览</div>}
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-400">
-          <p>OBS WebSocket 负责取图；自动点击、WASD 和鼠标视角变化由 V3 输入网关执行。</p>
+          <p>Frame Pump 负责持续截图，默认使用当前屏幕，不要求 OBS WebSocket。</p>
           <p className="mt-2">只截图模式不会执行动作。自动操作模式需要安全场景确认，且不会使用注入或绕过反作弊的方式后台控制游戏。</p>
           <p className="mt-2">最近输出时间：{framePump?.latest_frame_time || input?.latest_file_time || "-"}</p>
         </div>

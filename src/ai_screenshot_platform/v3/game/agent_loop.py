@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
+from ai_screenshot_platform.v3.action.input_gateway import blocked_reason_for_action, load_input_gateway_readiness
 from ai_screenshot_platform.v3.schemas import V3TaskConfig, utc_now
 
 
@@ -115,17 +115,19 @@ class GameAgentLoop:
             return {"action_type": "key_press", "planned_action": "key_press", "keys": ["Tab"], "duration_ms": 80, "reason": "未知状态下低风险切换面板", "observed_state": state}
         return self._blocked_plan("wait", "no_safe_plan_for_state", state)
 
-    def act(self, plan: dict[str, object]) -> dict[str, object]:
+    def act(self, plan: dict[str, object], *, config: V3TaskConfig | None = None) -> dict[str, object]:
         blocked_reason = plan.get("blocked_reason")
         if blocked_reason:
             return {"executed": False, "reason": blocked_reason, "status": "blocked"}
         if not self.allow_real_input:
             return {"executed": False, "reason": "real_input_disabled", "status": "blocked"}
-        readiness = self.readiness_loader()
-        if not getattr(readiness, "input_gateway_ready", False):
-            blockers = getattr(readiness, "blockers", []) or []
-            return {"executed": False, "reason": "input_gateway_not_ready", "status": "blocked", "blockers": blockers}
         action_type = str(plan.get("action_type") or "wait")
+        readiness = self._readiness_for_config(config)
+        blocked = blocked_reason_for_action(action_type, readiness)
+        if blocked:
+            blockers = getattr(readiness, "blockers", []) or []
+            readiness_payload = readiness.model_dump() if hasattr(readiness, "model_dump") else {}
+            return {"executed": False, "reason": blocked, "status": "blocked", "blockers": blockers, "readiness": readiness_payload}
         try:
             if action_type == "key_hold":
                 _key_hold([str(key) for key in plan.get("keys", [])], int(plan.get("duration_ms") or 500))
@@ -138,6 +140,12 @@ class GameAgentLoop:
         except Exception as exc:  # pragma: no cover - depends on interactive desktop.
             return {"executed": False, "reason": f"input_execution_failed:{exc}", "status": "error"}
         return {"executed": True, "reason": "real_input_executed", "status": "executed"}
+
+    def _readiness_for_config(self, config: V3TaskConfig | None):
+        try:
+            return self.readiness_loader(target_config=config)
+        except TypeError:
+            return self.readiness_loader()
 
     def verify(self, *, before_image: str | None, after_image: str | None) -> dict[str, object]:
         before_sha = _file_sha256(before_image)
@@ -167,7 +175,7 @@ class GameAgentLoop:
     ) -> dict[str, object]:
         observation = self.observe(config=config, before_image=before_image, ocr_text=ocr_text, last_action_effect=last_action_effect)
         plan = self.plan(config=config, observation=observation, before_image=before_image)
-        result = self.act(plan)
+        result = self.act(plan, config=config)
         if latest_image_fn is not None:
             time.sleep(max(0.1, action_interval_ms / 1000))
             after_image = latest_image_fn()

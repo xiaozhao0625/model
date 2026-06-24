@@ -31,7 +31,7 @@ export function V3NewCaptureRoute() {
           target_accepted_min: 800,
           target_accepted_soft: 1000,
           target_accepted_max: 2000,
-          capture_source: "obs_websocket",
+          capture_source: "screen",
           obs_host: "127.0.0.1",
           obs_port: 4455,
           screenshot_target: "source",
@@ -150,7 +150,7 @@ export function V3NewCaptureRoute() {
         display_name: config.display_name || config.task_name || config.app_name || "wps",
         max_images: config.max_images || 1500,
         max_actions: Math.min(config.max_actions || 20, 100),
-        capture_source: "obs_websocket",
+        capture_source: "screen",
         must_have_text: true,
         allow_no_text_fill: false,
         no_text_fill_ratio: 0,
@@ -167,7 +167,7 @@ export function V3NewCaptureRoute() {
         max_images: Math.max(config.max_images || 0, 2000),
         max_actions: Math.min(config.max_actions || 20, 100),
         max_game_actions: Math.min(config.max_game_actions || 50, 200),
-        capture_source: "obs_websocket",
+        capture_source: "screen",
         game_mode: "menu",
         text_priority: true,
         must_have_text: true,
@@ -290,9 +290,9 @@ export function V3NewCaptureRoute() {
           </Field>
           <Field label="截图来源">
             <select className={inputClass} value={config.capture_source} onChange={(event) => patch({ capture_source: event.target.value as V3TaskConfig["capture_source"] })}>
-              <option value="obs_websocket">OBS WebSocket 截图</option>
-              <option value="screen">全屏截图</option>
+              <option value="screen">全屏截图（推荐）</option>
               <option value="window">目标窗口截图</option>
+              <option value="obs_websocket">OBS WebSocket 截图（可选）</option>
               <option value="folder_watch">只监听 obs-output 文件夹</option>
             </select>
           </Field>

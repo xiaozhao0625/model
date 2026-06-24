@@ -7,6 +7,7 @@ import uuid
 import zipfile
 from pathlib import Path
 
+from ai_screenshot_platform.v3.action.input_gateway import load_input_gateway_readiness
 from ai_screenshot_platform.v3.schemas import (
     V3AgentConfigRequest,
     V3CollectionExportResult,
@@ -16,6 +17,7 @@ from ai_screenshot_platform.v3.schemas import (
     V3ImageRecord,
     V3RunRecord,
     V3Summary,
+    V3TargetWindowRequest,
     V3TaskConfig,
     ensure_run_dir,
     utc_now,
@@ -191,6 +193,16 @@ class V3RunStore:
         self._write_collection(collection)
         return self.refresh_collection_summary(collection_id)
 
+    def update_collection_target_window(self, collection_id: str, payload: V3TargetWindowRequest) -> V3CollectionSummary:
+        collection = self.get_collection(collection_id)
+        collection.config.target_window_hwnd = payload.hwnd
+        collection.config.target_window_title = payload.title
+        collection.config.target_process_name = payload.process_name
+        collection.config.target_process_id = payload.pid
+        collection.updated_at = utc_now()
+        self._write_collection(collection)
+        return self.refresh_collection_summary(collection_id)
+
     def stop_collection(self, collection_id: str) -> V3CollectionRecord:
         collection = self.get_collection(collection_id)
         collection.status = "stopped"
@@ -297,6 +309,7 @@ class V3RunStore:
             self._write_collection(collection)
         run_summaries: list[dict[str, object]] = []
         processed_total = accepted_total = rejected_total = failed_total = action_total = 0
+        action_attempt_total = action_executed_total = action_blocked_total = 0
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
         latest_action: dict[str, object] | None = None
@@ -309,6 +322,9 @@ class V3RunStore:
                 continue
             images = self.list_images(run_id)
             actions = self.list_meta_jsonl(run_id, "actions.jsonl")
+            action_attempts = len(actions)
+            action_executed = sum(1 for action in actions if _action_executed(action))
+            action_blocked = sum(1 for action in actions if _action_blocked(action))
             if actions:
                 latest_action = actions[-1]
             accepted = [image for image in images if image.bucket == "accepted"]
@@ -331,7 +347,10 @@ class V3RunStore:
                 "duplicate_across_runs": len(cross_duplicates),
                 "rejected": len(rejected),
                 "failed": run_failed,
-                "actions": len(actions),
+                "actions": action_attempts,
+                "action_attempt_count": action_attempts,
+                "action_executed_count": action_executed,
+                "action_blocked_count": action_blocked,
                 "top_reject_reasons": top_rejects,
             }
             run_summaries.append(row)
@@ -340,7 +359,10 @@ class V3RunStore:
             accepted_total += len(accepted) + len(cross_duplicates)
             rejected_total += len(rejected)
             failed_total += run_failed
-            action_total += len(actions)
+            action_total += action_attempts
+            action_attempt_total += action_attempts
+            action_executed_total += action_executed
+            action_blocked_total += action_blocked
             accepted_unique_total += len(new_unique)
             duplicate_across_runs_total += len(cross_duplicates)
             visual_fill_total += sum(1 for image in new_unique if image.meta.get("accepted_class") == "accepted_visual_fill")
@@ -352,6 +374,7 @@ class V3RunStore:
         )
         suggestion = _continue_suggestion(latest_round, accepted_unique_total, config)
         real_input_enabled = _real_input_enabled()
+        gateway = load_input_gateway_readiness(target_config=config)
         summary = V3CollectionSummary(
             collection_id=collection_id,
             status=status,
@@ -384,6 +407,9 @@ class V3RunStore:
             latest_round_rejected=int(latest_round.get("rejected", 0)) if latest_round else 0,
             latest_round_failed=int(latest_round.get("failed", 0)) if latest_round else 0,
             latest_round_action_count=int(latest_round.get("actions", 0)) if latest_round else 0,
+            latest_round_action_attempt_count=int(latest_round.get("action_attempt_count", 0)) if latest_round else 0,
+            latest_round_action_executed_count=int(latest_round.get("action_executed_count", 0)) if latest_round else 0,
+            latest_round_action_blocked_count=int(latest_round.get("action_blocked_count", 0)) if latest_round else 0,
             latest_round_top_reject_reasons=list(latest_round.get("top_reject_reasons", [])) if latest_round else [],
             latest_action=latest_action,
             latest_blocked_reason=_action_blocked_reason(latest_action),
@@ -406,6 +432,21 @@ class V3RunStore:
             action_interval_ms=config.action_interval_ms,
             real_input_enabled=real_input_enabled,
             agent_config_missing=_collection_agent_config_missing(self._collection_dir(collection_id)),
+            keyboard_input_ready=gateway.keyboard_input_ready,
+            mouse_move_ready=gateway.mouse_move_ready,
+            mouse_click_ready=gateway.mouse_click_ready,
+            cursor_read_ready=gateway.cursor_read_ready,
+            cursor_read_access_denied=gateway.cursor_read_access_denied,
+            target_window_hwnd=config.target_window_hwnd,
+            target_window_title=config.target_window_title,
+            target_process_name=config.target_process_name,
+            target_process_id=config.target_process_id,
+            target_window_found=gateway.target_window_found,
+            target_window_foreground=gateway.target_window_foreground,
+            current_foreground_window=gateway.current_foreground_window,
+            action_attempt_total=action_attempt_total,
+            action_executed_total=action_executed_total,
+            action_blocked_total=action_blocked_total,
             min_target_reached=accepted_unique_total >= config.target_accepted_min,
             soft_target_reached=accepted_unique_total >= config.target_accepted_soft,
             max_target_reached=accepted_unique_total >= config.target_accepted_max,
@@ -584,6 +625,9 @@ class V3RunStore:
         frame_pump_restart_count = _folder_watch_metric(self._run_dir(run_id), "frame_pump_restart_count", 0)
         frame_pump_heartbeat = _folder_watch_object(self._run_dir(run_id), "frame_pump_heartbeat")
         action_status_counts = _count_action_statuses(actions)
+        action_attempt_count = len(actions)
+        action_executed_count = sum(1 for action in actions if _action_executed(action))
+        action_blocked_count = sum(1 for action in actions if _action_blocked(action))
         region_counts = _count_action_regions(actions)
         auto_ready = (
             ocr_ready
@@ -594,6 +638,7 @@ class V3RunStore:
         )
         production_ready = ocr_production_ready if ocr_production_ready is not None else ocr_gpu_ready and ocr_performance_ready
         full_auto_ready = auto_ready and production_ready
+        gateway = load_input_gateway_readiness(target_config=record.config)
         summary = V3Summary(
             run_id=run_id,
             status=record.status,
@@ -642,6 +687,9 @@ class V3RunStore:
             navigation_success_count=action_status_counts.get("navigation_success", 0),
             no_effect_count=action_status_counts.get("no_effect", 0),
             blocked_count=action_status_counts.get("blocked", 0) + action_status_counts.get("stopped", 0),
+            action_attempt_count=action_attempt_count,
+            action_executed_count=action_executed_count,
+            action_blocked_count=action_blocked_count,
             rollback_count=action_status_counts.get("rollback_requested", 0) + action_status_counts.get("rollback", 0),
             risk_hit_count=action_status_counts.get("risk_hit", 0),
             observe_only=record.config.observe_only,
@@ -652,14 +700,21 @@ class V3RunStore:
             ocr_gpu_ready=ocr_gpu_ready,
             ocr_performance_ready=ocr_performance_ready,
             ocr_production_ready=production_ready,
-            input_gateway_ready=input_gateway_ready,
-            cursor_read_ready=cursor_read_ready,
-            mouse_click_ready=mouse_click_ready,
-            same_desktop_session_ready=same_desktop_session_ready,
-            same_integrity_ready=same_integrity_ready,
-            interactive_desktop_ready=interactive_desktop_ready,
-            click_backend=click_backend,
-            input_gateway_blockers=input_gateway_blockers or [],
+            input_gateway_ready=gateway.input_gateway_ready,
+            real_input_allowed=gateway.real_input_allowed,
+            cursor_read_ready=gateway.cursor_read_ready,
+            keyboard_input_ready=gateway.keyboard_input_ready,
+            mouse_move_ready=gateway.mouse_move_ready,
+            cursor_read_access_denied=gateway.cursor_read_access_denied,
+            mouse_click_ready=gateway.mouse_click_ready,
+            target_window_found=gateway.target_window_found,
+            target_window_foreground=gateway.target_window_foreground,
+            current_foreground_window=gateway.current_foreground_window,
+            same_desktop_session_ready=gateway.same_desktop_session_ready,
+            same_integrity_ready=gateway.same_integrity_ready,
+            interactive_desktop_ready=gateway.interactive_desktop_ready,
+            click_backend=gateway.click_backend,
+            input_gateway_blockers=gateway.blockers,
             readiness_blockers=readiness_blockers or [],
             safety_gate_ready=safety_gate_ready,
             latest_event=events[-1] if events else None,
@@ -1253,4 +1308,17 @@ def _count_action_regions(actions: list[dict[str, object]]) -> dict[str, int]:
 
 def _action_executed(action: dict[str, object]) -> bool:
     result = action.get("result", {})
-    return isinstance(result, dict) and result.get("executed") is True
+    return action.get("executed") is True or (isinstance(result, dict) and result.get("executed") is True)
+
+
+def _action_blocked(action: dict[str, object]) -> bool:
+    if _action_executed(action):
+        return False
+    if action.get("blocked_reason"):
+        return True
+    result = action.get("result", {})
+    if not isinstance(result, dict):
+        return False
+    if result.get("executed") is False:
+        return True
+    return str(result.get("status") or "") in {"blocked", "stopped", "error"}

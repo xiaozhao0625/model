@@ -10,7 +10,37 @@ from ai_screenshot_platform.v3.schemas import V3TaskConfig
 
 class _ReadyInputGateway:
     input_gateway_ready = True
+    real_input_allowed = True
+    keyboard_input_ready = True
+    mouse_move_ready = True
+    cursor_read_ready = True
+    cursor_read_access_denied = False
+    mouse_click_ready = True
+    target_window_found = True
+    target_window_foreground = True
+    same_desktop_session_ready = True
+    same_integrity_ready = True
+    interactive_desktop_ready = True
+    click_backend = "computer_use_backend"
     blockers = []
+
+    def model_dump(self):
+        return {
+            "input_gateway_ready": self.input_gateway_ready,
+            "real_input_allowed": self.real_input_allowed,
+            "keyboard_input_ready": self.keyboard_input_ready,
+            "mouse_move_ready": self.mouse_move_ready,
+            "cursor_read_ready": self.cursor_read_ready,
+            "cursor_read_access_denied": self.cursor_read_access_denied,
+            "mouse_click_ready": self.mouse_click_ready,
+            "target_window_found": self.target_window_found,
+            "target_window_foreground": self.target_window_foreground,
+            "same_desktop_session_ready": self.same_desktop_session_ready,
+            "same_integrity_ready": self.same_integrity_ready,
+            "interactive_desktop_ready": self.interactive_desktop_ready,
+            "click_backend": self.click_backend,
+            "blockers": self.blockers,
+        }
 
 
 def test_v3_api_create_start_summary(tmp_path, monkeypatch):
@@ -88,6 +118,45 @@ def test_v3_collection_creates_dedicated_input_dir_and_opens_it(tmp_path, monkey
         assert Path(summary["input_dir"]).is_dir()
         assert opened["path"] == summary["input_dir"]
         assert opened["status"] == "dry_run"
+
+
+def test_v3_collection_target_window_api_persists_and_health_is_scoped(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_SHOT_OBS_OUTPUT", str(tmp_path / "obs-output"))
+    monkeypatch.setenv("APP_SHOT_INPUT_GATEWAY_DIAGNOSIS", str(tmp_path / "missing_input_gateway.json"))
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={
+                "config": {
+                    "task_name": "target_window_case",
+                    "app_name": "target_window_case",
+                    "app_type": "pc_game",
+                    "save_root": str(tmp_path / "v3"),
+                }
+            },
+        ).json()["data"]
+        collection_id = created["collection_id"]
+
+        windows = client.get("/api/v3/action/windows").json()
+        assert windows["ok"] is True
+        assert isinstance(windows["data"], list)
+
+        updated = client.post(
+            f"/api/v3/collections/{collection_id}/target-window",
+            json={"hwnd": 12345, "title": "Target Game", "process_name": "target.exe", "pid": 456},
+        ).json()["data"]
+        health = client.get(f"/api/v3/action/health?collection_id={collection_id}").json()["data"]
+        focused = client.post("/api/v3/action/focus-target-window", json={"collection_id": collection_id}).json()["data"]
+
+        assert updated["target_window_hwnd"] == 12345
+        assert updated["target_window_title"] == "Target Game"
+        assert updated["target_process_name"] == "target.exe"
+        assert updated["target_process_id"] == 456
+        assert health["target_window_found"] is False
+        assert "target_window_not_found" in health["blockers"]
+        assert focused["ok"] is False
+        assert focused["blocked_reason"] == "target_window_not_found"
 
 
 def test_v3_frame_pump_start_accepts_explicit_output_dir(tmp_path, monkeypatch):
@@ -626,6 +695,49 @@ def test_v3_api_records_external_action_audit(tmp_path):
         assert listed[0]["label"] == "File"
         assert listed[0]["result"]["status"] == "menu_opened"
         assert summary["counts"]["actions"] == 1
+
+
+def test_v3_collection_summary_splits_attempt_executed_blocked_actions(tmp_path):
+    settings = MasterSettings(database_url=f"sqlite:///{tmp_path / 'master.db'}")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/v3/collections",
+            json={"config": {"task_name": "action_stats", "app_name": "action_stats", "save_root": str(tmp_path / "v3")}},
+        ).json()["data"]
+        collection_id = created["collection_id"]
+        run = client.post(f"/api/v3/collections/{collection_id}/continue?start=false").json()["data"]
+
+        client.post(
+            f"/api/v3/runs/{run['run_id']}/actions/record",
+            json={
+                "action": {
+                    "action_type": "key_hold",
+                    "result": {"executed": True, "status": "executed"},
+                    "executed": True,
+                }
+            },
+        )
+        client.post(
+            f"/api/v3/runs/{run['run_id']}/actions/record",
+            json={
+                "action": {
+                    "action_type": "mouse_click",
+                    "blocked_reason": "cursor_read_access_denied",
+                    "result": {"executed": False, "status": "blocked", "reason": "cursor_read_access_denied"},
+                    "executed": False,
+                }
+            },
+        )
+
+        summary = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
+
+        assert summary["latest_round_action_attempt_count"] == 2
+        assert summary["latest_round_action_executed_count"] == 1
+        assert summary["latest_round_action_blocked_count"] == 1
+        assert summary["action_attempt_total"] == 2
+        assert summary["action_executed_total"] == 1
+        assert summary["action_blocked_total"] == 1
+        assert summary["latest_blocked_reason"] == "cursor_read_access_denied"
 
 
 def test_v3_api_summary_includes_action_capture_breakdowns(tmp_path):

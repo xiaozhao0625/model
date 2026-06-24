@@ -109,6 +109,10 @@ class V3TaskConfig(BaseModel):
     allow_training_movement: bool = False
     safe_scene_confirmed: bool = False
     action_interval_ms: int = Field(default=1500, ge=300, le=10000)
+    target_window_hwnd: int | None = None
+    target_window_title: str | None = None
+    target_process_name: str | None = None
+    target_process_id: int | None = None
 
 
 class V3RunCreateRequest(BaseModel):
@@ -244,6 +248,9 @@ class V3CollectionSummary(BaseModel):
     latest_round_rejected: int = 0
     latest_round_failed: int = 0
     latest_round_action_count: int = 0
+    latest_round_action_attempt_count: int = 0
+    latest_round_action_executed_count: int = 0
+    latest_round_action_blocked_count: int = 0
     latest_round_top_reject_reasons: list[dict[str, object]] = Field(default_factory=list)
     latest_action: dict[str, object] | None = None
     latest_blocked_reason: str | None = None
@@ -266,6 +273,21 @@ class V3CollectionSummary(BaseModel):
     action_interval_ms: int = 1500
     real_input_enabled: bool = False
     agent_config_missing: bool = False
+    keyboard_input_ready: bool = False
+    mouse_move_ready: bool = False
+    mouse_click_ready: bool = False
+    cursor_read_ready: bool = False
+    cursor_read_access_denied: bool = False
+    target_window_hwnd: int | None = None
+    target_window_title: str | None = None
+    target_process_name: str | None = None
+    target_process_id: int | None = None
+    target_window_found: bool = False
+    target_window_foreground: bool = False
+    current_foreground_window: dict[str, object] | None = None
+    action_attempt_total: int = 0
+    action_executed_total: int = 0
+    action_blocked_total: int = 0
     min_target_reached: bool = False
     soft_target_reached: bool = False
     max_target_reached: bool = False
@@ -293,6 +315,17 @@ class V3CollectionExportResult(BaseModel):
     message: str = "导出成功"
 
 
+class V3TargetWindowRequest(BaseModel):
+    hwnd: int | None = None
+    title: str | None = None
+    process_name: str | None = None
+    pid: int | None = None
+
+
+class V3FocusTargetWindowRequest(BaseModel):
+    collection_id: str | None = None
+
+
 class V3InputStatus(BaseModel):
     watch_dir: str
     exists: bool
@@ -306,7 +339,7 @@ class V3InputStatus(BaseModel):
 
 class V3FramePumpStartRequest(BaseModel):
     fps: float = Field(default=1.0, ge=0.2, le=10.0)
-    source_mode: Literal["obs_websocket", "screen", "window", "obs_projector"] = "obs_websocket"
+    source_mode: Literal["obs_websocket", "screen", "window", "obs_projector"] = "screen"
     window_title: str | None = None
     full_screen: bool = True
     output_dir: str | None = None
@@ -483,6 +516,9 @@ class V3Summary(BaseModel):
     navigation_success_count: int = 0
     no_effect_count: int = 0
     blocked_count: int = 0
+    action_attempt_count: int = 0
+    action_executed_count: int = 0
+    action_blocked_count: int = 0
     rollback_count: int = 0
     risk_hit_count: int = 0
     observe_only: bool
@@ -494,8 +530,15 @@ class V3Summary(BaseModel):
     ocr_performance_ready: bool = False
     ocr_production_ready: bool = False
     input_gateway_ready: bool = False
+    real_input_allowed: bool = False
+    keyboard_input_ready: bool = False
+    mouse_move_ready: bool = False
     cursor_read_ready: bool = False
+    cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False
+    target_window_found: bool = False
+    target_window_foreground: bool = False
+    current_foreground_window: dict[str, object] | None = None
     same_desktop_session_ready: bool = False
     same_integrity_ready: bool = False
     interactive_desktop_ready: bool = False
@@ -516,8 +559,15 @@ class ProviderHealth(BaseModel):
 
 class InputGatewayHealth(BaseModel):
     input_gateway_ready: bool = False
+    real_input_allowed: bool = False
+    keyboard_input_ready: bool = False
+    mouse_move_ready: bool = False
     cursor_read_ready: bool = False
+    cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False
+    target_window_found: bool = False
+    target_window_foreground: bool = False
+    current_foreground_window: dict[str, object] | None = None
     same_desktop_session_ready: bool = False
     same_integrity_ready: bool = False
     interactive_desktop_ready: bool = False
@@ -537,8 +587,15 @@ class V3Health(BaseModel):
     ocr_performance_ready: bool = False
     ocr_production_ready: bool = False
     input_gateway_ready: bool = False
+    real_input_allowed: bool = False
+    keyboard_input_ready: bool = False
+    mouse_move_ready: bool = False
     cursor_read_ready: bool = False
+    cursor_read_access_denied: bool = False
     mouse_click_ready: bool = False
+    target_window_found: bool = False
+    target_window_foreground: bool = False
+    current_foreground_window: dict[str, object] | None = None
     same_desktop_session_ready: bool = False
     same_integrity_ready: bool = False
     interactive_desktop_ready: bool = False
