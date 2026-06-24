@@ -310,11 +310,13 @@ class V3RunStore:
         run_summaries: list[dict[str, object]] = []
         processed_total = accepted_total = rejected_total = failed_total = action_total = 0
         action_attempt_total = action_executed_total = action_blocked_total = 0
-        action_changed_total = action_no_change_total = stuck_recovery_total = 0
-        mouse_move_relative_total = wasd_action_total = hotkey_action_total = ui_action_total = 0
+        action_changed_total = action_no_change_total = stuck_recovery_total = recovery_action_total = 0
+        mouse_move_relative_total = wasd_action_total = hotkey_action_total = ui_action_total = ui_explore_action_total = 0
+        after_frame_timeout_total = after_frame_stale_total = 0
         duplicate_across_runs_total = accepted_unique_total = visual_fill_total = 0
         latest_round: dict[str, object] | None = None
         latest_action: dict[str, object] | None = None
+        all_actions: list[dict[str, object]] = []
         for index, run_id in enumerate(collection.run_ids, start=1):
             try:
                 run_record = self.get_run(run_id)
@@ -330,6 +332,7 @@ class V3RunStore:
             action_breakdown = _action_breakdown(actions)
             if actions:
                 latest_action = actions[-1]
+                all_actions.extend(actions)
             accepted = [image for image in images if image.bucket == "accepted"]
             rejected = [image for image in images if image.bucket == "rejected"]
             new_unique = [image for image in accepted if bool(image.meta.get("collection_unique"))]
@@ -369,10 +372,14 @@ class V3RunStore:
             action_changed_total += action_breakdown["changed"]
             action_no_change_total += action_breakdown["no_change"]
             stuck_recovery_total += action_breakdown["stuck_recovery"]
+            recovery_action_total += action_breakdown["recovery"]
             mouse_move_relative_total += action_breakdown["mouse_move_relative"]
             wasd_action_total += action_breakdown["wasd"]
             hotkey_action_total += action_breakdown["hotkey"]
             ui_action_total += action_breakdown["ui"]
+            ui_explore_action_total += action_breakdown["ui_explore"]
+            after_frame_timeout_total += action_breakdown["after_frame_timeout"]
+            after_frame_stale_total += action_breakdown["after_frame_stale"]
             accepted_unique_total += len(new_unique)
             duplicate_across_runs_total += len(cross_duplicates)
             visual_fill_total += sum(1 for image in new_unique if image.meta.get("accepted_class") == "accepted_visual_fill")
@@ -461,10 +468,18 @@ class V3RunStore:
             action_changed_total=action_changed_total,
             action_no_change_total=action_no_change_total,
             stuck_recovery_total=stuck_recovery_total,
+            recovery_action_total=recovery_action_total,
             mouse_move_relative_total=mouse_move_relative_total,
             wasd_action_total=wasd_action_total,
             hotkey_action_total=hotkey_action_total,
             ui_action_total=ui_action_total,
+            ui_explore_action_total=ui_explore_action_total,
+            after_frame_timeout_total=after_frame_timeout_total,
+            after_frame_stale_total=after_frame_stale_total,
+            agent_paused=bool((latest_action or {}).get("agent_paused")),
+            agent_paused_reason=str((latest_action or {}).get("agent_paused_reason") or "") or None,
+            latest_foreground_recovery=_latest_foreground_recovery(latest_action),
+            recent_actions=_recent_action_summaries(all_actions),
             latest_vision_state=_latest_vision_state(latest_action),
             latest_possible_stuck=_latest_possible_stuck(latest_action),
             latest_possible_wall_ahead=bool((latest_action or {}).get("possible_wall_ahead") or _observation_value(latest_action, "possible_wall_ahead")),
@@ -1340,10 +1355,14 @@ def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
         "changed": 0,
         "no_change": 0,
         "stuck_recovery": 0,
+        "recovery": 0,
         "mouse_move_relative": 0,
         "wasd": 0,
         "hotkey": 0,
         "ui": 0,
+        "ui_explore": 0,
+        "after_frame_timeout": 0,
+        "after_frame_stale": 0,
     }
     for action in actions:
         verify = action.get("verify", {})
@@ -1351,8 +1370,12 @@ def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
         changed = bool(action.get("latest_action_changed") or action.get("changed") or (isinstance(verify, dict) and verify.get("changed") is True))
         if changed or status == "changed":
             counts["changed"] += 1
-        elif status in {"no_visual_change", "stuck"}:
+        elif status in {"no_visual_change", "stuck", "after_frame_timeout", "after_frame_stale"}:
             counts["no_change"] += 1
+        if status == "after_frame_timeout" or action.get("verify_reason") == "after_frame_timeout":
+            counts["after_frame_timeout"] += 1
+        if status == "after_frame_stale" or action.get("verify_reason") == "after_frame_stale":
+            counts["after_frame_stale"] += 1
         action_type = str(action.get("action_type") or action.get("planned_action") or "")
         keys = [str(key).upper() for key in action.get("keys", [])] if isinstance(action.get("keys"), list) else []
         state = str(action.get("observed_state") or "")
@@ -1364,9 +1387,53 @@ def _action_breakdown(actions: list[dict[str, object]]) -> dict[str, int]:
             counts["hotkey"] += 1
         if action_type in {"ui_click", "click", "scroll", "drag"} or state.startswith("ui_"):
             counts["ui"] += 1
+        if bool(action.get("ui_explore")) or str(action.get("action_category") or "") == "ui_explore":
+            counts["ui_explore"] += 1
         if state in {"training_stuck", "training_blocked_ahead", "gameplay_no_change", "unknown_repeated"} and action_type in {"key_hold", "mouse_move_relative"}:
             counts["stuck_recovery"] += 1
+        if bool(action.get("recovery_action")) or str(action.get("action_category") or "") == "recovery":
+            counts["recovery"] += 1
     return counts
+
+
+def _recent_action_summaries(actions: list[dict[str, object]]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for action in actions[-10:]:
+        verify = action.get("verify")
+        rows.append(
+            {
+                "action_id": action.get("action_id"),
+                "action_type": action.get("action_type") or action.get("planned_action"),
+                "keys": action.get("keys") if isinstance(action.get("keys"), list) else [],
+                "state_before": action.get("observed_state"),
+                "executed": _action_executed(action),
+                "blocked_reason": _action_blocked_reason(action),
+                "visual_diff_score": _float_or_none(action.get("visual_diff_score")),
+                "center_diff_score": _float_or_none(action.get("center_diff_score")),
+                "changed": _latest_action_changed(action),
+                "after_frame_fresh": action.get("after_frame_fresh"),
+                "accepted_unique_delta": int(action.get("accepted_unique_delta") or 0),
+                "ui_explore": bool(action.get("ui_explore")),
+                "verify_status": str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "") or None,
+                "created_at": action.get("created_at"),
+            }
+        )
+    return rows
+
+
+def _latest_foreground_recovery(action: dict[str, object] | None) -> dict[str, object] | None:
+    if not action:
+        return None
+    if not action.get("foreground_recovery_attempted") and "foreground_recovery_result" not in action:
+        return None
+    return {
+        "attempted": bool(action.get("foreground_recovery_attempted")),
+        "result": action.get("foreground_recovery_result"),
+        "target_window_title": action.get("target_window_title"),
+        "foreground_window_title": action.get("foreground_window_title"),
+        "target_window_foreground": bool(action.get("target_window_foreground")),
+        "blocked_reason": action.get("blocked_reason"),
+    }
 
 
 def _latest_vision_state(action: dict[str, object] | None) -> str | None:

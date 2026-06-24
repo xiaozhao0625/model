@@ -298,10 +298,29 @@ export function V3CurrentRunRoute() {
       const nextHealth = await apiClient.getV3ActionHealth(collection.collection_id);
       setActionHealth(nextHealth);
       await load(false);
-      setMessage(result.ok ? "目标窗口已切到前台。" : `目标窗口未能切到前台：${result.blocked_reason || "target_window_not_foreground"}`);
+      setMessage(result.ok ? "目标窗口已切到前台，AI 自动探索会继续执行。" : `目标窗口未能切到前台：${result.blocked_reason || "target_window_not_foreground"}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function continueScreenshotOnly(collection: V3CollectionSummary) {
+    if (busyAction) return;
+    setBusyAction(`screenshot-only:${collection.collection_id}`);
+    try {
+      const updated = await apiClient.updateV3CollectionAgentConfig(collection.collection_id, buildAgentConfigPayload(collection, {
+        enable_game_agent: false,
+        enable_game_explorer: false,
+        game_agent_mode: "off"
+      }));
+      replaceCollection(updated);
+      setBusyAction(null);
+      await continueCollection(updated.collection_id);
+      setMessage("已切换为只截图模式：Frame Pump、OCR、去重继续运行，真实输入动作已关闭。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
       setBusyAction(null);
     }
   }
@@ -439,6 +458,10 @@ export function V3CurrentRunRoute() {
                 <Metric label="WASD 动作" value={`${collection.wasd_action_total} 次`} />
                 <Metric label="热键动作" value={`${collection.hotkey_action_total} 次`} />
                 <Metric label="UI 动作" value={`${collection.ui_action_total} 次`} />
+                <Metric label="UI 页面探索" value={`${collection.ui_explore_action_total || 0} 次`} />
+                <Metric label="恢复动作" value={`${collection.recovery_action_total ?? collection.stuck_recovery_total} 次`} />
+                <Metric label="after_frame_timeout" value={`${collection.after_frame_timeout_total || 0} 次`} />
+                <Metric label="after_frame_stale" value={`${collection.after_frame_stale_total || 0} 次`} />
               </div>
               <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300">
                 <p>当前视觉状态：{collection.latest_vision_state || collection.game_agent_state || "unknown"}</p>
@@ -446,11 +469,18 @@ export function V3CurrentRunRoute() {
                 <p>动作效果：{collection.latest_action_effect || (collection.latest_action_changed ? "changed" : "unknown")}</p>
                 <p>下一步计划：{collection.latest_next_plan || "-"}</p>
                 <p>选择原因：{collection.latest_action_reason || String(collection.latest_action?.reason || "-")}</p>
+                <p>最近切回尝试：{foregroundRecoveryLabel(collection.latest_foreground_recovery)}</p>
               </div>
               {(collection.enable_game_agent || collection.enable_game_explorer) && !collection.target_window_found ? (
                 <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                   尚未绑定目标游戏窗口。请先点击“检测窗口”，选择正在运行的游戏窗口；也可以手动切到游戏窗口后再继续采集。
                 </p>
+              ) : null}
+              {(collection.agent_paused || collection.latest_blocked_reason === "target_window_not_foreground") ? (
+                <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  <p>目标游戏窗口未处于前台，自动探索已暂停；Frame Pump、OCR 和去重仍可继续。</p>
+                  <p className="mt-1 text-amber-200">下一步建议：点击“切回目标窗口并继续”。当前前台窗口：{foregroundWindowLabel(collection.current_foreground_window || sameCollectionHealth?.current_foreground_window)}</p>
+                </div>
               ) : null}
               {collection.keyboard_input_ready && !collection.mouse_click_ready ? (
                 <p className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-100">
@@ -478,6 +508,7 @@ export function V3CurrentRunRoute() {
                 <span>最近阻止原因：{collection.latest_blocked_reason || "-"}</span>
                 <span>Input Gateway 阻塞项：{blockers.join("、") || "-"}</span>
                 <span>visual_diff_score：{String(collection.latest_action?.visual_diff_score ?? "-")}</span>
+                <span>after_frame_fresh：{String(collection.latest_action?.after_frame_fresh ?? "-")}</span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void detectWindows(collection)}>
@@ -486,7 +517,30 @@ export function V3CurrentRunRoute() {
                 <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !collection.target_window_found} onClick={() => void focusTargetWindow(collection)}>
                   {busyAction === `focus:${collection.collection_id}` ? "切换中..." : "尝试切到目标窗口"}
                 </button>
+                <button className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-sm text-blue-100 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction) || !collection.target_window_found} onClick={() => void focusTargetWindow(collection)}>
+                  {busyAction === `focus:${collection.collection_id}` ? "切换中..." : "切回目标窗口并继续"}
+                </button>
+                <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500" disabled={Boolean(busyAction)} onClick={() => void continueScreenshotOnly(collection)}>
+                  {busyAction === `screenshot-only:${collection.collection_id}` ? "切换中..." : "改为只截图模式继续"}
+                </button>
               </div>
+              {(collection.recent_actions || []).length > 0 ? (
+                <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3">
+                  <p className="text-sm font-semibold text-slate-200">最近 10 个动作</p>
+                  <div className="mt-2 grid gap-2">
+                    {(collection.recent_actions || []).map((action, index) => (
+                      <div key={`${String(action.action_id || index)}-${index}`} className="grid gap-1 rounded border border-slate-800 p-2 text-xs text-slate-400 md:grid-cols-6">
+                        <span>{actionLabel(action)}</span>
+                        <span>状态：{String(action.state_before || "-")}</span>
+                        <span>执行：{action.executed ? "是" : "否"}</span>
+                        <span>阻止：{String(action.blocked_reason || "-")}</span>
+                        <span>diff：{formatMaybeNumber(Number(action.visual_diff_score))}</span>
+                        <span>新帧：{action.after_frame_fresh === true ? "是" : action.after_frame_fresh === false ? "否" : "-"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {windows.length > 0 ? (
                 <div className="mt-3 grid gap-2">
                   {windows.slice(0, 10).map((windowInfo) => (
@@ -693,6 +747,20 @@ function foregroundWindowLabel(value?: Record<string, unknown> | null) {
   if (processName) return String(processName);
   const hwnd = value.hwnd || value.window_handle;
   return hwnd ? `HWND ${String(hwnd)}` : "-";
+}
+
+function foregroundRecoveryLabel(value?: Record<string, unknown> | null) {
+  if (!value) return "-";
+  const result = value.result;
+  const ok = typeof result === "object" && result !== null && "ok" in result ? Boolean((result as Record<string, unknown>).ok) : Boolean(value.target_window_foreground);
+  const reason = typeof result === "object" && result !== null ? String((result as Record<string, unknown>).blocked_reason || "") : String(value.blocked_reason || "");
+  return ok ? "已尝试，切回成功" : `已尝试，未切回${reason ? `：${reason}` : ""}`;
+}
+
+function actionLabel(action: Record<string, unknown>) {
+  const type = String(action.action_type || "-");
+  const keys = Array.isArray(action.keys) ? action.keys.map(String).join("+") : "";
+  return keys ? `${type} ${keys}` : type;
 }
 
 function delay(ms: number) {

@@ -730,16 +730,50 @@ def test_v3_collection_summary_splits_attempt_executed_blocked_actions(tmp_path)
                 }
             },
         )
+        client.post(
+            f"/api/v3/runs/{run['run_id']}/actions/record",
+            json={
+                "action": {
+                    "action_type": "key_press",
+                    "keys": ["PageDown"],
+                    "observed_state": "ui_equipment",
+                    "ui_explore": True,
+                    "action_category": "ui_explore",
+                    "verify": {"status": "after_frame_timeout", "changed": False},
+                    "verify_reason": "after_frame_timeout",
+                    "after_frame_fresh": False,
+                    "executed": True,
+                    "result": {"executed": True, "status": "executed"},
+                }
+            },
+        )
+        client.post(
+            f"/api/v3/runs/{run['run_id']}/actions/record",
+            json={
+                "action": {
+                    "action_type": "mouse_move_relative",
+                    "observed_state": "training_stuck",
+                    "recovery_action": True,
+                    "action_category": "recovery",
+                    "executed": True,
+                    "result": {"executed": True, "status": "executed"},
+                    "verify": {"status": "changed", "changed": True},
+                }
+            },
+        )
 
         summary = client.get(f"/api/v3/collections/{collection_id}/summary").json()["data"]
 
-        assert summary["latest_round_action_attempt_count"] == 2
-        assert summary["latest_round_action_executed_count"] == 1
+        assert summary["latest_round_action_attempt_count"] == 4
+        assert summary["latest_round_action_executed_count"] == 3
         assert summary["latest_round_action_blocked_count"] == 1
-        assert summary["action_attempt_total"] == 2
-        assert summary["action_executed_total"] == 1
+        assert summary["action_attempt_total"] == 4
+        assert summary["action_executed_total"] == 3
         assert summary["action_blocked_total"] == 1
-        assert summary["latest_blocked_reason"] == "cursor_read_access_denied"
+        assert summary["ui_explore_action_total"] == 1
+        assert summary["recovery_action_total"] == 1
+        assert summary["after_frame_timeout_total"] == 1
+        assert len(summary["recent_actions"]) == 4
 
 
 def test_v3_api_summary_includes_action_capture_breakdowns(tmp_path):

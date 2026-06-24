@@ -73,6 +73,7 @@ class V3Runtime:
         self._watch_waiting_since: dict[str, float] = {}
         self._game_agent_threads: dict[str, threading.Thread] = {}
         self._game_agent_last_blocked_reason: dict[str, str] = {}
+        self._game_agent_paused_reason: dict[str, str] = {}
 
     def health(self) -> V3Health:
         return build_v3_health(self.model_registry)
@@ -89,7 +90,19 @@ class V3Runtime:
 
     def focus_target_window(self, collection_id: str | None = None) -> dict[str, object]:
         config = self.get_collection(collection_id).config if collection_id else None
-        return focus_target_window(config)
+        result = focus_target_window(config)
+        if collection_id and result.get("ok"):
+            collection = self.get_collection(collection_id)
+            if collection.latest_run_id:
+                self._game_agent_paused_reason.pop(collection.latest_run_id, None)
+                self._game_agent_last_blocked_reason.pop(collection.latest_run_id, None)
+                try:
+                    latest_run = self.get_run(collection.latest_run_id)
+                except KeyError:
+                    latest_run = None
+                if latest_run and latest_run.status in {"running", "waiting_for_input", "waiting_for_input_timeout", "paused"}:
+                    self._ensure_game_agent_thread(latest_run.run_id)
+        return result
 
     def defaults(self) -> V3TaskConfig:
         return V3TaskConfig()
@@ -881,15 +894,19 @@ class V3Runtime:
             watch_dir = self._watch_dir_for_run(run_id)
             before = _latest_image(watch_dir)
             before_image = str(before) if before else None
+            before_frame_timestamp = before.stat().st_mtime if before else None
+            step_number = sum(1 for item in actions if str(item.get("action_id") or "").startswith("game_agent_")) + 1
+            foreground_gate = self._ensure_target_foreground_for_agent(run_id, record, before_image=before_image, agent_step=step_number)
+            if not foreground_gate:
+                return
 
-            def latest_image_path() -> str | None:
-                latest = _latest_image(watch_dir)
-                return str(latest) if latest else None
+            def latest_image_path() -> dict[str, object] | None:
+                return _wait_for_newer_image(watch_dir, before_timestamp=before_frame_timestamp, before_path=before_image)
 
             action = agent.step(
                 collection_id=record.collection_id,
                 run_id=run_id,
-                agent_step=sum(1 for item in actions if str(item.get("action_id") or "").startswith("game_agent_")) + 1,
+                agent_step=step_number,
                 config=record.config,
                 before_image=before_image,
                 after_image=None,
@@ -910,6 +927,45 @@ class V3Runtime:
             if action.get("executed") is True and isinstance(after_image, str) and after_image:
                 self._collect_agent_after_image(run_id, after_image, str(action.get("action_id")), str(action.get("observed_state") or "unknown"))
             time.sleep(max(0.2, record.config.action_interval_ms / 1000))
+
+    def _ensure_target_foreground_for_agent(self, run_id: str, record: V3RunRecord, *, before_image: str | None, agent_step: int) -> bool:
+        if os.environ.get("APP_SHOT_ALLOW_REAL_INPUT", "").strip() != "1":
+            return True
+        if not (record.config.enable_game_agent or record.config.enable_game_explorer):
+            return True
+        readiness = load_input_gateway_readiness(target_config=record.config)
+        if readiness.target_window_found and readiness.target_window_foreground:
+            self._game_agent_paused_reason.pop(run_id, None)
+            return True
+        focus_result = focus_target_window(record.config)
+        refreshed = load_input_gateway_readiness(target_config=record.config)
+        if refreshed.target_window_found and refreshed.target_window_foreground:
+            self.store.append_event(
+                run_id,
+                "game_agent_foreground_recovered",
+                {"focus_result": focus_result, "readiness": refreshed.model_dump()},
+            )
+            self._game_agent_paused_reason.pop(run_id, None)
+            return True
+        reason = "target_window_not_found" if not refreshed.target_window_found else "target_window_not_foreground"
+        action = _agent_foreground_pause_action(
+            collection_id=record.collection_id,
+            run_id=run_id,
+            agent_step=agent_step,
+            before_image=before_image,
+            reason=reason,
+            readiness=refreshed.model_dump(),
+            focus_result=focus_result,
+        )
+        self._write_action_audit(run_id, action)
+        self._game_agent_last_blocked_reason[run_id] = reason
+        self._game_agent_paused_reason[run_id] = reason
+        self.store.append_event(
+            run_id,
+            "game_agent_paused_for_foreground",
+            {"reason": reason, "focus_result": focus_result, "readiness": refreshed.model_dump()},
+        )
+        return False
 
     def _collect_agent_after_image(self, run_id: str, image_path: str, action_id: str, ui_state_hint: str) -> None:
         target = Path(image_path)
@@ -1861,6 +1917,127 @@ def _latest_image(folder: Path) -> Path | None:
     if not images:
         return None
     return max(images, key=lambda item: item.stat().st_mtime)
+
+
+def _wait_for_newer_image(
+    folder: Path,
+    *,
+    before_timestamp: float | None,
+    before_path: str | None,
+    timeout_s: float = 3.0,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout_s
+    latest_seen: Path | None = None
+    latest_timestamp: float | None = None
+    before_resolved = _resolve_path_or_none(before_path)
+    while time.monotonic() <= deadline:
+        latest = _latest_image(folder)
+        if latest is not None:
+            latest_seen = latest
+            latest_timestamp = latest.stat().st_mtime
+            same_as_before = bool(before_resolved and _same_path(latest, before_resolved))
+            newer_than_before = before_timestamp is None or latest_timestamp > before_timestamp
+            if newer_than_before and not same_as_before:
+                return {"path": str(latest), "timestamp": latest_timestamp, "fresh": True, "timeout": False}
+        time.sleep(0.1)
+    return {
+        "path": str(latest_seen) if latest_seen else None,
+        "timestamp": latest_timestamp,
+        "fresh": False,
+        "timeout": True,
+    }
+
+
+def _agent_foreground_pause_action(
+    *,
+    collection_id: str | None,
+    run_id: str,
+    agent_step: int,
+    before_image: str | None,
+    reason: str,
+    readiness: dict[str, object],
+    focus_result: dict[str, object],
+) -> dict[str, object]:
+    current = readiness.get("current_foreground_window")
+    target = _target_window_from_readiness(readiness) or focus_result.get("target_window")
+    timestamp = _path_mtime(before_image)
+    return {
+        "action_id": f"game_agent_pause_{hashlib.sha1(f'{run_id}:{agent_step}:{reason}'.encode('utf-8')).hexdigest()[:12]}",
+        "collection_id": collection_id,
+        "run_id": run_id,
+        "agent_step": agent_step,
+        "observed_state": "window_not_operable",
+        "planned_action": "wait",
+        "action_type": "wait",
+        "keys": [],
+        "duration_ms": 0,
+        "reason": "target_window_foreground_required",
+        "next_plan": "wait",
+        "next_plan_reason": "pause_until_target_window_foreground",
+        "executed": False,
+        "blocked_reason": reason,
+        "agent_paused": True,
+        "agent_paused_reason": reason,
+        "foreground_recovery_attempted": True,
+        "foreground_recovery_result": focus_result,
+        "target_window_found": bool(readiness.get("target_window_found")),
+        "target_window_foreground": bool(readiness.get("target_window_foreground")),
+        "target_window_title": _window_title_from_payload(target),
+        "foreground_window_title": _window_title_from_payload(current),
+        "current_foreground_window": current if isinstance(current, dict) else None,
+        "before_image": before_image,
+        "after_image": None,
+        "before_frame_timestamp": timestamp,
+        "after_frame_timestamp": None,
+        "after_frame_fresh": False,
+        "verify_reason": reason,
+        "visual_diff_score": 0.0,
+        "center_diff_score": 0.0,
+        "verify": {"changed": False, "status": reason, "after_frame_fresh": False, "verify_reason": reason},
+        "result": {
+            "executed": False,
+            "reason": reason,
+            "status": "paused",
+            "blockers": readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else [],
+            "readiness": readiness,
+        },
+        "created_at": utc_now(),
+    }
+
+
+def _resolve_path_or_none(path: str | None) -> Path | None:
+    if not path:
+        return None
+    try:
+        return Path(path).resolve()
+    except OSError:
+        return Path(path)
+
+
+def _path_mtime(path: str | None) -> float | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.is_file():
+        return None
+    return target.stat().st_mtime
+
+
+def _target_window_from_readiness(readiness: dict[str, object]) -> object:
+    details = readiness.get("details")
+    if not isinstance(details, dict):
+        return None
+    target_status = details.get("target_window")
+    if not isinstance(target_status, dict):
+        return None
+    return target_status.get("target_window")
+
+
+def _window_title_from_payload(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    title = value.get("title") or value.get("window_title") or value.get("name")
+    return str(title) if title else None
 
 
 def _frame_pump_heartbeat_output_dir(path: Path) -> Path | None:

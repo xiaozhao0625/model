@@ -16,7 +16,19 @@ from ai_screenshot_platform.v3.schemas import V3TaskConfig, utc_now
 RISK_STATES = {"risk_page", "login", "shop", "payment", "matchmaking", "ranked", "chat", "account", "captcha", "uac", "secure_desktop"}
 RECOVERY_STATES = {"training_blocked_ahead", "training_stuck", "gameplay_no_change", "unknown_repeated"}
 OPEN_AREA_STATES = {"training_open_area", "gameplay_moving", "hud_with_text", "unknown_safe"}
-UI_STATES = {"ui_inventory", "ui_warehouse", "ui_equipment", "ui_settings", "ui_mission", "ui_map"}
+UI_STATES = {
+    "ui_inventory",
+    "ui_equipment",
+    "ui_warehouse",
+    "ui_map",
+    "ui_weapon",
+    "ui_skill",
+    "ui_mission",
+    "ui_settings",
+    "ui_character",
+    "ui_dialog",
+    "hud_with_text",
+}
 
 
 class GameAgentLoop:
@@ -125,7 +137,7 @@ class GameAgentLoop:
             return {"executed": False, "reason": f"input_execution_failed:{exc}", "status": "error"}
         return {"executed": True, "reason": "real_input_executed", "status": "executed"}
 
-    def verify(self, *, before_image: str | None, after_image: str | None) -> dict[str, object]:
+    def verify(self, *, before_image: str | None, after_image: str | None, after_frame_fresh: bool | None = None, after_frame_timeout: bool = False) -> dict[str, object]:
         before_sha = _file_sha256(before_image)
         after_sha = _file_sha256(after_image)
         features = compare_frames(before_image, after_image)
@@ -133,11 +145,16 @@ class GameAgentLoop:
         center_diff = float(features.get("center_diff_score") or 0.0)
         changed = bool((visual_diff >= 0.08 or center_diff >= 0.05) or (before_sha and after_sha and before_sha != after_sha and visual_diff == 0.0))
         status = "changed" if changed else "no_visual_change"
+        if after_frame_fresh is False:
+            changed = False
+            status = "after_frame_timeout" if after_frame_timeout else "after_frame_stale"
         return {
             "before_sha256": before_sha,
             "after_sha256": after_sha,
             "changed": changed,
             "status": status,
+            "after_frame_fresh": after_frame_fresh,
+            "verify_reason": status if after_frame_fresh is False else None,
             **features,
         }
 
@@ -150,7 +167,7 @@ class GameAgentLoop:
         config: V3TaskConfig,
         before_image: str | None,
         after_image: str | None,
-        latest_image_fn: Callable[[], str | None] | None = None,
+        latest_image_fn: Callable[[], str | dict[str, object] | None] | None = None,
         action_interval_ms: int = 1500,
         ocr_text: str = "",
         last_action_effect: str | None = None,
@@ -167,11 +184,32 @@ class GameAgentLoop:
             last_action_effect=last_action_effect,
         )
         plan = self.plan(config=config, observation=observation, before_image=before_image, recent_actions=recent_actions)
+        before_frame_timestamp = _file_mtime(before_image)
         result = self.act(plan, config=config)
+        after_frame_timestamp: float | None = None
+        after_frame_fresh: bool | None = None
+        after_frame_timeout = False
         if latest_image_fn is not None:
-            time.sleep(max(0.1, action_interval_ms / 1000))
-            after_image = latest_image_fn()
-        verify = self.verify(before_image=before_image, after_image=after_image)
+            if result.get("executed") is True or str(plan.get("action_type") or "") == "wait":
+                time.sleep(max(0.1, action_interval_ms / 1000))
+                latest_payload = latest_image_fn()
+                after_image, after_frame_timestamp, after_frame_fresh, after_frame_timeout = _normalize_latest_frame_payload(
+                    latest_payload,
+                    before_image=before_image,
+                    before_frame_timestamp=before_frame_timestamp,
+                )
+            else:
+                after_image = None
+                after_frame_fresh = False
+        elif after_image:
+            after_frame_timestamp = _file_mtime(after_image)
+            after_frame_fresh = bool(after_image != before_image and (before_frame_timestamp is None or (after_frame_timestamp or 0.0) > before_frame_timestamp))
+        verify = self.verify(
+            before_image=before_image,
+            after_image=after_image,
+            after_frame_fresh=after_frame_fresh,
+            after_frame_timeout=after_frame_timeout,
+        )
         blocked_reason = plan.get("blocked_reason") or (None if result.get("executed") else result.get("reason"))
         stuck_before = float(observation.get("stuck_score") or 0.0)
         stuck_after = _stuck_after(stuck_before, verify)
@@ -189,12 +227,19 @@ class GameAgentLoop:
             "mouse_dx": plan.get("mouse_dx", 0),
             "mouse_dy": plan.get("mouse_dy", 0),
             "reason": plan.get("reason"),
+            "action_category": plan.get("action_category"),
+            "ui_explore": bool(plan.get("ui_explore")),
+            "recovery_action": bool(plan.get("recovery_action")),
             "next_plan": plan.get("next_plan") or plan.get("planned_action"),
             "next_plan_reason": plan.get("reason"),
             "executed": bool(result.get("executed")),
             "blocked_reason": str(blocked_reason) if blocked_reason else None,
             "before_image": before_image,
             "after_image": after_image,
+            "before_frame_timestamp": before_frame_timestamp,
+            "after_frame_timestamp": after_frame_timestamp,
+            "after_frame_fresh": after_frame_fresh,
+            "verify_reason": verify.get("verify_reason"),
             "visual_diff_score": verify["visual_diff_score"],
             "center_diff_score": verify.get("center_diff_score", 0.0),
             "stuck_score_before": stuck_before,
@@ -236,27 +281,78 @@ class GameAgentLoop:
     ) -> dict[str, object]:
         last_key = _action_key(recent_actions[-1]) if recent_actions else ""
         if (config.allow_wasd or config.allow_training_movement) and last_key not in {"key_hold:S", "mouse_move_relative"}:
-            return self._key_plan("S", 500, "stuck_recovery_back_up", state, hold=True)
+            return self._mark_recovery(self._key_plan("S", 500, "stuck_recovery_back_up", state, hold=True))
         if config.allow_mouse_look and last_key != "mouse_move_relative":
-            return self._mouse_plan(800, 0, 250, "blocked_ahead_turn_right", state)
+            return self._mark_recovery(self._mouse_plan(800, 0, 250, "blocked_ahead_turn_right", state))
         if (config.allow_wasd or config.allow_training_movement) and last_key != "key_hold:D":
-            return self._key_plan("D", 450, "stuck_recovery_strafe_right", state, hold=True)
+            return self._mark_recovery(self._key_plan("D", 450, "stuck_recovery_strafe_right", state, hold=True))
         if config.allow_mouse_look:
-            return self._mouse_plan(-1200, 0, 300, "still_stuck_turn_left_wider", state)
+            return self._mark_recovery(self._mouse_plan(-1200, 0, 300, "still_stuck_turn_left_wider", state))
         if config.allow_hotkeys and config.allow_inventory_map_explore:
-            return self._key_plan("M", 80, "still_repeated_open_map_for_text", state)
+            return self._mark_recovery(self._key_plan("M", 80, "still_repeated_open_map_for_text", state))
         return self._blocked_plan("wait", "no_recovery_capability_enabled", state)
 
     def _ui_plan(self, config: V3TaskConfig, state: str, recent_actions: list[dict[str, object]]) -> dict[str, object]:
-        if state == "ui_map" and config.allow_hotkeys:
-            return self._key_plan("M", 80, "toggle_map_for_coverage", state)
-        if state in {"ui_inventory", "ui_warehouse", "ui_equipment"} and config.allow_hotkeys:
-            return self._key_plan("Tab", 80, "switch_inventory_panel", state)
-        if state in {"ui_settings", "ui_mission"} and config.allow_back_close and config.allow_hotkeys:
-            return self._key_plan("Esc", 80, "close_low_risk_ui_page", state)
-        if config.allow_hotkeys:
-            return self._key_plan("Tab", 80, "safe_ui_hotkey_explore", state)
-        return self._blocked_plan("wait", "ui_page_no_hotkey_capability", state)
+        if not config.allow_hotkeys:
+            return self._blocked_plan("wait", "ui_page_no_hotkey_capability", state)
+
+        no_change_count = _recent_no_change_count(recent_actions, state=state)
+        if state == "ui_map":
+            sequence = [
+                ("PageDown", "map_page_down_for_text"),
+                ("PageUp", "map_page_up_for_text"),
+                ("M", "toggle_map_refresh_for_coverage"),
+                ("Esc", "close_map_after_sampling"),
+            ]
+        elif state == "ui_settings":
+            sequence = [
+                ("Tab", "settings_focus_next_safe"),
+                ("ArrowRight", "settings_tab_next_safe"),
+                ("ArrowLeft", "settings_tab_previous_safe"),
+                ("Esc", "close_settings_after_sampling"),
+            ]
+        elif state == "ui_dialog":
+            sequence = [
+                ("Tab", "dialog_focus_next_safe"),
+                ("Shift+Tab", "dialog_focus_previous_safe"),
+                ("Esc", "close_dialog_after_sampling"),
+            ]
+        elif state in {"ui_mission", "ui_skill", "ui_character"}:
+            sequence = [
+                ("Tab", "ui_focus_next"),
+                ("ArrowDown", "ui_list_down"),
+                ("PageDown", "ui_page_down_for_text"),
+                ("ArrowUp", "ui_list_up"),
+                ("Esc", "close_ui_after_sampling"),
+            ]
+        elif state == "hud_with_text":
+            sequence = [
+                ("Tab", "hud_panel_probe"),
+                ("I", "open_inventory_from_hud"),
+                ("M", "open_map_from_hud"),
+                ("B", "open_bag_from_hud"),
+            ]
+        else:
+            sequence = [
+                ("Tab", "switch_inventory_panel"),
+                ("ArrowRight", "switch_item_or_tab_right"),
+                ("ArrowDown", "move_item_focus_down"),
+                ("PageDown", "scroll_ui_page_down"),
+                ("ArrowLeft", "switch_item_or_tab_left"),
+                ("ArrowUp", "move_item_focus_up"),
+                ("Shift+Tab", "switch_inventory_panel_back"),
+                ("Esc", "close_ui_after_sampling"),
+            ]
+
+        preferred = _next_ui_key(sequence, recent_actions, state=state, no_change_count=no_change_count)
+        key, reason = preferred
+        if key == "Esc" and not config.allow_back_close:
+            fallback = _first_non_escape(sequence)
+            key, reason = fallback
+        plan = self._key_plan(key, 80, reason, state)
+        plan["ui_explore"] = True
+        plan["action_category"] = "ui_explore"
+        return plan
 
     def _unknown_plan(self, config: V3TaskConfig, state: str, recent_actions: list[dict[str, object]]) -> dict[str, object]:
         if config.allow_mouse_look:
@@ -272,7 +368,7 @@ class GameAgentLoop:
         return {
             "action_type": action_type,
             "planned_action": action_type,
-            "keys": [key],
+            "keys": _split_key_combo(key),
             "duration_ms": duration_ms,
             "reason": reason,
             "observed_state": state,
@@ -300,6 +396,11 @@ class GameAgentLoop:
             "observed_state": state,
             "next_plan": action_type,
         }
+
+    def _mark_recovery(self, plan: dict[str, object]) -> dict[str, object]:
+        plan["recovery_action"] = True
+        plan["action_category"] = "recovery"
+        return plan
 
     def _real_input_disabled_probe_plan(self, config: V3TaskConfig, state: str) -> dict[str, object] | None:
         if self.allow_real_input:
@@ -342,7 +443,11 @@ class GameAgentLoop:
             status = str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "")
             diff = float(action.get("visual_diff_score") or (verify.get("visual_diff_score") if isinstance(verify, dict) else 0.0) or 0.0)
             accepted_delta = int(action.get("accepted_unique_delta") or 0)
-            if status in {"no_visual_change", "stuck"} or (diff < 0.08 and accepted_delta == 0):
+            state_before = str(action.get("observed_state") or action.get("state_before") or "")
+            state_after = str(action.get("state_after") or state_before)
+            if status in {"no_visual_change", "stuck", "after_frame_timeout", "after_frame_stale"} or (
+                diff < 0.05 and accepted_delta == 0 and state_after == state_before
+            ):
                 count += 1
         return count
 
@@ -361,8 +466,19 @@ _VK = {
     "M": 0x4D,
     "I": 0x49,
     "B": 0x42,
+    "C": 0x43,
+    "P": 0x50,
     "TAB": 0x09,
     "ESC": 0x1B,
+    "SHIFT": 0x10,
+    "ENTER": 0x0D,
+    "ARROWLEFT": 0x25,
+    "ARROWUP": 0x26,
+    "ARROWRIGHT": 0x27,
+    "ARROWDOWN": 0x28,
+    "PAGEUP": 0x21,
+    "PAGEDOWN": 0x22,
+    "F1": 0x70,
     "SPACE": 0x20,
 }
 
@@ -376,6 +492,9 @@ def _key_hold(keys: list[str], duration_ms: int) -> None:
 
 
 def _key_press(keys: list[str]) -> None:
+    if len(keys) > 1:
+        _key_hold(keys, 80)
+        return
     for key in keys:
         _key_hold([key], 80)
 
@@ -435,6 +554,39 @@ def _file_sha256(path: str | None) -> str | None:
     return digest.hexdigest()
 
 
+def _file_mtime(path: str | None) -> float | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.is_file():
+        return None
+    return target.stat().st_mtime
+
+
+def _normalize_latest_frame_payload(
+    payload: str | dict[str, object] | None,
+    *,
+    before_image: str | None,
+    before_frame_timestamp: float | None,
+) -> tuple[str | None, float | None, bool, bool]:
+    if payload is None:
+        return None, None, False, True
+    if isinstance(payload, dict):
+        path = payload.get("path")
+        image_path = str(path) if isinstance(path, str) and path else None
+        timestamp = _float_or_none(payload.get("timestamp")) or _file_mtime(image_path)
+        fresh = bool(payload.get("fresh"))
+        timeout = bool(payload.get("timeout"))
+        if not fresh and image_path and image_path != before_image and before_frame_timestamp is not None and timestamp is not None:
+            fresh = timestamp > before_frame_timestamp
+        if not fresh and image_path and image_path != before_image and before_frame_timestamp is None:
+            fresh = True
+        return image_path if fresh else None, timestamp, fresh, timeout
+    timestamp = _file_mtime(payload)
+    fresh = bool(payload and payload != before_image and (before_frame_timestamp is None or timestamp is None or timestamp > before_frame_timestamp))
+    return payload if fresh else None, timestamp, fresh, not fresh
+
+
 def _last_frame_from_actions(recent_actions: list[dict[str, object]]) -> str | None:
     for action in reversed(recent_actions):
         for key in ("after_image", "before_image"):
@@ -452,6 +604,77 @@ def _action_key(action: dict[str, object]) -> str:
     if action_type in {"mouse_move_relative", "mouse_move", "mouse_move_small"}:
         return "mouse_move_relative"
     return action_type
+
+
+def _split_key_combo(key: str) -> list[str]:
+    return [part.strip() for part in key.split("+") if part.strip()]
+
+
+def _next_ui_key(
+    sequence: list[tuple[str, str]],
+    recent_actions: list[dict[str, object]],
+    *,
+    state: str,
+    no_change_count: int,
+) -> tuple[str, str]:
+    ui_actions = [action for action in recent_actions[-10:] if str(action.get("observed_state") or "") == state and action.get("ui_explore")]
+    if no_change_count >= 5:
+        esc = next((item for item in sequence if item[0] == "Esc"), None)
+        if esc:
+            return esc
+    start_index = len(ui_actions) % max(1, len(sequence))
+    for offset in range(len(sequence)):
+        candidate = sequence[(start_index + offset) % len(sequence)]
+        if candidate[0] == "Esc" and no_change_count < 3 and len(ui_actions) < 5:
+            continue
+        if _ineffective_key_combo_repeats(candidate[0], recent_actions, state=state) >= 2:
+            continue
+        return candidate
+    return sequence[-1]
+
+
+def _first_non_escape(sequence: list[tuple[str, str]]) -> tuple[str, str]:
+    return next((item for item in sequence if item[0] != "Esc"), sequence[0])
+
+
+def _recent_no_change_count(recent_actions: list[dict[str, object]], *, state: str) -> int:
+    count = 0
+    for action in reversed(recent_actions[-10:]):
+        if str(action.get("observed_state") or "") != state:
+            break
+        verify = action.get("verify")
+        status = str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "")
+        diff = float(action.get("visual_diff_score") or (verify.get("visual_diff_score") if isinstance(verify, dict) else 0.0) or 0.0)
+        accepted_delta = int(action.get("accepted_unique_delta") or 0)
+        if status in {"no_visual_change", "after_frame_timeout", "after_frame_stale"} or (diff < 0.05 and accepted_delta == 0):
+            count += 1
+            continue
+        break
+    return count
+
+
+def _ineffective_key_combo_repeats(key: str, recent_actions: list[dict[str, object]], *, state: str) -> int:
+    expected = f"key_press:{'+'.join(part.upper() for part in _split_key_combo(key))}"
+    count = 0
+    for action in reversed(recent_actions[-10:]):
+        if str(action.get("observed_state") or "") != state:
+            break
+        if _action_key(action) != expected:
+            break
+        verify = action.get("verify")
+        status = str(verify.get("status") if isinstance(verify, dict) else action.get("verify_status") or "")
+        diff = float(action.get("visual_diff_score") or (verify.get("visual_diff_score") if isinstance(verify, dict) else 0.0) or 0.0)
+        accepted_delta = int(action.get("accepted_unique_delta") or 0)
+        if status in {"no_visual_change", "after_frame_timeout", "after_frame_stale"} or (diff < 0.05 and accepted_delta == 0):
+            count += 1
+    return count
+
+
+def _float_or_none(value: object) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _agent_step_index(recent_actions: list[dict[str, object]]) -> int:

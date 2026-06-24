@@ -292,10 +292,18 @@ class V3CollectionSummary(BaseModel):
     action_changed_total: int = 0
     action_no_change_total: int = 0
     stuck_recovery_total: int = 0
+    recovery_action_total: int = 0
     mouse_move_relative_total: int = 0
     wasd_action_total: int = 0
     hotkey_action_total: int = 0
     ui_action_total: int = 0
+    ui_explore_action_total: int = 0
+    after_frame_timeout_total: int = 0
+    after_frame_stale_total: int = 0
+    agent_paused: bool = False
+    agent_paused_reason: str | None = None
+    latest_foreground_recovery: dict[str, object] | None = None
+    recent_actions: list[dict[str, object]] = Field(default_factory=list)
     latest_vision_state: str | None = None
     latest_possible_stuck: bool = False
     latest_possible_wall_ahead: bool = False

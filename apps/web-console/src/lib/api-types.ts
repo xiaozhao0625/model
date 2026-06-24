@@ -268,10 +268,18 @@ export interface V3CollectionSummary {
   action_changed_total: number;
   action_no_change_total: number;
   stuck_recovery_total: number;
+  recovery_action_total?: number;
   mouse_move_relative_total: number;
   wasd_action_total: number;
   hotkey_action_total: number;
   ui_action_total: number;
+  ui_explore_action_total?: number;
+  after_frame_timeout_total?: number;
+  after_frame_stale_total?: number;
+  agent_paused?: boolean;
+  agent_paused_reason?: string | null;
+  latest_foreground_recovery?: Record<string, unknown> | null;
+  recent_actions?: Array<Record<string, unknown>>;
   latest_vision_state?: string | null;
   latest_possible_stuck: boolean;
   latest_possible_wall_ahead: boolean;

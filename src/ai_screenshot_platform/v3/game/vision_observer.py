@@ -14,6 +14,10 @@ UI_KEYWORDS = {
     "warehouse": ("warehouse", "stash", "storage", "仓库"),
     "map": ("map", "地图"),
     "equipment": ("equipment", "weapon", "gear", "loadout", "装备", "武器"),
+    "weapon": ("weapon", "gun", "firearm", "ammo", "loadout", "attachment", "m4a1", "武器", "枪械", "配件", "弹药"),
+    "skill": ("skill", "ability", "talent", "perk", "技能", "天赋"),
+    "character": ("character", "operator", "profile", "appearance", "角色", "干员", "外观"),
+    "dialog": ("dialog", "popup", "confirm", "message", "弹窗", "确认", "提示"),
     "settings": ("setting", "settings", "options", "设置"),
     "mission": ("mission", "quest", "task", "任务"),
 }
@@ -195,6 +199,14 @@ def classify_context(
         return "ui_map"
     if "equipment" in ui_hits:
         return "ui_equipment"
+    if "weapon" in ui_hits:
+        return "ui_weapon"
+    if "skill" in ui_hits:
+        return "ui_skill"
+    if "character" in ui_hits:
+        return "ui_character"
+    if "dialog" in ui_hits:
+        return "ui_dialog"
     if "settings" in ui_hits:
         return "ui_settings"
     if "mission" in ui_hits:
